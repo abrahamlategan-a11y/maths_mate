@@ -111,6 +111,7 @@
   .mmc-choices { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
   .mmc-choice-btn { padding:8px 14px; border-radius:20px; border:2.5px solid var(--ink); background:#fff; font-family:'Baloo 2',sans-serif; font-weight:700; font-size:13.5px; color:var(--ink); box-shadow:2px 2px 0 var(--ink); }
   .mmc-choice-btn.selected { background:var(--purple); color:#fff; }
+  .mmc-order-slot { width:64px; height:38px; border:2px dashed var(--paper-line); border-radius:20px; }
   .mmc-choice-btn:disabled { opacity:.7; }
   .mmc-coin-chip { padding:10px 16px; border-radius:14px; border:2.5px solid var(--ink); background:#fff; font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:14px; color:var(--ink); box-shadow:2px 2px 0 var(--ink); }
   .mmc-coin-chip.selected { background:var(--yellow); }
@@ -289,9 +290,9 @@ function genRounding(diff){
 function genOrdering(diff){
   const range = diff==='easy'?[10,999]: diff==='medium'?[1000,99999]:[10000,999999];
   let s=new Set(); while(s.size<4) s.add(randInt(range[0],range[1]));
-  const arr=[...s]; const sorted=[...arr].sort((a,b)=>a-b);
-  return { prompt:`Arrange these numbers in ascending order: ${arr.map(formatGrouped).join(', ')}`, answer:sorted.join(','),
-    explanation:`Ascending order: ${sorted.map(formatGrouped).join(', ')}`, checkType:'numlist' };
+  const arr=shuffleArr([...s]); const sorted=[...s].sort((a,b)=>a-b);
+  return { prompt:`Tap the numbers in ascending order (smallest first).`, items:arr.map(String), answer:sorted.join(','),
+    explanation:`Ascending order: ${sorted.map(formatGrouped).join(', ')}`, inputType:'order', checkType:'numlist' };
 }
 function genFactors(diff){
   const range= diff==='easy'?[12,30]: diff==='medium'?[20,60]:[40,100];
@@ -385,9 +386,9 @@ function genDecimalPlace(diff){
 function genOrderDecimals(diff){
   const decDigits= diff==='easy'?1:2; let s=new Set();
   while(s.size<4){ const whole=randInt(1,9); let dec=''; for(let i=0;i<decDigits;i++) dec+=randInt(0,9); s.add(parseFloat(`${whole}.${dec}`)); }
-  const arr=[...s]; const sorted=[...arr].sort((a,b)=>a-b);
-  return { prompt:`Arrange these decimals in ascending order: ${arr.join(', ')}`, answer:sorted.join(','),
-    explanation:`Ascending order: ${sorted.join(', ')}`, checkType:'numlist' };
+  const arr=shuffleArr([...s]); const sorted=[...s].sort((a,b)=>a-b);
+  return { prompt:`Tap the decimals in ascending order (smallest first).`, items:arr.map(String), answer:sorted.join(','),
+    explanation:`Ascending order: ${sorted.join(', ')}`, inputType:'order', checkType:'numlist' };
 }
 const DENOMS=[{v:5,l:'5c'},{v:10,l:'10c'},{v:20,l:'20c'},{v:50,l:'50c'},{v:100,l:'$1'},{v:200,l:'$2'}];
 function fmtCents(c){ return c>=100 ? '$'+(c/100).toFixed(2) : c+'c'; }
@@ -526,7 +527,8 @@ function buildQuestion(slotIdx, diff){
   return { id:uid('q'), slot:slotIdx+1, title:slot.title, prompt:q.prompt,
     answer:q.answer!=null?String(q.answer):null, explanation:q.explanation||'',
     inputType:q.inputType||'text', choices:q.choices||null, svg:q.svg||null,
-    checkType:q.checkType||null, targetCents:q.targetCents!=null?q.targetCents:null, coins:q.coins||null };
+    checkType:q.checkType||null, targetCents:q.targetCents!=null?q.targetCents:null, coins:q.coins||null,
+    items:q.items||null };
 }
 function generateWeekQuestions(diff){ return SLOTS.map((s,i)=>buildQuestion(i,diff)); }
 
@@ -863,7 +865,7 @@ function renderQuestionEditor(week){
     catch(e){ S.toast='Could not save changes — check your connection.'; render(); }
   }
   (week.questions||[]).forEach((q,i)=>{
-    const isStructured = !!(q.svg || q.inputType==='choice' || q.inputType==='coins');
+    const isStructured = !!(q.svg || q.inputType==='choice' || q.inputType==='coins' || q.inputType==='order');
     const row=el(`
       <div class="mmc-qedit">
         <div class="idx">Q${i+1} — ${esc(q.title||'Question')}</div>
@@ -876,6 +878,9 @@ function renderQuestionEditor(week){
         ` : q.inputType==='coins' ? `
           <div class="label2">Target amount</div>
           <div class="meta" style="margin-bottom:8px;">${esc(fmtCents(q.targetCents))} · ${(q.coins||[]).length} coins shown on the page — use Regenerate for a different amount.</div>
+        ` : q.inputType==='order' ? `
+          <div class="label2">Correct order</div>
+          <div class="meta" style="margin-bottom:8px;">${esc((q.answer||'').split(',').join(' → '))} — use Regenerate for different numbers.</div>
         ` : `
           <div class="label2">Answer</div>
           <input type="text" data-f="answer" value="${esc(q.answer)}">
@@ -1188,7 +1193,9 @@ function renderWeeklyPassport(){
     else {
       const startBtn=el('<button class="mmc-btn gold">Start ▶</button>');
       startBtn.onclick=()=>{ S.activeWeekId=week.id; S.quiz={};
-        (week.questions||[]).forEach(q=> S.quiz[q.id]={given: q.inputType==='coins' ? [] : '', checked:false, correct:false}); render(); };
+        (week.questions||[]).forEach(q=> S.quiz[q.id]= q.inputType==='order'
+          ? {given:'', pool:shuffleArr(q.items||[]), placed:[], checked:false, correct:false}
+          : {given: q.inputType==='coins' ? [] : '', checked:false, correct:false}); render(); };
       right.appendChild(startBtn);
     }
     wrap.appendChild(card);
@@ -1601,6 +1608,36 @@ function renderQuizTaking(week){
       const checkBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" ${st.checked||st.given.length===0?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
       checkBtn.onclick=doCheck;
       qbox.appendChild(checkBtn);
+    } else if(q.inputType==='order'){
+      const slotsRow=el('<div class="mmc-choices" style="min-height:44px;"></div>');
+      for(let s=0;s<(q.items||[]).length;s++){
+        const val=st.placed[s];
+        if(val===undefined){
+          slotsRow.appendChild(el(`<div class="mmc-order-slot"></div>`));
+        } else {
+          const b=el(`<button type="button" class="mmc-choice-btn selected" ${st.checked?'disabled':''}>${esc(val)}</button>`);
+          b.onclick=()=>{ if(st.checked) return; st.placed=st.placed.filter((_,idx)=>idx!==s); st.pool.push(val); render(); };
+          slotsRow.appendChild(b);
+        }
+      }
+      qbox.appendChild(el('<div class="meta" style="margin-bottom:4px;">Your order:</div>'));
+      qbox.appendChild(slotsRow);
+      qbox.appendChild(el('<div class="meta" style="margin:10px 0 4px;">Tap to add:</div>'));
+      const poolRow=el('<div class="mmc-choices"></div>');
+      st.pool.forEach(val=>{
+        const b=el(`<button type="button" class="mmc-choice-btn" ${st.checked?'disabled':''}>${esc(val)}</button>`);
+        b.onclick=()=>{ if(st.checked) return; st.pool=st.pool.filter(v=>v!==val); st.placed.push(val); render(); };
+        poolRow.appendChild(b);
+      });
+      qbox.appendChild(poolRow);
+      const btnRow=el('<div class="mmc-row" style="margin-top:8px;"></div>');
+      const resetBtn=el(`<button class="mmc-btn ghost sm" ${st.checked?'disabled':''}>Reset</button>`);
+      resetBtn.onclick=()=>{ if(st.checked) return; st.pool=shuffleArr(q.items||[]); st.placed=[]; render(); };
+      const allPlaced = st.placed.length===(q.items||[]).length;
+      const checkBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" ${st.checked||!allPlaced?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
+      checkBtn.onclick=()=>{ if(!allPlaced) return; st.given=st.placed.join(','); doCheck(); };
+      btnRow.appendChild(resetBtn); btnRow.appendChild(checkBtn);
+      qbox.appendChild(btnRow);
     } else {
       const row=el(`
         <div class="answer-row">
