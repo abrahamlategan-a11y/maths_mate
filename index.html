@@ -492,6 +492,7 @@ let liveParticipantsUnsub = null, liveParticipantsRoomId = null;
 function clearSubs(){
   unsubs.forEach(u=>{ try{u();}catch(e){} }); unsubs=[];
   if(liveParticipantsUnsub){ try{liveParticipantsUnsub();}catch(e){} liveParticipantsUnsub=null; liveParticipantsRoomId=null; }
+  if(teacherLiveTimerHandle){ clearInterval(teacherLiveTimerHandle); teacherLiveTimerHandle=null; teacherLiveTimerRoomId=null; }
 }
 function currentLiveRoom(){
   if(!S.liveGames || !S.liveGames.length) return null;
@@ -510,7 +511,7 @@ function ensureParticipantsSub(gameId){
   liveParticipantsRoomId=gameId;
   liveParticipantsUnsub = onSnapshot(collection(db,'liveGames',gameId,'participants'), snap=>{
     S.liveParticipants=snap.docs.map(d=>({id:d.id,...d.data()})); render();
-  }, ()=>{});
+  }, (err)=>{ S.toast='Leaderboard error: '+err.message; render(); });
 }
 
 function el(html){ const t=document.createElement('template'); t.innerHTML=html.trim(); return t.content.firstElementChild; }
@@ -558,26 +559,26 @@ if(!configured){
 
 function subscribeData(){
   if(S.isTeacher){
-    unsubs.push(onSnapshot(query(collection(db,'weeks'), where('teacherUid','==',S.user.uid)), snap=>{ S.weeks=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, ()=>{}));
-    unsubs.push(onSnapshot(query(collection(db,'results'), where('teacherUid','==',S.user.uid)), snap=>{ S.results=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, ()=>{}));
-    unsubs.push(onSnapshot(query(collection(db,'profiles'), where('teacherUid','==',S.user.uid)), snap=>{ S.profiles={}; snap.docs.forEach(d=>S.profiles[d.id]=d.data()); render(); }, ()=>{}));
-    unsubs.push(onSnapshot(query(collection(db,'ttAttempts'), where('teacherUid','==',S.user.uid)), snap=>{ S.ttAttempts=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, ()=>{}));
+    unsubs.push(onSnapshot(query(collection(db,'weeks'), where('teacherUid','==',S.user.uid)), snap=>{ S.weeks=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, (err)=>{ S.toast='Weeks error: '+err.message; render(); }));
+    unsubs.push(onSnapshot(query(collection(db,'results'), where('teacherUid','==',S.user.uid)), snap=>{ S.results=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, (err)=>{ S.toast='Results error: '+err.message; render(); }));
+    unsubs.push(onSnapshot(query(collection(db,'profiles'), where('teacherUid','==',S.user.uid)), snap=>{ S.profiles={}; snap.docs.forEach(d=>S.profiles[d.id]=d.data()); render(); }, (err)=>{ S.toast='Profiles error: '+err.message; render(); }));
+    unsubs.push(onSnapshot(query(collection(db,'ttAttempts'), where('teacherUid','==',S.user.uid)), snap=>{ S.ttAttempts=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, (err)=>{ S.toast='Timetable data error: '+err.message; render(); }));
     unsubs.push(onSnapshot(query(collection(db,'liveGames'), where('teacherUid','==',S.user.uid)), snap=>{
-      S.liveGames=snap.docs.map(d=>({id:d.id,...d.data()})); ensureParticipantsSub(currentLiveRoom()?.id||null); render();
-    }, ()=>{}));
+      S.liveGames=snap.docs.map(d=>({id:d.id,...d.data()})); ensureParticipantsSub(currentLiveRoom()?.id||null); ensureTeacherLiveTimer(); render();
+    }, (err)=>{ S.toast='Live Game error: '+err.message; render(); }));
   } else {
     unsubs.push(onSnapshot(query(collection(db,'weeks'), where('status','==','published'), where('teacherUid','==',(S.profile&&S.profile.teacherUid)||'__none__')), snap=>{
       S.weeks=snap.docs.map(d=>({id:d.id,...d.data()})); render();
-    }, ()=>{}));
+    }, (err)=>{ S.toast='Weeks error: '+err.message; render(); }));
     unsubs.push(onSnapshot(query(collection(db,'results'), where('uid','==',S.user.uid)), snap=>{
       S.results=snap.docs.map(d=>({id:d.id,...d.data()})); render();
-    }, ()=>{}));
+    }, (err)=>{ S.toast='Results error: '+err.message; render(); }));
     unsubs.push(onSnapshot(query(collection(db,'ttAttempts'), where('uid','==',S.user.uid)), snap=>{
       S.ttAttempts=snap.docs.map(d=>({id:d.id,...d.data()})); render();
-    }, ()=>{}));
+    }, (err)=>{ S.toast='Timetable data error: '+err.message; render(); }));
     unsubs.push(onSnapshot(query(collection(db,'liveGames'), where('teacherUid','==',(S.profile&&S.profile.teacherUid)||'__none__')), snap=>{
       S.liveGames=snap.docs.map(d=>({id:d.id,...d.data()})); ensureParticipantsSub(currentLiveRoom()?.id||null); render();
-    }, ()=>{}));
+    }, (err)=>{ S.toast='Live Game error: '+err.message; render(); }));
   }
 }
 
@@ -1228,9 +1229,17 @@ function startLiveTeacherTimer(room){
     if(timerEl) timerEl.textContent=formatMMSS(left);
     if(left<=0){
       clearInterval(teacherLiveTimerHandle); teacherLiveTimerHandle=null;
-      try{ await updateDoc(doc(db,'liveGames',r.id), {status:'ended'}); }catch(e){}
+      try{ await updateDoc(doc(db,'liveGames',r.id), {status:'ended'}); }
+      catch(e){ S.toast='Could not auto-end the game: '+e.message; render(); }
     }
   },1000);
+}
+// Runs off the data subscription itself (not the UI), so the 5-minute
+// auto-end fires reliably even if the teacher is looking at a different tab.
+function ensureTeacherLiveTimer(){
+  const room=currentLiveRoom();
+  if(room && room.status==='active'){ startLiveTeacherTimer(room); }
+  else if(teacherLiveTimerHandle){ clearInterval(teacherLiveTimerHandle); teacherLiveTimerHandle=null; teacherLiveTimerRoomId=null; }
 }
 function renderTeacherLiveGame(){
   const wrap=el('<div></div>');
@@ -1343,7 +1352,8 @@ async function submitMyLiveAnswer(given){
   S.myLive.attempted++; if(correct) S.myLive.score++;
   S.myLive.qIndex++; S.myLive.currentQ=genTTQuestion(S.myLive.level, S.myLive.qIndex);
   render();
-  try{ await updateDoc(doc(db,'liveGames',S.myLive.gameId,'participants',S.user.uid), {score:S.myLive.score, attempted:S.myLive.attempted}); }catch(e){}
+  try{ await updateDoc(doc(db,'liveGames',S.myLive.gameId,'participants',S.user.uid), {score:S.myLive.score, attempted:S.myLive.attempted}); }
+  catch(e){ S.toast='Score sync error: '+e.message; render(); }
 }
 function renderMyLiveSession(){
   const wrap=el('<div></div>');
