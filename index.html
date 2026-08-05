@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Weekly Maths Club</title>
+<title>Maths Mate</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito+Sans:wght@400;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap');
 
@@ -502,6 +502,7 @@ function subscribeData(){
     unsubs.push(onSnapshot(query(collection(db,'weeks'), where('teacherUid','==',S.user.uid)), snap=>{ S.weeks=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, ()=>{}));
     unsubs.push(onSnapshot(query(collection(db,'results'), where('teacherUid','==',S.user.uid)), snap=>{ S.results=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, ()=>{}));
     unsubs.push(onSnapshot(query(collection(db,'profiles'), where('teacherUid','==',S.user.uid)), snap=>{ S.profiles={}; snap.docs.forEach(d=>S.profiles[d.id]=d.data()); render(); }, ()=>{}));
+    unsubs.push(onSnapshot(query(collection(db,'ttAttempts'), where('teacherUid','==',S.user.uid)), snap=>{ S.ttAttempts=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, ()=>{}));
   } else {
     unsubs.push(onSnapshot(query(collection(db,'weeks'), where('status','==','published'), where('teacherUid','==',(S.profile&&S.profile.teacherUid)||'__none__')), snap=>{
       S.weeks=snap.docs.map(d=>({id:d.id,...d.data()})); render();
@@ -536,7 +537,7 @@ function render(){
 function renderHead(){
   const head=el(`
     <div class="mmc-head">
-      <div class="mmc-title">Weekly Maths Club</div>
+      <div class="mmc-title">Maths Mate</div>
       <p class="mmc-sub">A fresh set of problems every week, instant feedback, and a passport that fills up as you go.</p>
       ${S.user ? `<div class="mmc-userrow"><span>Signed in as ${esc(S.profile? S.profile.displayName : S.user.email)} ${S.isTeacher?'· teacher':''}</span><button id="mmc-signout">Sign out</button></div>` : ''}
     </div>
@@ -589,11 +590,15 @@ function renderAuth(){
 // ================= TEACHER =================
 function renderTeacher(){
   const wrap=el('<div></div>');
-  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-t="weeks">This week's set</button><button class="mmc-tab" data-t="ledger">Gradebook</button><button class="mmc-tab" data-t="students">Students</button></div>`);
+  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-t="weeks">This week's set</button><button class="mmc-tab" data-t="ledger">Gradebook</button><button class="mmc-tab" data-t="students">Students</button><button class="mmc-tab" data-t="timetable">Timetable</button></div>`);
   tabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.t===S.teacherTab) b.classList.add('active');
     b.onclick=()=>{ S.teacherTab=b.dataset.t; render(); }; });
   wrap.appendChild(tabs);
-  wrap.appendChild(S.teacherTab==='weeks' ? renderTeacherWeeks() : S.teacherTab==='ledger' ? renderLedger() : renderStudentsTab());
+  wrap.appendChild(
+    S.teacherTab==='weeks' ? renderTeacherWeeks() :
+    S.teacherTab==='ledger' ? renderLedger() :
+    S.teacherTab==='students' ? renderStudentsTab() : renderTeacherTimetable()
+  );
   return wrap;
 }
 
@@ -772,6 +777,66 @@ function exportCSV(pubWeeks, studentUids){
   const csv=rows.map(r=>r.map(c=>{ const s=String(c); return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; }).join(',')).join('\n');
   const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob);
   const a=document.createElement('a'); a.href=url; a.download='weekly-maths-club-results.csv';
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+
+function renderTeacherTimetable(){
+  const wrap=el('<div></div>');
+  const studentUids = Object.keys(S.profiles).sort((a,b)=>(S.profiles[a].displayName||'').localeCompare(S.profiles[b].displayName||''));
+
+  const exportBtn=el('<button class="mmc-btn gold" style="margin-bottom:14px;">⬇ Export as CSV</button>');
+  exportBtn.onclick=()=>exportTTCSV(studentUids);
+  wrap.appendChild(exportBtn);
+
+  if(studentUids.length===0){
+    wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">⏱️</div>No students yet — add some from the Students tab.</div>'));
+    return wrap;
+  }
+
+  const tableWrap=el('<div class="mmc-ledger-wrap"></div>');
+  const table=el(`<table class="mmc-ledger"><thead><tr><th>Student</th><th>Best Easy</th><th>Best Medium</th><th>Best Hard</th><th>Attempts</th><th>Last attempt</th></tr></thead><tbody></tbody></table>`);
+  const tbody=table.querySelector('tbody');
+  studentUids.forEach(uid=>{
+    const mine=S.ttAttempts.filter(a=>a.uid===uid);
+    const bestOf=(lvl)=>{ const at=mine.filter(a=>a.level===lvl); if(!at.length) return '—';
+      const best=at.reduce((b,a)=>a.score>b.score?a:b, at[0]); return `${best.score}/${best.attempted} (${best.accuracy}%)`; };
+    const last=mine.slice().sort((a,b)=>(b.submittedAt?.seconds||0)-(a.submittedAt?.seconds||0))[0];
+    const lastStr = last && last.submittedAt?.seconds ? new Date(last.submittedAt.seconds*1000).toLocaleDateString() : '—';
+    tbody.appendChild(el(`<tr><td>${esc(S.profiles[uid].displayName||uid)}</td><td>${esc(bestOf('easy'))}</td><td>${esc(bestOf('medium'))}</td><td>${esc(bestOf('hard'))}</td><td>${mine.length}</td><td>${esc(lastStr)}</td></tr>`));
+  });
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+  wrap.appendChild(tableWrap);
+
+  if(S.ttAttempts.length){
+    wrap.appendChild(el('<h3 style="font-family:Fredoka,sans-serif;margin:20px 0 8px;">Recent activity</h3>'));
+    const recentWrap=el('<div class="mmc-ledger-wrap"></div>');
+    const rTable=el('<table class="mmc-ledger"><thead><tr><th>Date</th><th>Student</th><th>Level</th><th>Score</th><th>Accuracy</th></tr></thead><tbody></tbody></table>');
+    const rBody=rTable.querySelector('tbody');
+    S.ttAttempts.slice().sort((a,b)=>(b.submittedAt?.seconds||0)-(a.submittedAt?.seconds||0)).slice(0,40).forEach(a=>{
+      const date=a.submittedAt?.seconds? new Date(a.submittedAt.seconds*1000).toLocaleString() : '—';
+      const name=(S.profiles[a.uid]&&S.profiles[a.uid].displayName)||a.uid;
+      rBody.appendChild(el(`<tr><td>${esc(date)}</td><td>${esc(name)}</td><td>${esc(a.level)}</td><td>${a.score}/${a.attempted}</td><td>${a.accuracy}%</td></tr>`));
+    });
+    rTable.appendChild(rBody);
+    recentWrap.appendChild(rTable);
+    wrap.appendChild(recentWrap);
+  }
+  return wrap;
+}
+
+function exportTTCSV(studentUids){
+  const header=['Student','Best Easy','Best Medium','Best Hard','Total attempts'];
+  const rows=[header];
+  studentUids.forEach(uid=>{
+    const mine=S.ttAttempts.filter(a=>a.uid===uid);
+    const bestOf=(lvl)=>{ const at=mine.filter(a=>a.level===lvl); if(!at.length) return '';
+      const best=at.reduce((b,a)=>a.score>b.score?a:b, at[0]); return `${best.score}/${best.attempted} (${best.accuracy}%)`; };
+    rows.push([S.profiles[uid].displayName||uid, bestOf('easy'), bestOf('medium'), bestOf('hard'), mine.length]);
+  });
+  const csv=rows.map(r=>r.map(c=>{ const s=String(c); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }).join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download='timetable-challenge-results.csv';
   document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }
 
