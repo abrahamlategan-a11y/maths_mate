@@ -484,9 +484,34 @@ const S = {
   activeWeekId:null, quiz:{}, toast:null,
   bulkCreating:false, bulkProgress:null, bulkResults:null, bulkNamesText:'', bulkPassword:'',
   studentTab:'weekly', ttAttempts:[], tt:null,
+  liveGames:[], liveParticipants:[], liveGenForm:{level:'easy'},
+  myLive:null, // {gameId, joined, answering, currentQ, qIndex, timeLeft, score, attempted}
 };
 let unsubs = [];
-function clearSubs(){ unsubs.forEach(u=>{ try{u();}catch(e){} }); unsubs=[]; }
+let liveParticipantsUnsub = null, liveParticipantsRoomId = null;
+function clearSubs(){
+  unsubs.forEach(u=>{ try{u();}catch(e){} }); unsubs=[];
+  if(liveParticipantsUnsub){ try{liveParticipantsUnsub();}catch(e){} liveParticipantsUnsub=null; liveParticipantsRoomId=null; }
+}
+function currentLiveRoom(){
+  if(!S.liveGames || !S.liveGames.length) return null;
+  const active = S.liveGames.filter(g=>g.status==='lobby'||g.status==='active');
+  if(active.length) return active.slice().sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0))[0];
+  const ended = S.liveGames.filter(g=>g.status==='ended').slice().sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+  return ended[0] || null;
+}
+function ensureParticipantsSub(gameId){
+  if(!gameId){
+    if(liveParticipantsUnsub){ liveParticipantsUnsub(); liveParticipantsUnsub=null; }
+    liveParticipantsRoomId=null; S.liveParticipants=[]; return;
+  }
+  if(liveParticipantsRoomId===gameId) return;
+  if(liveParticipantsUnsub) liveParticipantsUnsub();
+  liveParticipantsRoomId=gameId;
+  liveParticipantsUnsub = onSnapshot(collection(db,'liveGames',gameId,'participants'), snap=>{
+    S.liveParticipants=snap.docs.map(d=>({id:d.id,...d.data()})); render();
+  }, ()=>{});
+}
 
 function el(html){ const t=document.createElement('template'); t.innerHTML=html.trim(); return t.content.firstElementChild; }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -537,6 +562,9 @@ function subscribeData(){
     unsubs.push(onSnapshot(query(collection(db,'results'), where('teacherUid','==',S.user.uid)), snap=>{ S.results=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, ()=>{}));
     unsubs.push(onSnapshot(query(collection(db,'profiles'), where('teacherUid','==',S.user.uid)), snap=>{ S.profiles={}; snap.docs.forEach(d=>S.profiles[d.id]=d.data()); render(); }, ()=>{}));
     unsubs.push(onSnapshot(query(collection(db,'ttAttempts'), where('teacherUid','==',S.user.uid)), snap=>{ S.ttAttempts=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, ()=>{}));
+    unsubs.push(onSnapshot(query(collection(db,'liveGames'), where('teacherUid','==',S.user.uid)), snap=>{
+      S.liveGames=snap.docs.map(d=>({id:d.id,...d.data()})); ensureParticipantsSub(currentLiveRoom()?.id||null); render();
+    }, ()=>{}));
   } else {
     unsubs.push(onSnapshot(query(collection(db,'weeks'), where('status','==','published'), where('teacherUid','==',(S.profile&&S.profile.teacherUid)||'__none__')), snap=>{
       S.weeks=snap.docs.map(d=>({id:d.id,...d.data()})); render();
@@ -546,6 +574,9 @@ function subscribeData(){
     }, ()=>{}));
     unsubs.push(onSnapshot(query(collection(db,'ttAttempts'), where('uid','==',S.user.uid)), snap=>{
       S.ttAttempts=snap.docs.map(d=>({id:d.id,...d.data()})); render();
+    }, ()=>{}));
+    unsubs.push(onSnapshot(query(collection(db,'liveGames'), where('teacherUid','==',(S.profile&&S.profile.teacherUid)||'__none__')), snap=>{
+      S.liveGames=snap.docs.map(d=>({id:d.id,...d.data()})); ensureParticipantsSub(currentLiveRoom()?.id||null); render();
     }, ()=>{}));
   }
 }
@@ -566,6 +597,8 @@ function render(){
   root.appendChild(body);
   const ttInput=document.getElementById('mmc-tt-input');
   if(ttInput) ttInput.focus();
+  const liveInput=document.getElementById('mmc-live-input');
+  if(liveInput) liveInput.focus();
 }
 
 function renderHead(){
@@ -624,14 +657,15 @@ function renderAuth(){
 // ================= TEACHER =================
 function renderTeacher(){
   const wrap=el('<div></div>');
-  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-t="weeks">This week's set</button><button class="mmc-tab" data-t="ledger">Gradebook</button><button class="mmc-tab" data-t="students">Students</button><button class="mmc-tab" data-t="timetable">Timetable</button></div>`);
+  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-t="weeks">This week's set</button><button class="mmc-tab" data-t="ledger">Gradebook</button><button class="mmc-tab" data-t="students">Students</button><button class="mmc-tab" data-t="timetable">Timetable</button><button class="mmc-tab" data-t="live">🔴 Live Game</button></div>`);
   tabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.t===S.teacherTab) b.classList.add('active');
     b.onclick=()=>{ S.teacherTab=b.dataset.t; render(); }; });
   wrap.appendChild(tabs);
   wrap.appendChild(
     S.teacherTab==='weeks' ? renderTeacherWeeks() :
     S.teacherTab==='ledger' ? renderLedger() :
-    S.teacherTab==='students' ? renderStudentsTab() : renderTeacherTimetable()
+    S.teacherTab==='students' ? renderStudentsTab() :
+    S.teacherTab==='timetable' ? renderTeacherTimetable() : renderTeacherLiveGame()
   );
   return wrap;
 }
@@ -1006,12 +1040,14 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
 function renderStudent(){
   if(S.activeWeekId){ const week=S.weeks.find(w=>w.id===S.activeWeekId); if(week) return renderQuizTaking(week); S.activeWeekId=null; }
   if(S.tt && S.tt.active) return renderTTChallenge();
+  syncMyLiveSession();
+  if(S.myLive && S.myLive.answering) return renderMyLiveSession();
   const wrap=el('<div></div>');
-  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-st="weekly">Weekly Quiz</button><button class="mmc-tab" data-st="timetable">Timetable Challenge</button></div>`);
+  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-st="weekly">Weekly Quiz</button><button class="mmc-tab" data-st="timetable">Timetable Challenge</button><button class="mmc-tab" data-st="live">🔴 Live Game</button></div>`);
   tabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.st===S.studentTab) b.classList.add('active');
     b.onclick=()=>{ S.studentTab=b.dataset.st; render(); }; });
   wrap.appendChild(tabs);
-  wrap.appendChild(S.studentTab==='weekly' ? renderWeeklyPassport() : renderTimetableTab());
+  wrap.appendChild(S.studentTab==='weekly' ? renderWeeklyPassport() : S.studentTab==='timetable' ? renderTimetableTab() : renderStudentLiveGame());
   return wrap;
 }
 
@@ -1154,6 +1190,247 @@ function renderTTChallenge(){
   input.addEventListener('keydown', e=>{ if(e.key==='Enter') go(); });
   wrap.appendChild(qbox);
   return wrap;
+}
+
+// ---------- Live Game (shared helpers) ----------
+function liveTimeLeft(room){
+  if(!room.startedAt || !room.startedAt.seconds) return room.durationSec||300;
+  const elapsed = (Date.now()/1000) - room.startedAt.seconds;
+  return Math.max(0, Math.round((room.durationSec||300) - elapsed));
+}
+function renderLiveLeaderboardCard(title, room, isFinal){
+  const card=el(`<div class="mmc-card"><h3>${esc(title)}</h3></div>`);
+  const sorted=S.liveParticipants.slice().sort((a,b)=>(b.score||0)-(a.score||0));
+  if(sorted.length===0){ card.appendChild(el('<div class="meta">No players yet.</div>')); return card; }
+  const medal=(i)=> i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}.`;
+  sorted.forEach((p,i)=>{
+    card.appendChild(el(`
+      <div class="mmc-row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--paper-line);">
+        <div>${medal(i)} ${esc(p.name)}</div>
+        <div class="mmc-cellscore">${p.score||0} correct</div>
+      </div>
+    `));
+  });
+  return card;
+}
+
+// ---------- Live Game (teacher) ----------
+let teacherLiveTimerHandle=null, teacherLiveTimerRoomId=null;
+function startLiveTeacherTimer(room){
+  if(teacherLiveTimerRoomId===room.id && teacherLiveTimerHandle) return;
+  if(teacherLiveTimerHandle) clearInterval(teacherLiveTimerHandle);
+  teacherLiveTimerRoomId=room.id;
+  teacherLiveTimerHandle=setInterval(async ()=>{
+    const r=currentLiveRoom();
+    if(!r || r.id!==room.id || r.status!=='active'){ clearInterval(teacherLiveTimerHandle); teacherLiveTimerHandle=null; return; }
+    const left=liveTimeLeft(r);
+    const timerEl=document.getElementById('mmc-live-timer');
+    if(timerEl) timerEl.textContent=formatMMSS(left);
+    if(left<=0){
+      clearInterval(teacherLiveTimerHandle); teacherLiveTimerHandle=null;
+      try{ await updateDoc(doc(db,'liveGames',r.id), {status:'ended'}); }catch(e){}
+    }
+  },1000);
+}
+function renderTeacherLiveGame(){
+  const wrap=el('<div></div>');
+  const room=currentLiveRoom();
+
+  if(!room || room.status==='ended'){
+    if(room && room.status==='ended') wrap.appendChild(renderLiveLeaderboardCard('Final leaderboard', room, true));
+    const form=el(`
+      <div class="mmc-card">
+        <h3>Start a Live Game</h3>
+        <div class="meta">Students join a lobby, then everyone's 5-minute timer starts together with a live leaderboard.</div>
+        <div class="mmc-field" style="max-width:220px;"><label>Level</label>
+          <select id="mmc-live-level">${['easy','medium','hard'].map(l=>`<option value="${l}" ${S.liveGenForm.level===l?'selected':''}>${l[0].toUpperCase()+l.slice(1)}</option>`).join('')}</select>
+        </div>
+        <button class="mmc-btn gold" id="mmc-live-create">🔴 Create Room</button>
+      </div>
+    `);
+    form.querySelector('#mmc-live-create').onclick=async ()=>{
+      const level=form.querySelector('#mmc-live-level').value; S.liveGenForm.level=level;
+      try{ await addDoc(collection(db,'liveGames'), { teacherUid:S.user.uid, level, status:'lobby', createdAt:serverTimestamp(), durationSec:300 }); }
+      catch(e){ S.toast='Could not create the room — check your connection.'; render(); }
+    };
+    wrap.appendChild(form);
+    return wrap;
+  }
+
+  if(room.status==='lobby'){
+    const card=el(`
+      <div class="mmc-card">
+        <h3>🔴 Room open — ${esc(room.level)} level</h3>
+        <div class="meta">Students see a Join button now. Start whenever you're ready — everyone's timer begins at the same moment.</div>
+        <div class="meta" style="font-weight:800;color:var(--ink);">${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} waiting</div>
+        <div class="mmc-row" style="margin-top:8px;">
+          <button class="mmc-btn gold" id="mmc-live-start">▶ Start Game</button>
+          <button class="mmc-btn danger sm" id="mmc-live-cancel">Cancel room</button>
+        </div>
+      </div>
+    `);
+    card.querySelector('#mmc-live-start').onclick=async ()=>{
+      try{ await updateDoc(doc(db,'liveGames',room.id), {status:'active', startedAt:serverTimestamp()}); }
+      catch(e){ S.toast='Could not start — check your connection.'; render(); }
+    };
+    card.querySelector('#mmc-live-cancel').onclick=async ()=>{
+      try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended'}); }
+      catch(e){ S.toast='Could not cancel — check your connection.'; render(); }
+    };
+    wrap.appendChild(card);
+    if(S.liveParticipants.length){
+      const list=el('<div class="mmc-card"></div>');
+      S.liveParticipants.slice().sort((a,b)=>(a.joinedAt?.seconds||0)-(b.joinedAt?.seconds||0)).forEach(p=>{
+        list.appendChild(el(`<div style="padding:4px 0;">🙋 ${esc(p.name)}</div>`));
+      });
+      wrap.appendChild(list);
+    }
+    return wrap;
+  }
+
+  if(room.status==='active'){
+    const head=el(`
+      <div class="mmc-card">
+        <div class="mmc-row" style="justify-content:space-between;">
+          <div><h3 style="text-transform:capitalize;">${esc(room.level)} — Live!</h3><div class="meta">${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'}</div></div>
+          <div id="mmc-live-timer" style="font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:700;color:var(--purple-deep);">${room.startedAt? formatMMSS(liveTimeLeft(room)) : 'Starting…'}</div>
+        </div>
+        <button class="mmc-btn danger sm" id="mmc-live-end" style="margin-top:8px;">End now</button>
+      </div>
+    `);
+    head.querySelector('#mmc-live-end').onclick=async ()=>{
+      try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended'}); }catch(e){ S.toast='Could not end — check your connection.'; render(); }
+    };
+    wrap.appendChild(head);
+    wrap.appendChild(renderLiveLeaderboardCard('Live leaderboard', room, false));
+    startLiveTeacherTimer(room);
+    return wrap;
+  }
+  return wrap;
+}
+
+// ---------- Live Game (student) ----------
+function syncMyLiveSession(){
+  const room=currentLiveRoom();
+  if(!room){ if(S.myLive){ if(S.myLive.timerHandle) clearInterval(S.myLive.timerHandle); S.myLive=null; } return; }
+  if(room.status==='ended'){
+    if(S.myLive && S.myLive.gameId===room.id){ if(S.myLive.timerHandle) clearInterval(S.myLive.timerHandle); S.myLive=null; }
+    return;
+  }
+  if(room.status==='lobby') return;
+  if(room.status==='active'){
+    const joined = S.liveParticipants.some(p=>p.id===S.user.uid);
+    if(!joined) return;
+    if(S.myLive && S.myLive.gameId===room.id) return;
+    if(S.myLive && S.myLive.timerHandle) clearInterval(S.myLive.timerHandle);
+    S.myLive = { gameId:room.id, level:room.level, answering:true, qIndex:0, currentQ:genTTQuestion(room.level,0), score:0, attempted:0, timerHandle:null };
+    startMyLiveTimer();
+  }
+}
+function startMyLiveTimer(){
+  S.myLive.timerHandle=setInterval(()=>{
+    const r=currentLiveRoom();
+    if(!r || r.id!==S.myLive.gameId){ clearInterval(S.myLive.timerHandle); return; }
+    const left=liveTimeLeft(r);
+    const timerEl=document.getElementById('mmc-live-my-timer');
+    if(timerEl) timerEl.textContent=formatMMSS(left);
+    if(left<=0){ clearInterval(S.myLive.timerHandle); S.myLive.answering=false; render(); }
+  },1000);
+}
+async function submitMyLiveAnswer(given){
+  if(!S.myLive || !S.myLive.answering) return;
+  const correct = normalize(given)===normalize(String(S.myLive.currentQ.answer));
+  S.myLive.attempted++; if(correct) S.myLive.score++;
+  S.myLive.qIndex++; S.myLive.currentQ=genTTQuestion(S.myLive.level, S.myLive.qIndex);
+  render();
+  try{ await updateDoc(doc(db,'liveGames',S.myLive.gameId,'participants',S.user.uid), {score:S.myLive.score, attempted:S.myLive.attempted}); }catch(e){}
+}
+function renderMyLiveSession(){
+  const wrap=el('<div></div>');
+  const room=currentLiveRoom();
+  const head=el(`
+    <div class="mmc-card">
+      <div class="mmc-row" style="justify-content:space-between;">
+        <div><h3 style="text-transform:capitalize;">${esc(S.myLive.level)} — Live!</h3><div class="meta">Your score: ${S.myLive.score} / ${S.myLive.attempted}</div></div>
+        <div id="mmc-live-my-timer" style="font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:700;color:var(--purple-deep);">${room? formatMMSS(liveTimeLeft(room)) : ''}</div>
+      </div>
+    </div>
+  `);
+  wrap.appendChild(head);
+  const qbox=el(`
+    <div class="mmc-card" style="text-align:center;">
+      <div style="font-family:'Baloo 2',sans-serif;font-size:36px;font-weight:700;margin-bottom:16px;">${esc(S.myLive.currentQ.prompt)} = ?</div>
+      <div class="mmc-row" style="justify-content:center;">
+        <input type="text" id="mmc-live-input" autocomplete="off" style="width:120px;text-align:center;font-size:22px;padding:10px;border-radius:10px;border:2px solid var(--paper-line);">
+        <button class="mmc-btn gold" id="mmc-live-submit">Go</button>
+      </div>
+    </div>
+  `);
+  const input=qbox.querySelector('#mmc-live-input');
+  const go=()=>{ if(!S.myLive.answering) return; const v=input.value; input.value=''; submitMyLiveAnswer(v); };
+  qbox.querySelector('#mmc-live-submit').onclick=go;
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter') go(); });
+  wrap.appendChild(qbox);
+  wrap.appendChild(renderLiveLeaderboardCard('Live leaderboard', room||{}, false));
+  return wrap;
+}
+function renderStudentLiveGame(){
+  const wrap=el('<div></div>');
+  const room=currentLiveRoom();
+  if(!room){
+    wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">🔴</div>No live game right now — ask your teacher to start one!</div>'));
+    return wrap;
+  }
+  const joined = S.liveParticipants.some(p=>p.id===S.user.uid);
+  if(room.status==='lobby'){
+    if(!joined){
+      const card=el(`
+        <div class="mmc-card">
+          <h3>🔴 ${esc(room.level)} game starting soon!</h3>
+          <div class="meta">${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} waiting</div>
+          <button class="mmc-btn gold" id="mmc-live-join">Join ▶</button>
+        </div>
+      `);
+      card.querySelector('#mmc-live-join').onclick=()=>joinLiveGame(room.id);
+      wrap.appendChild(card);
+    } else {
+      wrap.appendChild(el(`
+        <div class="mmc-card">
+          <h3>You're in! ✓</h3>
+          <div class="meta">Waiting for your teacher to start… ${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} ready.</div>
+        </div>
+      `));
+    }
+    return wrap;
+  }
+  if(room.status==='active'){
+    if(!joined){
+      wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">🔴</div>This game already started — catch the next one!</div>'));
+      wrap.appendChild(renderLiveLeaderboardCard('Live leaderboard', room, false));
+      return wrap;
+    }
+    if(S.myLive && S.myLive.gameId===room.id && !S.myLive.answering){
+      wrap.appendChild(el(`<div class="mmc-card"><h3>⏱ Time's up!</h3><div class="meta">Waiting for the final leaderboard…</div></div>`));
+      wrap.appendChild(renderLiveLeaderboardCard('Live leaderboard', room, false));
+      return wrap;
+    }
+    wrap.appendChild(el('<div class="mmc-empty">Loading your game…</div>'));
+    return wrap;
+  }
+  if(room.status==='ended'){
+    const mine = S.liveParticipants.find(p=>p.id===S.user.uid);
+    wrap.appendChild(el(`<div class="mmc-card"><h3>Game over!</h3><div class="meta">${mine? `You scored ${mine.score} correct.` : 'Final results are in.'}</div></div>`));
+    wrap.appendChild(renderLiveLeaderboardCard('Final leaderboard', room, true));
+    return wrap;
+  }
+  return wrap;
+}
+async function joinLiveGame(gameId){
+  try{
+    await setDoc(doc(db,'liveGames',gameId,'participants',S.user.uid), {
+      uid:S.user.uid, name:S.profile? S.profile.displayName : S.user.email, score:0, attempted:0, joinedAt:serverTimestamp()
+    });
+  }catch(e){ S.toast='Could not join — check your connection.'; render(); }
 }
 
 function renderQuizTaking(week){
