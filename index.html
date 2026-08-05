@@ -411,6 +411,20 @@ function gradeQuestion(q, given){
   return checkAnswer(given, q.answer);
 }
 
+// ---------- Timetable Challenge ----------
+const TT_RANGES = { easy:[1,10], medium:[1,12], hard:[4,15] };
+function genTTQuestion(level, idx){
+  const [lo,hi] = TT_RANGES[level];
+  const isDivision = level!=='easy' && idx%2===1;
+  if(!isDivision){
+    const a=randInt(lo,hi), b=randInt(lo,hi);
+    return { prompt:`${a} × ${b}`, answer:a*b };
+  }
+  const divisor=randInt(lo,hi), quotient=randInt(lo,hi); const dividend=divisor*quotient;
+  return { prompt:`${dividend} ÷ ${divisor}`, answer:quotient };
+}
+function formatMMSS(s){ const m=Math.floor(Math.max(0,s)/60), sec=Math.max(0,s)%60; return `${m}:${String(sec).padStart(2,'0')}`; }
+
 const STUDENT_DOMAIN = 'students.maths-mate.local';
 const PASSWORD_WORDS = ['donkey','tiger','comet','maple','pepper','biscuit','rocket','puddle','cactus','wizard','dragon','cookie','thunder','sparkle','pickle','walrus','falcon','marble','goblin','turnip','otter','panda','muffin','breeze','coral','jungle','meadow','ripple','sunset','violet'];
 function genUsername(first,last,taken){
@@ -435,6 +449,7 @@ const S = {
   genForm:{ label:'', difficulty:'easy' },
   activeWeekId:null, quiz:{}, toast:null,
   bulkCreating:false, bulkProgress:null, bulkResults:null, bulkNamesText:'', bulkPassword:'',
+  studentTab:'weekly', ttAttempts:[], tt:null,
 };
 let unsubs = [];
 function clearSubs(){ unsubs.forEach(u=>{ try{u();}catch(e){} }); unsubs=[]; }
@@ -494,6 +509,9 @@ function subscribeData(){
     unsubs.push(onSnapshot(query(collection(db,'results'), where('uid','==',S.user.uid)), snap=>{
       S.results=snap.docs.map(d=>({id:d.id,...d.data()})); render();
     }, ()=>{}));
+    unsubs.push(onSnapshot(query(collection(db,'ttAttempts'), where('uid','==',S.user.uid)), snap=>{
+      S.ttAttempts=snap.docs.map(d=>({id:d.id,...d.data()})); render();
+    }, ()=>{}));
   }
 }
 
@@ -511,6 +529,8 @@ function render(){
   else if(S.isTeacher){ body.appendChild(renderTeacher()); }
   else { body.appendChild(renderStudent()); }
   root.appendChild(body);
+  const ttInput=document.getElementById('mmc-tt-input');
+  if(ttInput) ttInput.focus();
 }
 
 function renderHead(){
@@ -886,6 +906,17 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
 // ================= STUDENT =================
 function renderStudent(){
   if(S.activeWeekId){ const week=S.weeks.find(w=>w.id===S.activeWeekId); if(week) return renderQuizTaking(week); S.activeWeekId=null; }
+  if(S.tt && S.tt.active) return renderTTChallenge();
+  const wrap=el('<div></div>');
+  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-st="weekly">Weekly Quiz</button><button class="mmc-tab" data-st="timetable">Timetable Challenge</button></div>`);
+  tabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.st===S.studentTab) b.classList.add('active');
+    b.onclick=()=>{ S.studentTab=b.dataset.st; render(); }; });
+  wrap.appendChild(tabs);
+  wrap.appendChild(S.studentTab==='weekly' ? renderWeeklyPassport() : renderTimetableTab());
+  return wrap;
+}
+
+function renderWeeklyPassport(){
   const wrap=el('<div></div>');
   if(S.weeks.length===0){
     wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">📭</div>No quizzes published yet — check back soon!</div>'));
@@ -910,6 +941,119 @@ function renderStudent(){
     }
     wrap.appendChild(card);
   });
+  return wrap;
+}
+
+// ---------- Timetable Challenge UI ----------
+function bestTTScore(level){
+  const attempts=S.ttAttempts.filter(a=>a.level===level);
+  if(attempts.length===0) return null;
+  return attempts.reduce((best,a)=> a.score>best.score? a : best, attempts[0]);
+}
+function renderTimetableTab(){
+  const wrap=el('<div></div>');
+  const levels=[{k:'easy',label:'Easy',desc:'1–10 times tables'},{k:'medium',label:'Medium',desc:'1–12, multiply & divide'},{k:'hard',label:'Hard',desc:'4–15, multiply & divide'}];
+  const cardsRow=el('<div class="mmc-row"></div>');
+  levels.forEach(lv=>{
+    const best=bestTTScore(lv.k);
+    const card=el(`
+      <div class="mmc-card" style="flex:1;min-width:150px;">
+        <h3>${lv.label}</h3>
+        <div class="meta">${lv.desc}</div>
+        <div class="meta" style="font-weight:700;color:var(--ink);">Best: ${best? `${best.score} correct (${best.accuracy}%)` : 'Not attempted yet'}</div>
+        <button class="mmc-btn gold sm" data-lv="${lv.k}">Start ▶</button>
+      </div>
+    `);
+    card.querySelector('button').onclick=()=>startTTChallenge(lv.k);
+    cardsRow.appendChild(card);
+  });
+  wrap.appendChild(el('<h3 style="font-family:Fredoka,sans-serif;margin:4px 0 12px;">Timetable Challenge</h3>'));
+  wrap.appendChild(el('<div class="meta" style="margin-bottom:10px;">5 minutes on the clock — answer as many as you can!</div>'));
+  wrap.appendChild(cardsRow);
+
+  if(S.tt && S.tt.finished && S.tt.lastResult){
+    const r=S.tt.lastResult;
+    wrap.appendChild(el(`
+      <div class="mmc-card" style="margin-top:16px;">
+        <h3>Last attempt: ${r.score} correct out of ${r.attempted} (${r.accuracy}%) — ${r.level}</h3>
+      </div>
+    `));
+  }
+
+  if(S.ttAttempts.length){
+    wrap.appendChild(el('<h3 style="font-family:Fredoka,sans-serif;margin:18px 0 8px;">Your attempt history</h3>'));
+    const tableWrap=el('<div class="mmc-ledger-wrap"></div>');
+    const table=el('<table class="mmc-ledger"><thead><tr><th>Date</th><th>Level</th><th>Score</th><th>Accuracy</th></tr></thead><tbody></tbody></table>');
+    const tbody=table.querySelector('tbody');
+    S.ttAttempts.slice().sort((a,b)=>(b.submittedAt?.seconds||0)-(a.submittedAt?.seconds||0)).slice(0,25).forEach(a=>{
+      const date=a.submittedAt?.seconds? new Date(a.submittedAt.seconds*1000).toLocaleDateString() : '—';
+      tbody.appendChild(el(`<tr><td>${esc(date)}</td><td>${esc(a.level)}</td><td>${a.score}/${a.attempted}</td><td>${a.accuracy}%</td></tr>`));
+    });
+    tableWrap.appendChild(table);
+    wrap.appendChild(tableWrap);
+  }
+  return wrap;
+}
+
+function startTTChallenge(level){
+  S.tt = { active:true, finished:false, level, timeLeft:300, score:0, attempted:0, qIndex:0, currentQ:genTTQuestion(level,0), lastResult:null };
+  render();
+  startTTTimer();
+}
+function startTTTimer(){
+  if(S.tt.timerHandle) clearInterval(S.tt.timerHandle);
+  S.tt.timerHandle=setInterval(()=>{
+    if(!S.tt || !S.tt.active) return;
+    S.tt.timeLeft--;
+    const timerEl=document.getElementById('mmc-tt-timer');
+    if(timerEl) timerEl.textContent=formatMMSS(S.tt.timeLeft);
+    if(S.tt.timeLeft<=0){ clearInterval(S.tt.timerHandle); finishTTChallenge(); }
+  },1000);
+}
+function submitTTAnswer(given){
+  if(!S.tt || !S.tt.active) return;
+  const correct = normalize(given)===normalize(String(S.tt.currentQ.answer));
+  S.tt.attempted++;
+  if(correct) S.tt.score++;
+  S.tt.qIndex++;
+  S.tt.currentQ=genTTQuestion(S.tt.level, S.tt.qIndex);
+  render();
+}
+async function finishTTChallenge(){
+  const {level, score, attempted} = S.tt;
+  const accuracy = attempted? Math.round((score/attempted)*100) : 0;
+  S.tt.active=false; S.tt.finished=true; S.tt.lastResult={level,score,attempted,accuracy};
+  try{
+    await addDoc(collection(db,'ttAttempts'), { uid:S.user.uid, teacherUid:S.profile?S.profile.teacherUid:null, level, score, attempted, accuracy, submittedAt:serverTimestamp() });
+  }catch(e){ S.toast='Could not save this attempt — check your connection.'; }
+  render();
+}
+function renderTTChallenge(){
+  const wrap=el('<div></div>');
+  const t=S.tt;
+  const head=el(`
+    <div class="mmc-card">
+      <div class="mmc-row" style="justify-content:space-between;">
+        <div><h3 style="text-transform:capitalize;">${esc(t.level)} challenge</h3><div class="meta">Score: ${t.score} / ${t.attempted}</div></div>
+        <div id="mmc-tt-timer" style="font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:700;color:var(--sky-deep);">${formatMMSS(t.timeLeft)}</div>
+      </div>
+    </div>
+  `);
+  wrap.appendChild(head);
+  const qbox=el(`
+    <div class="mmc-card" style="text-align:center;">
+      <div style="font-family:'Fredoka',sans-serif;font-size:36px;font-weight:700;margin-bottom:16px;">${esc(t.currentQ.prompt)} = ?</div>
+      <div class="mmc-row" style="justify-content:center;">
+        <input type="text" id="mmc-tt-input" autocomplete="off" style="width:120px;text-align:center;font-size:22px;padding:10px;border-radius:8px;border:1.5px solid var(--paper-line);">
+        <button class="mmc-btn gold" id="mmc-tt-submit">Go</button>
+      </div>
+    </div>
+  `);
+  const input=qbox.querySelector('#mmc-tt-input');
+  const go=()=>{ const v=input.value; input.value=''; submitTTAnswer(v); };
+  qbox.querySelector('#mmc-tt-submit').onclick=go;
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter') go(); });
+  wrap.appendChild(qbox);
   return wrap;
 }
 
