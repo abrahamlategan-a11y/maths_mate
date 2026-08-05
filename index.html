@@ -117,18 +117,18 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 import {
   getFirestore, collection, doc, addDoc, setDoc, updateDoc, deleteDoc,
-  getDoc, onSnapshot, query, where, serverTimestamp
+  getDoc, getDocs, onSnapshot, query, where, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 
 // ===== PASTE YOUR FIREBASE CONFIG HERE (see SETUP-INSTRUCTIONS.md) =====
-   const firebaseConfig = {
-     apiKey: "AIzaSyCUZ2RBknvGQg8jqUOWSbQ5EYHBifPa3ts",
-     authDomain: "maths-mate.firebaseapp.com",
-     projectId: "maths-mate",
-     storageBucket: "maths-mate.firebasestorage.app",
-     messagingSenderId: "892177890885",
-     appId: "1:892177890885:web:760a6d2b8d517d3fde3874"
-   };
+const firebaseConfig = {
+  apiKey: "AIzaSyCUZ2RBknvGQg8jqUOWSbQ5EYHBifPa3ts",
+  authDomain: "maths-mate.firebaseapp.com",
+  projectId: "maths-mate",
+  storageBucket: "maths-mate.firebasestorage.app",
+  messagingSenderId: "892177890885",
+  appId: "1:892177890885:web:760a6d2b8d517d3fde3874"
+};
 // =========================================================================
 
 const configured = firebaseConfig.apiKey !== "PASTE_ME";
@@ -411,15 +411,30 @@ function gradeQuestion(q, given){
   return checkAnswer(given, q.answer);
 }
 
+const STUDENT_DOMAIN = 'students.maths-mate.local';
+const PASSWORD_WORDS = ['donkey','tiger','comet','maple','pepper','biscuit','rocket','puddle','cactus','wizard','dragon','cookie','thunder','sparkle','pickle','walrus','falcon','marble','goblin','turnip','otter','panda','muffin','breeze','coral','jungle','meadow','ripple','sunset','violet'];
+function genUsername(first,last,taken){
+  const firstClean=String(first||'').replace(/[^a-zA-Z]/g,'');
+  const lastInitial=String(last||'').replace(/[^a-zA-Z]/g,'').charAt(0).toUpperCase();
+  const base=(firstClean.charAt(0).toUpperCase()+firstClean.slice(1)) + lastInitial;
+  let candidate=base, n=2;
+  while(taken.has(candidate.toLowerCase())){ candidate=base+n; n++; }
+  taken.add(candidate.toLowerCase());
+  return candidate;
+}
+function genPassword(){ return pick(PASSWORD_WORDS)+randInt(10,99); }
+function usernameToEmail(u){ return `${u.toLowerCase()}@${STUDENT_DOMAIN}`; }
+
 // ---------- State ----------
 const S = {
   loading:true, error:null,
   user:null, isTeacher:false, profile:null, teacherEmails:[],
-  authMode:'login', authError:null,
+  authMode:'login', authError:null, showSignup:false,
   weeks:[], results:[], profiles:{},
   teacherTab:'weeks', editingDraftId:null,
   genForm:{ label:'', difficulty:'easy' },
   activeWeekId:null, quiz:{}, toast:null,
+  bulkCreating:false, bulkProgress:null, bulkResults:null, bulkNamesText:'', bulkPassword:'',
 };
 let unsubs = [];
 function clearSubs(){ unsubs.forEach(u=>{ try{u();}catch(e){} }); unsubs=[]; }
@@ -434,44 +449,46 @@ function tierFor(score,total){ const pct = total? score/total : 0;
 function stampHTML(score,total){ const t=tierFor(score,total);
   return `<div class="mmc-stamp ${t.tone}"><span class="score">${score}/${total}</span><span class="msg">${esc(t.msg)}</span></div>`; }
 function friendlyAuthError(code){
-  const map={ 'auth/email-already-in-use':'That email already has an account — try logging in instead.',
-    'auth/invalid-email':'That doesn\'t look like a valid email address.',
+  const map={ 'auth/email-already-in-use':'That username is already taken — try logging in instead.',
+    'auth/invalid-email':'That doesn\'t look like a valid username or email.',
     'auth/weak-password':'Password should be at least 6 characters.',
-    'auth/user-not-found':'Incorrect email or password.', 'auth/wrong-password':'Incorrect email or password.',
-    'auth/invalid-credential':'Incorrect email or password.', 'auth/missing-password':'Please enter a password.' };
+    'auth/user-not-found':'Incorrect username/email or password.', 'auth/wrong-password':'Incorrect username/email or password.',
+    'auth/invalid-credential':'Incorrect username/email or password.', 'auth/missing-password':'Please enter a password.' };
   return map[code] || 'Something went wrong — please try again.';
+}
+
+async function handleAuthChange(user){
+  clearSubs();
+  S.user=user; S.authError=null;
+  if(user){
+    try{
+      const teachersSnap = await getDoc(doc(db,'config','teachers'));
+      S.teacherEmails = teachersSnap.exists() ? (teachersSnap.data().emails||[]) : [];
+      S.isTeacher = S.teacherEmails.map(e=>String(e).toLowerCase()).includes((user.email||'').toLowerCase());
+      const profSnap = await getDoc(doc(db,'profiles',user.uid));
+      S.profile = profSnap.exists() ? profSnap.data() : { displayName:user.displayName||user.email, email:user.email };
+    }catch(e){ S.error='Could not load your account details.'; }
+    subscribeData();
+  } else {
+    S.isTeacher=false; S.profile=null; S.weeks=[]; S.results=[]; S.profiles={};
+  }
+  S.loading=false; render();
 }
 
 if(!configured){
   S.loading=false; S.error='This page isn\'t connected to Firebase yet — follow SETUP-INSTRUCTIONS.md and paste your config near the top of the script.';
   render();
 } else {
-  onAuthStateChanged(auth, async (user)=>{
-    clearSubs();
-    S.user=user; S.authError=null;
-    if(user){
-      try{
-        const teachersSnap = await getDoc(doc(db,'config','teachers'));
-        S.teacherEmails = teachersSnap.exists() ? (teachersSnap.data().emails||[]) : [];
-        S.isTeacher = S.teacherEmails.map(e=>String(e).toLowerCase()).includes((user.email||'').toLowerCase());
-        const profSnap = await getDoc(doc(db,'profiles',user.uid));
-        S.profile = profSnap.exists() ? profSnap.data() : { displayName:user.displayName||user.email, email:user.email };
-      }catch(e){ S.error='Could not load your account details.'; }
-      subscribeData();
-    } else {
-      S.isTeacher=false; S.profile=null; S.weeks=[]; S.results=[]; S.profiles={};
-    }
-    S.loading=false; render();
-  });
+  onAuthStateChanged(auth, (user)=>{ if(S.bulkCreating) return; handleAuthChange(user); });
 }
 
 function subscribeData(){
   if(S.isTeacher){
-    unsubs.push(onSnapshot(collection(db,'weeks'), snap=>{ S.weeks=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, ()=>{}));
-    unsubs.push(onSnapshot(collection(db,'results'), snap=>{ S.results=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, ()=>{}));
-    unsubs.push(onSnapshot(collection(db,'profiles'), snap=>{ S.profiles={}; snap.docs.forEach(d=>S.profiles[d.id]=d.data()); render(); }, ()=>{}));
+    unsubs.push(onSnapshot(query(collection(db,'weeks'), where('teacherUid','==',S.user.uid)), snap=>{ S.weeks=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, ()=>{}));
+    unsubs.push(onSnapshot(query(collection(db,'results'), where('teacherUid','==',S.user.uid)), snap=>{ S.results=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, ()=>{}));
+    unsubs.push(onSnapshot(query(collection(db,'profiles'), where('teacherUid','==',S.user.uid)), snap=>{ S.profiles={}; snap.docs.forEach(d=>S.profiles[d.id]=d.data()); render(); }, ()=>{}));
   } else {
-    unsubs.push(onSnapshot(query(collection(db,'weeks'), where('status','==','published')), snap=>{
+    unsubs.push(onSnapshot(query(collection(db,'weeks'), where('status','==','published'), where('teacherUid','==',(S.profile&&S.profile.teacherUid)||'__none__')), snap=>{
       S.weeks=snap.docs.map(d=>({id:d.id,...d.data()})); render();
     }, ()=>{}));
     unsubs.push(onSnapshot(query(collection(db,'results'), where('uid','==',S.user.uid)), snap=>{
@@ -511,50 +528,52 @@ function renderHead(){
 
 function renderAuth(){
   const wrap=el('<div></div>');
-  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-m="login">Log in</button><button class="mmc-tab" data-m="signup">Sign up</button></div>`);
-  tabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.m===S.authMode) b.classList.add('active');
-    b.onclick=()=>{ S.authMode=b.dataset.m; S.authError=null; render(); }; });
-  wrap.appendChild(tabs);
+  const isSignup = S.showSignup;
 
-  const isSignup = S.authMode==='signup';
   const card=el(`
     <div class="mmc-card">
-      <h3>${isSignup? 'Create your account' : 'Welcome back'}</h3>
+      <h3>${isSignup? 'Set up a teacher account' : 'Log in'}</h3>
       ${S.authError? `<div class="mmc-autherr">${esc(S.authError)}</div>` : ''}
-      ${isSignup? `<div class="mmc-field"><label>Your name</label><input type="text" id="mmc-a-name" placeholder="e.g. Amara T."></div>` : ''}
-      <div class="mmc-field"><label>Email</label><input type="email" id="mmc-a-email" placeholder="you@example.com"></div>
-      <div class="mmc-field"><label>Password</label><input type="password" id="mmc-a-pass" placeholder="At least 6 characters"></div>
-      <button class="mmc-btn gold" id="mmc-a-go">${isSignup? 'Sign up' : 'Log in'}</button>
+      ${isSignup? `<div class="mmc-field"><label>Your name</label><input type="text" id="mmc-a-name" placeholder="e.g. Braam L."></div>` : ''}
+      <div class="mmc-field"><label>${isSignup? 'Your email' : 'Username (or teacher email)'}</label>
+        <input type="text" id="mmc-a-email" placeholder="${isSignup? 'you@example.com' : 'e.g. SusieM'}"></div>
+      <div class="mmc-field"><label>Password</label><input type="password" id="mmc-a-pass" placeholder="${isSignup? 'At least 6 characters' : 'Your password'}"></div>
+      <button class="mmc-btn gold" id="mmc-a-go">${isSignup? 'Create teacher account' : 'Log in'}</button>
     </div>
   `);
   card.querySelector('#mmc-a-go').onclick=async ()=>{
-    const email=card.querySelector('#mmc-a-email').value.trim();
+    const raw=card.querySelector('#mmc-a-email').value.trim();
     const pass=card.querySelector('#mmc-a-pass').value;
     const nameEl=card.querySelector('#mmc-a-name');
     const name=nameEl? nameEl.value.trim() : '';
-    if(!email || !pass || (isSignup && !name)){ S.authError='Please fill in every field.'; render(); return; }
+    if(!raw || !pass || (isSignup && !name)){ S.authError='Please fill in every field.'; render(); return; }
     try{
       if(isSignup){
-        const cred=await createUserWithEmailAndPassword(auth,email,pass);
+        const cred=await createUserWithEmailAndPassword(auth,raw,pass);
         await updateProfile(cred.user, {displayName:name});
-        await setDoc(doc(db,'profiles',cred.user.uid), {displayName:name, email});
+        await setDoc(doc(db,'profiles',cred.user.uid), {displayName:name, email:raw});
       } else {
+        const email = raw.includes('@') ? raw : usernameToEmail(raw);
         await signInWithEmailAndPassword(auth,email,pass);
       }
     }catch(e){ S.authError=friendlyAuthError(e.code); render(); }
   };
   wrap.appendChild(card);
+
+  const toggle=el(`<a href="#" style="display:inline-block;margin-top:4px;font-size:12.5px;color:var(--ink-soft);">${isSignup? '← back to log in' : "First time here as the teacher? Set up your account"}</a>`);
+  toggle.onclick=(e)=>{ e.preventDefault(); S.showSignup=!S.showSignup; S.authError=null; render(); };
+  wrap.appendChild(toggle);
   return wrap;
 }
 
 // ================= TEACHER =================
 function renderTeacher(){
   const wrap=el('<div></div>');
-  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-t="weeks">This week's set</button><button class="mmc-tab" data-t="ledger">Gradebook</button></div>`);
+  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-t="weeks">This week's set</button><button class="mmc-tab" data-t="ledger">Gradebook</button><button class="mmc-tab" data-t="students">Students</button></div>`);
   tabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.t===S.teacherTab) b.classList.add('active');
     b.onclick=()=>{ S.teacherTab=b.dataset.t; render(); }; });
   wrap.appendChild(tabs);
-  wrap.appendChild(S.teacherTab==='weeks' ? renderTeacherWeeks() : renderLedger());
+  wrap.appendChild(S.teacherTab==='weeks' ? renderTeacherWeeks() : S.teacherTab==='ledger' ? renderLedger() : renderStudentsTab());
   return wrap;
 }
 
@@ -736,6 +755,134 @@ function exportCSV(pubWeeks, studentUids){
   document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }
 
+// ================= STUDENTS (account creation) =================
+function renderStudentsTab(){
+  const wrap=el('<div></div>');
+
+  const migrateCard=el(`
+    <div class="mmc-card">
+      <div class="mmc-row" style="justify-content:space-between;">
+        <div><h3>Adopt pre-existing students</h3><div class="meta">One-off: pulls in any student accounts created before class isolation was added.</div></div>
+        <button class="mmc-btn ghost sm" id="mmc-migrate-btn">Run once</button>
+      </div>
+    </div>
+  `);
+  migrateCard.querySelector('#mmc-migrate-btn').onclick=async ()=>{
+    const btn=migrateCard.querySelector('#mmc-migrate-btn'); btn.disabled=true; btn.textContent='Working…';
+    try{
+      const snap=await getDocs(collection(db,'profiles'));
+      const legacy=snap.docs.filter(d=>!('teacherUid' in d.data()));
+      for(const d of legacy){ await updateDoc(doc(db,'profiles',d.id), {teacherUid:S.user.uid}); }
+      S.toast=`Adopted ${legacy.length} existing student${legacy.length===1?'':'s'} into your class.`;
+    }catch(e){ S.toast='Could not check for existing students — check your connection.'; }
+    render();
+  };
+  wrap.appendChild(migrateCard);
+
+  if(S.bulkResults){
+    const card=el(`
+      <div class="mmc-card">
+        <h3>Accounts created ✓</h3>
+        <div class="meta" style="color:var(--incorrect);font-weight:700;">Save or print this now — passwords can never be shown again after you leave this page.</div>
+        <div class="mmc-ledger-wrap"><table class="mmc-ledger"><thead><tr><th>Name</th><th>Username</th><th>Password</th><th>Status</th></tr></thead>
+          <tbody>${S.bulkResults.map(r=>`<tr><td>${esc(r.name)}</td><td><code class="mmc-code">${esc(r.username)}</code></td><td><code class="mmc-code">${esc(r.password||'—')}</code></td><td>${r.status==='ok'?'✓':'✗ '+esc(r.error||'failed')}</td></tr>`).join('')}</tbody>
+        </table></div>
+        <div class="mmc-row" style="margin-top:12px;">
+          <button class="mmc-btn gold" id="mmc-bulk-csv">⬇ Download credentials CSV</button>
+          <button class="mmc-btn ghost" id="mmc-bulk-done">Done</button>
+        </div>
+      </div>
+    `);
+    card.querySelector('#mmc-bulk-csv').onclick=()=>{
+      const rows=[['Name','Username','Password'], ...S.bulkResults.filter(r=>r.status==='ok').map(r=>[r.name,r.username,r.password])];
+      const csv=rows.map(r=>r.map(c=>{ const s=String(c); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }).join(',')).join('\n');
+      const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob);
+      const a=document.createElement('a'); a.href=url; a.download='student-logins.csv';
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    };
+    card.querySelector('#mmc-bulk-done').onclick=()=>{ S.bulkResults=null; S.bulkNamesText=''; render(); };
+    wrap.appendChild(card);
+    return wrap;
+  }
+
+  const form=el(`
+    <div class="mmc-card">
+      <h3>Add students from a class list</h3>
+      <div class="meta">One name per line, e.g. "Susie Miller". Each student gets a unique username (like SusieM) and a random password (like donkey56) — shown once, right after you create them.</div>
+      <div class="mmc-field"><label>Class list</label>
+        <textarea id="mmc-bulk-names" rows="8" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--paper-line);background:var(--paper);font-size:14px;" placeholder="Susie Miller
+Tom Nguyen
+Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
+      <div class="mmc-field"><label>Confirm your password</label>
+        <div class="meta">Needed briefly to keep switching back to your teacher account while each student account is created.</div>
+        <input type="password" id="mmc-bulk-pass" placeholder="Your password">
+      </div>
+      ${S.authError? `<div class="mmc-autherr">${esc(S.authError)}</div>` : ''}
+      <button class="mmc-btn gold" id="mmc-bulk-go" ${S.bulkCreating?'disabled':''}>${S.bulkCreating? `Creating… (${S.bulkProgress||''})` : '✨ Create student accounts'}</button>
+    </div>
+  `);
+  form.querySelector('#mmc-bulk-names').oninput=(e)=>{ S.bulkNamesText=e.target.value; };
+  form.querySelector('#mmc-bulk-go').onclick=async ()=>{
+    const namesText=form.querySelector('#mmc-bulk-names').value;
+    const teacherPass=form.querySelector('#mmc-bulk-pass').value;
+    const lines=namesText.split('\n').map(l=>l.trim()).filter(Boolean);
+    if(lines.length===0){ S.authError='Paste at least one name.'; render(); return; }
+    if(!teacherPass){ S.authError='Enter your password to continue.'; render(); return; }
+    S.authError=null;
+    const teacherEmail=S.user.email;
+    // Local uniqueness guard only prevents obvious clashes within this batch / your
+    // own class — usernames must be unique across every teacher's class too, and we
+    // can't read other teachers' students (by design), so real collisions are caught
+    // by Firebase itself and retried below with an incremented suffix.
+    const taken=new Set(Object.values(S.profiles).map(p=>String(p.username||'').toLowerCase()).filter(Boolean));
+    S.bulkCreating=true; S.bulkResults=[]; S.bulkProgress=`0/${lines.length}`; render();
+    for(let i=0;i<lines.length;i++){
+      const parts=lines[i].split(/\s+/); const first=parts[0]; const last=parts.slice(1).join(' ');
+      const fullName=lines[i];
+      let attempt=0, done=false, lastErr=null;
+      while(!done && attempt<25){
+        attempt++;
+        const username=genUsername(first,last,taken); const password=genPassword();
+        const email=usernameToEmail(username);
+        try{
+          const cred=await createUserWithEmailAndPassword(auth,email,password);
+          await updateProfile(cred.user,{displayName:fullName});
+          await setDoc(doc(db,'profiles',cred.user.uid),{displayName:fullName, username, email, createdByTeacher:true, teacherUid:S.user.uid});
+          await signInWithEmailAndPassword(auth,teacherEmail,teacherPass);
+          S.bulkResults.push({name:fullName, username, password, status:'ok'});
+          done=true;
+        }catch(e){
+          lastErr=e;
+          if(e.code==='auth/email-already-in-use'){ continue; } // taken set already advanced; retry with next suffix
+          S.bulkResults.push({name:fullName, username, password:null, status:'error', error:friendlyAuthError(e.code)});
+          try{ await signInWithEmailAndPassword(auth,teacherEmail,teacherPass); }catch(e2){}
+          done=true;
+        }
+      }
+      if(!done && lastErr){
+        S.bulkResults.push({name:fullName, username:'—', password:null, status:'error', error:'Could not find a free username — try again.'});
+      }
+      S.bulkProgress=`${i+1}/${lines.length}`; render();
+    }
+    S.bulkCreating=false;
+    await handleAuthChange(auth.currentUser);
+    render();
+  };
+  wrap.appendChild(form);
+
+  const existing = Object.entries(S.profiles).filter(([uid,p])=>p.username);
+  if(existing.length){
+    const list=el('<div class="mmc-card"><h3>Existing student logins</h3><div class="meta">Passwords can\'t be shown again — if one\'s lost, re-run that name through the form above to issue a fresh login.</div></div>');
+    const ul=el('<div></div>');
+    existing.sort((a,b)=>(a[1].displayName||'').localeCompare(b[1].displayName||'')).forEach(([uid,p])=>{
+      ul.appendChild(el(`<div class="mmc-row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--paper-line);"><div>${esc(p.displayName)}</div><code class="mmc-code">${esc(p.username)}</code></div>`));
+    });
+    list.appendChild(ul);
+    wrap.appendChild(list);
+  }
+  return wrap;
+}
+
 // ================= STUDENT =================
 function renderStudent(){
   if(S.activeWeekId){ const week=S.weeks.find(w=>w.id===S.activeWeekId); if(week) return renderQuizTaking(week); S.activeWeekId=null; }
@@ -839,6 +986,7 @@ function renderQuizTaking(week){
     try{
       await setDoc(doc(db,'results', `${S.user.uid}_${week.id}`), {
         uid:S.user.uid, studentName:S.profile? S.profile.displayName : S.user.email, studentEmail:S.user.email,
+        teacherUid: S.profile ? S.profile.teacherUid : null,
         weekId:week.id, weekLabel:week.label, score, total, answers, submittedAt:serverTimestamp()
       });
     }catch(e){ S.toast='Could not save your result — check your connection and try again.'; render(); return; }
