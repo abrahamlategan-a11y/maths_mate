@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Weekly Maths Club</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito+Sans:wght@400;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap');
+
+  html,body{ margin:0; padding:0; background:#EFE9DA; }
+  body{ padding:24px 12px; }
+
+  #mmc {
+    --green-deep: #24392F; --green: #2E4A3D; --paper: #FBF6EC; --paper-line: #E4DCC8;
+    --ink: #2B2620; --ink-soft: #6B6252; --mustard: #E8A33D; --mustard-deep: #C4801F;
+    --sky: #4C7A96; --sky-deep: #395E76; --correct: #3F7A57; --incorrect: #C1483D; --gold: #C4901F; --chalk: #F4F1E8;
+    font-family: 'Nunito Sans', sans-serif; color: var(--ink); background: var(--paper);
+    border-radius: 16px; overflow: hidden; max-width: 900px; margin: 0 auto;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.04);
+  }
+  #mmc * { box-sizing: border-box; }
+  #mmc button { font-family: inherit; cursor: pointer; }
+  #mmc input, #mmc select, #mmc textarea { font-family: inherit; }
+
+  .mmc-head { background: linear-gradient(180deg, var(--green) 0%, var(--green-deep) 100%); color: var(--chalk); padding: 28px 28px 22px; position: relative; }
+  .mmc-head::after { content:""; position:absolute; left:0; right:0; bottom:0; height:6px; background: repeating-linear-gradient(90deg, var(--mustard) 0 18px, transparent 18px 26px); opacity:.85; }
+  .mmc-title { font-family:'Fredoka',sans-serif; font-weight:700; font-size:clamp(22px,4vw,30px); margin:0 0 4px; }
+  .mmc-sub { font-size:14px; color:#CFE0D3; margin:0; }
+  .mmc-userrow { display:flex; justify-content:space-between; align-items:center; margin-top:16px; font-size:13px; color:#CFE0D3; }
+  .mmc-userrow button { background:rgba(255,255,255,0.1); border:1.5px solid rgba(255,255,255,0.3); color:var(--chalk); border-radius:8px; padding:6px 12px; font-family:'Fredoka',sans-serif; font-weight:600; font-size:12.5px; }
+  .mmc-userrow button:hover { background:rgba(255,255,255,0.18); }
+
+  .mmc-body { padding:24px 28px 32px; background-image: repeating-linear-gradient(180deg, transparent 0 31px, var(--paper-line) 31px 32px); background-position:0 6px; }
+  .mmc-empty { text-align:center; padding:40px 20px; color:var(--ink-soft); }
+  .mmc-empty-icon { font-size:34px; margin-bottom:8px; }
+  .mmc-toast { position:sticky; top:8px; z-index:20; background:var(--incorrect); color:#fff; padding:10px 14px; border-radius:10px; font-size:13px; font-weight:600; margin-bottom:14px; }
+
+  .mmc-btn { font-family:'Fredoka',sans-serif; font-weight:600; font-size:14px; padding:10px 18px; border-radius:10px; border:none; background:var(--sky); color:#fff; }
+  .mmc-btn:hover { background:var(--sky-deep); }
+  .mmc-btn.gold { background:var(--mustard); color:var(--green-deep); }
+  .mmc-btn.gold:hover { background:var(--mustard-deep); }
+  .mmc-btn.ghost { background:transparent; border:1.5px solid var(--ink-soft); color:var(--ink); }
+  .mmc-btn.ghost:hover { background:rgba(0,0,0,0.04); }
+  .mmc-btn.danger { background:transparent; color:var(--incorrect); border:1.5px solid var(--incorrect); }
+  .mmc-btn.danger:hover { background:rgba(193,72,61,0.08); }
+  .mmc-btn:disabled { opacity:.5; cursor:not-allowed; }
+  .mmc-btn.sm { padding:6px 12px; font-size:12.5px; }
+
+  .mmc-card { background:#fff; border:1px solid var(--paper-line); border-radius:14px; padding:18px 20px; margin-bottom:16px; box-shadow:0 2px 0 rgba(43,38,32,0.03); }
+  .mmc-card h3 { font-family:'Fredoka',sans-serif; margin:0 0 4px; font-size:17px; }
+  .mmc-card .meta { font-size:12.5px; color:var(--ink-soft); margin-bottom:10px; }
+  .mmc-row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .mmc-field { margin-bottom:12px; }
+  .mmc-field label { display:block; font-size:12.5px; font-weight:700; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.04em; margin-bottom:5px; }
+  .mmc-field input[type=text], .mmc-field input[type=email], .mmc-field input[type=password], .mmc-field input[type=number], .mmc-field select {
+    width:100%; padding:9px 11px; border-radius:8px; border:1.5px solid var(--paper-line); background:var(--paper); font-size:14.5px; color:var(--ink);
+  }
+  .mmc-field input:focus, .mmc-field select:focus { outline:2px solid var(--sky); outline-offset:1px; }
+
+  .mmc-tabs { display:flex; gap:4px; margin-bottom:18px; border-bottom:2px solid var(--paper-line); }
+  .mmc-tab { background:none; border:none; padding:10px 14px; font-weight:700; font-family:'Fredoka',sans-serif; font-size:14px; color:var(--ink-soft); border-bottom:3px solid transparent; margin-bottom:-2px; }
+  .mmc-tab.active { color:var(--green-deep); border-bottom-color:var(--mustard); }
+
+  .mmc-qedit { border:1px dashed var(--paper-line); border-radius:10px; padding:12px; margin-bottom:10px; background:var(--paper); }
+  .mmc-qedit .idx { font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft); margin-bottom:6px; }
+  .mmc-qedit textarea, .mmc-qedit input { width:100%; border:1px solid var(--paper-line); border-radius:7px; padding:7px 9px; font-size:13.5px; margin-bottom:6px; background:#fff; }
+  .mmc-qedit .label2 { font-size:11px; color:var(--ink-soft); font-weight:700; text-transform:uppercase; letter-spacing:.03em; }
+
+  .mmc-quiz-q { border:1px solid var(--paper-line); border-radius:12px; padding:16px; margin-bottom:12px; background:#fff; }
+  .mmc-quiz-q .qnum { font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft); margin-bottom:6px; }
+  .mmc-quiz-q .qtext { font-size:16px; font-weight:700; margin-bottom:10px; }
+  .mmc-quiz-q .answer-row { display:flex; gap:8px; }
+  .mmc-quiz-q input[type=text] { flex:1; padding:9px 11px; border-radius:8px; border:1.5px solid var(--paper-line); font-size:15px; }
+  .mmc-feedback { margin-top:10px; padding:10px 12px; border-radius:8px; font-size:13.5px; font-weight:600; }
+  .mmc-feedback.ok { background:rgba(63,122,87,0.12); color:var(--correct); }
+  .mmc-feedback.no { background:rgba(193,72,61,0.1); color:var(--incorrect); }
+
+  .mmc-stamp { display:inline-flex; flex-direction:column; align-items:center; justify-content:center; min-width:92px; padding:10px 14px; border-radius:12px; border:2.5px dashed; transform:rotate(-3deg); font-family:'Fredoka',sans-serif; }
+  .mmc-stamp .score { font-family:'IBM Plex Mono',monospace; font-size:18px; font-weight:600; }
+  .mmc-stamp .msg { font-size:11px; font-weight:700; margin-top:2px; text-align:center; }
+  .mmc-stamp.gold { border-color:var(--gold); color:var(--gold); }
+  .mmc-stamp.green { border-color:var(--correct); color:var(--correct); }
+  .mmc-stamp.blue { border-color:var(--sky); color:var(--sky-deep); }
+  .mmc-stamp.amber { border-color:var(--mustard-deep); color:var(--mustard-deep); }
+
+  .mmc-ledger-wrap { overflow-x:auto; border:1px solid var(--paper-line); border-radius:12px; }
+  table.mmc-ledger { border-collapse:collapse; width:100%; font-size:13px; background:#fff; }
+  table.mmc-ledger th, table.mmc-ledger td { padding:9px 12px; text-align:center; border-bottom:1px solid var(--paper-line); white-space:nowrap; }
+  table.mmc-ledger th { background:var(--paper); font-family:'Fredoka',sans-serif; font-size:12.5px; color:var(--ink-soft); }
+  table.mmc-ledger td:first-child, table.mmc-ledger th:first-child { text-align:left; font-weight:700; position:sticky; left:0; background:#fff; }
+  .mmc-cellscore { font-family:'IBM Plex Mono',monospace; }
+  .mmc-cellscore.good { color:var(--correct); }
+  .mmc-cellscore.mid { color:var(--mustard-deep); }
+  .mmc-cellscore.low { color:var(--incorrect); }
+  code.mmc-code { font-family:'IBM Plex Mono',monospace; background:var(--paper); padding:2px 6px; border-radius:5px; }
+  .mmc-autherr { color:var(--incorrect); font-size:13px; font-weight:600; margin-bottom:10px; }
+  @media (max-width:520px){ .mmc-head, .mmc-body { padding-left:16px; padding-right:16px; } }
+</style>
+</head>
+<body>
+<div id="mmc"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
+import {
+  getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+  onAuthStateChanged, signOut, updateProfile
+} from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
+import {
+  getFirestore, collection, doc, addDoc, setDoc, updateDoc, deleteDoc,
+  getDoc, onSnapshot, query, where, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+
+// ===== PASTE YOUR FIREBASE CONFIG HERE (see SETUP-INSTRUCTIONS.md) =====
+const firebaseConfig = {
+  apiKey: "AIzaSyCUZ2RBknvGQg8jqUOWSbQ5EYHBifPa3ts",
+  authDomain: "maths-mate.firebaseapp.com",
+  projectId: "maths-mate",
+  storageBucket: "maths-mate.firebasestorage.app",
+  messagingSenderId: "892177890885",
+  appId: "1:892177890885:web:760a6d2b8d517d3fde3874"
+};
+// =========================================================================
+
+const configured = firebaseConfig.apiKey !== "PASTE_ME";
+let app, auth, db;
+if (configured) {
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+}
+
+const NAMES = ['Amara','Leo','Priya','Noah','Zara','Ben','Mia','Kofi','Isla','Sam','Ruby','Theo'];
+const ITEMS = ['stickers','marbles','apples','pencils','cards','coins','shells','buttons'];
+const RANGES = {
+  easy:   { addMax: 20,   mulMax: 5,  divMax: 5,  fracDenoms: [2,3,4,5,10] },
+  medium: { addMax: 100,  mulMax: 10, divMax: 10, fracDenoms: [2,3,4,5,6,8,10,12] },
+  hard:   { addMax: 1000, mulMax: 12, divMax: 12, fracDenoms: [2,3,4,5,6,7,8,9,10,12] }
+};
+function randInt(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
+function pick(arr){ return arr[randInt(0,arr.length-1)]; }
+function uid(p){ return p+'-'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function gcd(a,b){ a=Math.abs(a); b=Math.abs(b); while(b){ [a,b]=[b,a%b]; } return a||1; }
+function simplify(n,d){ const g=gcd(n,d)||1; return [n/g, d/g]; }
+function fracStr(n,d){ const [sn,sd]=simplify(n,d); return sd===1 ? String(sn) : (sn+'/'+sd); }
+
+function genAddition(diff){ const r=RANGES[diff]; const a=randInt(1,r.addMax), b=randInt(1,r.addMax);
+  return { prompt:`${a} + ${b} = ?`, answer:String(a+b), explanation:`${a} + ${b} = ${a+b}` }; }
+function genSubtraction(diff){ const r=RANGES[diff]; const a=randInt(1,r.addMax), b=randInt(0,a);
+  return { prompt:`${a} − ${b} = ?`, answer:String(a-b), explanation:`${a} − ${b} = ${a-b}` }; }
+function genMultiplication(diff){ const r=RANGES[diff]; const a=randInt(1,r.mulMax), b=randInt(1,r.mulMax);
+  return { prompt:`${a} × ${b} = ?`, answer:String(a*b), explanation:`${a} × ${b} = ${a*b}` }; }
+function genDivision(diff){ const r=RANGES[diff]; const divisor=randInt(2,r.divMax), quotient=randInt(1,r.divMax); const a=divisor*quotient;
+  return { prompt:`${a} ÷ ${divisor} = ?`, answer:String(quotient), explanation:`${a} ÷ ${divisor} = ${quotient}` }; }
+function genFractionAdd(diff){ const r=RANGES[diff]; const d1=pick(r.fracDenoms), d2=pick(r.fracDenoms);
+  const n1=randInt(1,d1-1), n2=randInt(1,d2-1); const sumN=n1*d2+n2*d1, sumD=d1*d2; const ans=fracStr(sumN,sumD);
+  return { prompt:`${n1}/${d1} + ${n2}/${d2} = ?`, answer:ans,
+    explanation:`Common denominator ${sumD}: ${n1*d2}/${sumD} + ${n2*d1}/${sumD} = ${sumN}/${sumD} = ${ans}` }; }
+function genFractionCompare(diff){ const r=RANGES[diff]; const d1=pick(r.fracDenoms), d2=pick(r.fracDenoms);
+  const n1=randInt(1,d1-1), n2=randInt(1,d2-1); const left=n1*d2, right=n2*d1;
+  const sign = left>right ? '>' : (left<right ? '<' : '=');
+  return { prompt:`Which sign goes between ${n1}/${d1} and ${n2}/${d2}? Type <, > or =`, answer:sign,
+    explanation:`${n1}/${d1} = ${(n1*d2)}/${d1*d2}, ${n2}/${d2} = ${(n2*d1)}/${d1*d2}, so the sign is ${sign}` }; }
+function genFractionSimplify(diff){ const r=RANGES[diff]; const bd=pick(r.fracDenoms.filter(x=>x>=2));
+  let bn; do { bn=randInt(1,bd-1); } while(gcd(bn,bd)!==1);
+  const k=randInt(2,4); const n=bn*k, d=bd*k;
+  return { prompt:`Simplify ${n}/${d} to its lowest terms.`, answer:fracStr(bn,bd),
+    explanation:`${n}/${d} = ${fracStr(bn,bd)} (divide top and bottom by ${k})` }; }
+function genWordProblem(diff){ const r=RANGES[diff]; const op=pick(['add','sub','mul','div']);
+  const name=pick(NAMES); let name2=pick(NAMES); while(name2===name) name2=pick(NAMES); const item=pick(ITEMS);
+  if(op==='add'){ const a=randInt(1,Math.max(5,Math.floor(r.addMax/2))), b=randInt(1,Math.max(5,Math.floor(r.addMax/2)));
+    return { prompt:`${name} has ${a} ${item}. ${name2} gives ${name} ${b} more ${item}. How many ${item} does ${name} have now?`,
+      answer:String(a+b), explanation:`${a} + ${b} = ${a+b}` }; }
+  if(op==='sub'){ const a=randInt(5,r.addMax), b=randInt(0,a);
+    return { prompt:`${name} had ${a} ${item} and gave away ${b}. How many ${item} does ${name} have left?`,
+      answer:String(a-b), explanation:`${a} − ${b} = ${a-b}` }; }
+  if(op==='mul'){ const rows=randInt(2,r.mulMax), cols=randInt(2,r.mulMax);
+    return { prompt:`There are ${rows} bags with ${cols} ${item} in each. How many ${item} are there altogether?`,
+      answer:String(rows*cols), explanation:`${rows} × ${cols} = ${rows*cols}` }; }
+  const divisor=randInt(2,r.divMax), quotient=randInt(2,r.divMax); const a=divisor*quotient;
+  return { prompt:`${name} has ${a} ${item} to share equally between ${divisor} friends. How many ${item} does each friend get?`,
+    answer:String(quotient), explanation:`${a} ÷ ${divisor} = ${quotient}` }; }
+function generateOne(topic, diff){
+  if(topic==='addition') return genAddition(diff);
+  if(topic==='subtraction') return genSubtraction(diff);
+  if(topic==='multiplication') return genMultiplication(diff);
+  if(topic==='division') return genDivision(diff);
+  if(topic==='fractions') return pick([genFractionAdd,genFractionCompare,genFractionSimplify])(diff);
+  if(topic==='word') return genWordProblem(diff);
+  return pick([genAddition,genSubtraction,genMultiplication,genDivision,genFractionAdd,genFractionCompare,genWordProblem])(diff);
+}
+function generateQuestions(topic, diff, count){
+  const out=[];
+  for(let i=0;i<count;i++){ const q=generateOne(topic,diff); out.push({ id:uid('q'), prompt:q.prompt, answer:q.answer, explanation:q.explanation }); }
+  return out;
+}
+function normalize(s){ return String(s==null?'':s).trim().toLowerCase().replace(/\s+/g,''); }
+function isNumeric(s){ return s!=='' && !isNaN(Number(s)); }
+function parseFrac(s){ const m=String(s).match(/^(-?\d+)\/(\d+)$/); if(!m) return null; return [parseInt(m[1],10), parseInt(m[2],10)]; }
+function checkAnswer(given, answer){
+  const g=normalize(given), a=normalize(answer);
+  if(g==='') return false;
+  const gf=parseFrac(g), af=parseFrac(a);
+  if(gf && af) return gf[0]*af[1] === af[0]*gf[1];
+  if(gf && isNumeric(a)) return gf[0] === Number(a)*gf[1];
+  if(af && isNumeric(g)) return af[0] === Number(g)*af[1];
+  if(isNumeric(g) && isNumeric(a)) return Number(g)===Number(a);
+  return g===a;
+}
+
+// ---------- State ----------
+const S = {
+  loading:true, error:null,
+  user:null, isTeacher:false, profile:null, teacherEmails:[],
+  authMode:'login', authError:null,
+  weeks:[], results:[], profiles:{},
+  teacherTab:'weeks', editingDraftId:null,
+  genForm:{ label:'', topic:'mixed', difficulty:'easy', count:8 },
+  activeWeekId:null, quiz:{}, toast:null,
+};
+let unsubs = [];
+function clearSubs(){ unsubs.forEach(u=>{ try{u();}catch(e){} }); unsubs=[]; }
+
+function el(html){ const t=document.createElement('template'); t.innerHTML=html.trim(); return t.content.firstElementChild; }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function tierFor(score,total){ const pct = total? score/total : 0;
+  if(pct>=0.9) return {tone:'gold', msg:'Brilliant!'};
+  if(pct>=0.7) return {tone:'green', msg:'Great job!'};
+  if(pct>=0.5) return {tone:'blue', msg:'Good try!'};
+  return {tone:'amber', msg:'Keep practising!'}; }
+function stampHTML(score,total){ const t=tierFor(score,total);
+  return `<div class="mmc-stamp ${t.tone}"><span class="score">${score}/${total}</span><span class="msg">${esc(t.msg)}</span></div>`; }
+function friendlyAuthError(code){
+  const map={ 'auth/email-already-in-use':'That email already has an account — try logging in instead.',
+    'auth/invalid-email':'That doesn\'t look like a valid email address.',
+    'auth/weak-password':'Password should be at least 6 characters.',
+    'auth/user-not-found':'Incorrect email or password.', 'auth/wrong-password':'Incorrect email or password.',
+    'auth/invalid-credential':'Incorrect email or password.', 'auth/missing-password':'Please enter a password.' };
+  return map[code] || 'Something went wrong — please try again.';
+}
+
+if(!configured){
+  S.loading=false; S.error='This page isn\'t connected to Firebase yet — follow SETUP-INSTRUCTIONS.md and paste your config near the top of the script.';
+  render();
+} else {
+  onAuthStateChanged(auth, async (user)=>{
+    clearSubs();
+    S.user=user; S.authError=null;
+    if(user){
+      try{
+        const teachersSnap = await getDoc(doc(db,'config','teachers'));
+        S.teacherEmails = teachersSnap.exists() ? (teachersSnap.data().emails||[]) : [];
+        S.isTeacher = S.teacherEmails.map(e=>String(e).toLowerCase()).includes((user.email||'').toLowerCase());
+        const profSnap = await getDoc(doc(db,'profiles',user.uid));
+        S.profile = profSnap.exists() ? profSnap.data() : { displayName:user.displayName||user.email, email:user.email };
+      }catch(e){ S.error='Could not load your account details.'; }
+      subscribeData();
+    } else {
+      S.isTeacher=false; S.profile=null; S.weeks=[]; S.results=[]; S.profiles={};
+    }
+    S.loading=false; render();
+  });
+}
+
+function subscribeData(){
+  if(S.isTeacher){
+    unsubs.push(onSnapshot(collection(db,'weeks'), snap=>{ S.weeks=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, ()=>{}));
+    unsubs.push(onSnapshot(collection(db,'results'), snap=>{ S.results=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, ()=>{}));
+    unsubs.push(onSnapshot(collection(db,'profiles'), snap=>{ S.profiles={}; snap.docs.forEach(d=>S.profiles[d.id]=d.data()); render(); }, ()=>{}));
+  } else {
+    unsubs.push(onSnapshot(query(collection(db,'weeks'), where('status','==','published')), snap=>{
+      S.weeks=snap.docs.map(d=>({id:d.id,...d.data()})); render();
+    }, ()=>{}));
+    unsubs.push(onSnapshot(query(collection(db,'results'), where('uid','==',S.user.uid)), snap=>{
+      S.results=snap.docs.map(d=>({id:d.id,...d.data()})); render();
+    }, ()=>{}));
+  }
+}
+
+// ---------- Root render ----------
+function render(){
+  const root=document.getElementById('mmc');
+  root.innerHTML='';
+  root.appendChild(renderHead());
+  const body=el('<div class="mmc-body"></div>');
+  if(S.toast) body.appendChild(el(`<div class="mmc-toast">${esc(S.toast)}</div>`));
+  if(S.error) body.appendChild(el(`<div class="mmc-toast">${esc(S.error)}</div>`));
+  if(S.loading){ body.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">✏️</div>Loading…</div>')); }
+  else if(!configured){ /* error already shown above */ }
+  else if(!S.user){ body.appendChild(renderAuth()); }
+  else if(S.isTeacher){ body.appendChild(renderTeacher()); }
+  else { body.appendChild(renderStudent()); }
+  root.appendChild(body);
+}
+
+function renderHead(){
+  const head=el(`
+    <div class="mmc-head">
+      <div class="mmc-title">Weekly Maths Club</div>
+      <p class="mmc-sub">A fresh set of problems every week, instant feedback, and a passport that fills up as you go.</p>
+      ${S.user ? `<div class="mmc-userrow"><span>Signed in as ${esc(S.profile? S.profile.displayName : S.user.email)} ${S.isTeacher?'· teacher':''}</span><button id="mmc-signout">Sign out</button></div>` : ''}
+    </div>
+  `);
+  const so=head.querySelector('#mmc-signout');
+  if(so) so.onclick=()=>signOut(auth);
+  return head;
+}
+
+function renderAuth(){
+  const wrap=el('<div></div>');
+  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-m="login">Log in</button><button class="mmc-tab" data-m="signup">Sign up</button></div>`);
+  tabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.m===S.authMode) b.classList.add('active');
+    b.onclick=()=>{ S.authMode=b.dataset.m; S.authError=null; render(); }; });
+  wrap.appendChild(tabs);
+
+  const isSignup = S.authMode==='signup';
+  const card=el(`
+    <div class="mmc-card">
+      <h3>${isSignup? 'Create your account' : 'Welcome back'}</h3>
+      ${S.authError? `<div class="mmc-autherr">${esc(S.authError)}</div>` : ''}
+      ${isSignup? `<div class="mmc-field"><label>Your name</label><input type="text" id="mmc-a-name" placeholder="e.g. Amara T."></div>` : ''}
+      <div class="mmc-field"><label>Email</label><input type="email" id="mmc-a-email" placeholder="you@example.com"></div>
+      <div class="mmc-field"><label>Password</label><input type="password" id="mmc-a-pass" placeholder="At least 6 characters"></div>
+      <button class="mmc-btn gold" id="mmc-a-go">${isSignup? 'Sign up' : 'Log in'}</button>
+    </div>
+  `);
+  card.querySelector('#mmc-a-go').onclick=async ()=>{
+    const email=card.querySelector('#mmc-a-email').value.trim();
+    const pass=card.querySelector('#mmc-a-pass').value;
+    const nameEl=card.querySelector('#mmc-a-name');
+    const name=nameEl? nameEl.value.trim() : '';
+    if(!email || !pass || (isSignup && !name)){ S.authError='Please fill in every field.'; render(); return; }
+    try{
+      if(isSignup){
+        const cred=await createUserWithEmailAndPassword(auth,email,pass);
+        await updateProfile(cred.user, {displayName:name});
+        await setDoc(doc(db,'profiles',cred.user.uid), {displayName:name, email});
+      } else {
+        await signInWithEmailAndPassword(auth,email,pass);
+      }
+    }catch(e){ S.authError=friendlyAuthError(e.code); render(); }
+  };
+  wrap.appendChild(card);
+  return wrap;
+}
+
+// ================= TEACHER =================
+function renderTeacher(){
+  const wrap=el('<div></div>');
+  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-t="weeks">This week's set</button><button class="mmc-tab" data-t="ledger">Gradebook</button></div>`);
+  tabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.t===S.teacherTab) b.classList.add('active');
+    b.onclick=()=>{ S.teacherTab=b.dataset.t; render(); }; });
+  wrap.appendChild(tabs);
+  wrap.appendChild(S.teacherTab==='weeks' ? renderTeacherWeeks() : renderLedger());
+  return wrap;
+}
+
+function renderTeacherWeeks(){
+  const wrap=el('<div></div>');
+  const form=el(`
+    <div class="mmc-card">
+      <h3>Create a new week</h3>
+      <div class="meta">Auto-generate a set, then edit anything before you publish it.</div>
+      <div class="mmc-row" style="align-items:flex-end;">
+        <div class="mmc-field" style="flex:2;min-width:160px;"><label>Week label</label>
+          <input type="text" id="mmc-gen-label" placeholder="e.g. Week 6 — Fractions" value="${esc(S.genForm.label)}"></div>
+        <div class="mmc-field" style="flex:1;min-width:140px;"><label>Topic</label>
+          <select id="mmc-gen-topic">${['mixed','addition','subtraction','multiplication','division','fractions','word'].map(t=>
+            `<option value="${t}" ${S.genForm.topic===t?'selected':''}>${({mixed:'Mixed',addition:'Addition',subtraction:'Subtraction',multiplication:'Multiplication',division:'Division',fractions:'Fractions',word:'Word problems'})[t]}</option>`).join('')}
+          </select></div>
+        <div class="mmc-field" style="flex:1;min-width:120px;"><label>Difficulty</label>
+          <select id="mmc-gen-diff">${['easy','medium','hard'].map(d=>`<option value="${d}" ${S.genForm.difficulty===d?'selected':''}>${d[0].toUpperCase()+d.slice(1)}</option>`).join('')}</select></div>
+        <div class="mmc-field" style="flex:0 0 90px;"><label># Qs</label><input type="number" id="mmc-gen-count" min="1" max="20" value="${S.genForm.count}"></div>
+      </div>
+      <button class="mmc-btn gold" id="mmc-gen-btn">✨ Generate draft</button>
+    </div>
+  `);
+  form.querySelector('#mmc-gen-btn').onclick=async ()=>{
+    const label=form.querySelector('#mmc-gen-label').value.trim() || `Week ${S.weeks.length+1}`;
+    const topic=form.querySelector('#mmc-gen-topic').value;
+    const difficulty=form.querySelector('#mmc-gen-diff').value;
+    const count=Math.max(1,Math.min(20, parseInt(form.querySelector('#mmc-gen-count').value,10) || 8));
+    const weekData={ label, topic, difficulty, status:'draft', createdAt:serverTimestamp(), teacherUid:S.user.uid,
+      questions:generateQuestions(topic,difficulty,count) };
+    try{
+      const ref=await addDoc(collection(db,'weeks'), weekData);
+      S.editingDraftId=ref.id;
+      S.genForm={label:'',topic:'mixed',difficulty:'easy',count:8};
+    }catch(e){ S.toast='Could not save the new week — check your connection.'; }
+    render();
+  };
+  wrap.appendChild(form);
+
+  if(S.weeks.length===0){
+    wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">🧮</div>No weeks yet — generate your first set above.</div>'));
+    return wrap;
+  }
+  S.weeks.slice().sort((a,b)=> (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0)).forEach(week=> wrap.appendChild(renderWeekCard(week)));
+  return wrap;
+}
+
+function renderWeekCard(week){
+  const isEditing = S.editingDraftId===week.id;
+  const card=el(`
+    <div class="mmc-card">
+      <div class="mmc-row" style="justify-content:space-between;">
+        <div>
+          <h3>${esc(week.label)} ${week.status==='draft' ? '<span style="color:#C4801F;font-size:12px;font-weight:700;">DRAFT</span>' : '<span style="color:#3F7A57;font-size:12px;font-weight:700;">PUBLISHED</span>'}</h3>
+          <div class="meta">${esc(week.topic)} · ${esc(week.difficulty)} · ${(week.questions||[]).length} questions</div>
+        </div>
+        <div class="mmc-row">
+          ${week.status==='draft' ? `<button class="mmc-btn ghost sm" data-act="edit">${isEditing?'Close':'Edit'}</button>` : ''}
+          ${week.status==='draft' ? `<button class="mmc-btn gold sm" data-act="publish">Publish</button>` : ''}
+          <button class="mmc-btn danger sm" data-act="delete">Delete</button>
+        </div>
+      </div>
+    </div>
+  `);
+  card.querySelector('[data-act="delete"]').onclick=async ()=>{
+    if(!confirm(`Delete "${week.label}"? This can't be undone.`)) return;
+    try{ await deleteDoc(doc(db,'weeks',week.id)); }catch(e){ S.toast='Could not delete — check your connection.'; render(); }
+  };
+  const editBtn=card.querySelector('[data-act="edit"]');
+  if(editBtn) editBtn.onclick=()=>{ S.editingDraftId = isEditing? null : week.id; render(); };
+  const pubBtn=card.querySelector('[data-act="publish"]');
+  if(pubBtn) pubBtn.onclick=async ()=>{
+    try{ await updateDoc(doc(db,'weeks',week.id), {status:'published'}); S.editingDraftId=null; }
+    catch(e){ S.toast='Could not publish — check your connection.'; render(); }
+  };
+  if(isEditing) card.appendChild(renderQuestionEditor(week));
+  return card;
+}
+
+function renderQuestionEditor(week){
+  const box=el('<div style="margin-top:12px;"></div>');
+  async function saveQuestions(){
+    try{ await updateDoc(doc(db,'weeks',week.id), {questions:week.questions}); }
+    catch(e){ S.toast='Could not save changes — check your connection.'; render(); }
+  }
+  (week.questions||[]).forEach((q,i)=>{
+    const row=el(`
+      <div class="mmc-qedit">
+        <div class="idx">Q${i+1}</div>
+        <div class="label2">Question</div>
+        <textarea rows="2" data-f="prompt">${esc(q.prompt)}</textarea>
+        <div class="label2">Answer</div>
+        <input type="text" data-f="answer" value="${esc(q.answer)}">
+        <div class="label2">Explanation (shown after they answer)</div>
+        <input type="text" data-f="explanation" value="${esc(q.explanation||'')}">
+        <button class="mmc-btn danger sm" data-act="rm" style="margin-top:4px;">Remove question</button>
+      </div>
+    `);
+    row.querySelector('[data-f="prompt"]').onchange=(e)=>{ q.prompt=e.target.value; saveQuestions(); };
+    row.querySelector('[data-f="answer"]').onchange=(e)=>{ q.answer=e.target.value; saveQuestions(); };
+    row.querySelector('[data-f="explanation"]').onchange=(e)=>{ q.explanation=e.target.value; saveQuestions(); };
+    row.querySelector('[data-act="rm"]').onclick=()=>{ week.questions=week.questions.filter(x=>x.id!==q.id); saveQuestions(); render(); };
+    box.appendChild(row);
+  });
+  const addBtn=el('<button class="mmc-btn ghost sm">+ Add a question manually</button>');
+  addBtn.onclick=()=>{ week.questions=[...(week.questions||[]), { id:uid('q'), prompt:'New question — edit me', answer:'', explanation:'' }]; saveQuestions(); render(); };
+  box.appendChild(addBtn);
+  return box;
+}
+
+function renderLedger(){
+  const wrap=el('<div></div>');
+  const pubWeeks = S.weeks.filter(w=>w.status==='published').sort((a,b)=> (a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
+  const studentUids = Object.keys(S.profiles).filter(uid=>{
+    const email=(S.profiles[uid].email||'').toLowerCase();
+    return !S.teacherEmails.map(e=>String(e).toLowerCase()).includes(email);
+  });
+
+  const exportBtn=el('<button class="mmc-btn gold" style="margin-bottom:14px;">⬇ Export as CSV</button>');
+  exportBtn.onclick=()=>exportCSV(pubWeeks, studentUids);
+  wrap.appendChild(exportBtn);
+
+  if(pubWeeks.length===0 || studentUids.length===0){
+    wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">📒</div>Once weeks are published and students sign up &amp; submit, results collect here automatically — live, from any device.</div>'));
+    return wrap;
+  }
+  const tableWrap=el('<div class="mmc-ledger-wrap"></div>');
+  const table=el('<table class="mmc-ledger"></table>');
+  const thead=el('<thead><tr></tr></thead>');
+  const trh=thead.querySelector('tr');
+  trh.appendChild(el('<th>Student</th>'));
+  pubWeeks.forEach(w=> trh.appendChild(el(`<th>${esc(w.label)}</th>`)));
+  trh.appendChild(el('<th>Average</th>'));
+  table.appendChild(thead);
+  const tbody=el('<tbody></tbody>');
+  studentUids.sort((a,b)=> (S.profiles[a].displayName||'').localeCompare(S.profiles[b].displayName||'')).forEach(uid=>{
+    const tr=el('<tr></tr>');
+    tr.appendChild(el(`<td>${esc(S.profiles[uid].displayName||S.profiles[uid].email)}</td>`));
+    let sum=0, cnt=0;
+    pubWeeks.forEach(w=>{
+      const rec = S.results.find(r=>r.uid===uid && r.weekId===w.id);
+      if(rec){ const pct = rec.total? rec.score/rec.total : 0; const cls = pct>=0.7?'good':(pct>=0.5?'mid':'low');
+        sum+=pct; cnt++; tr.appendChild(el(`<td class="mmc-cellscore ${cls}">${rec.score}/${rec.total}</td>`)); }
+      else tr.appendChild(el(`<td style="color:var(--ink-soft);">—</td>`));
+    });
+    const avg = cnt? Math.round((sum/cnt)*100) : null;
+    tr.appendChild(el(`<td class="mmc-cellscore">${avg==null?'—':avg+'%'}</td>`));
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+  wrap.appendChild(tableWrap);
+  return wrap;
+}
+
+function exportCSV(pubWeeks, studentUids){
+  const header=['Student name','Email', ...pubWeeks.map(w=>w.label), 'Average %'];
+  const rows=[header];
+  studentUids.forEach(uid=>{
+    const row=[S.profiles[uid].displayName||'', S.profiles[uid].email||''];
+    let sum=0, cnt=0;
+    pubWeeks.forEach(w=>{ const rec=S.results.find(r=>r.uid===uid && r.weekId===w.id);
+      if(rec){ row.push(`${rec.score}/${rec.total}`); sum+= rec.total? rec.score/rec.total:0; cnt++; } else row.push(''); });
+    row.push(cnt? Math.round((sum/cnt)*100) : '');
+    rows.push(row);
+  });
+  const csv=rows.map(r=>r.map(c=>{ const s=String(c); return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; }).join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download='weekly-maths-club-results.csv';
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+
+// ================= STUDENT =================
+function renderStudent(){
+  if(S.activeWeekId){ const week=S.weeks.find(w=>w.id===S.activeWeekId); if(week) return renderQuizTaking(week); S.activeWeekId=null; }
+  const wrap=el('<div></div>');
+  if(S.weeks.length===0){
+    wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">📭</div>No quizzes published yet — check back soon!</div>'));
+    return wrap;
+  }
+  wrap.appendChild(el('<h3 style="font-family:Fredoka,sans-serif;margin:4px 0 12px;">Your maths passport</h3>'));
+  S.weeks.slice().sort((a,b)=> (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0)).forEach(week=>{
+    const rec = S.results.find(r=>r.weekId===week.id);
+    const card=el(`
+      <div class="mmc-card mmc-row" style="justify-content:space-between;">
+        <div><h3>${esc(week.label)}</h3><div class="meta">${(week.questions||[]).length} questions · ${esc(week.difficulty)}</div></div>
+        <div></div>
+      </div>
+    `);
+    const right=card.querySelector('div:last-child');
+    if(rec){ right.innerHTML=stampHTML(rec.score, rec.total); }
+    else {
+      const startBtn=el('<button class="mmc-btn gold">Start ▶</button>');
+      startBtn.onclick=()=>{ S.activeWeekId=week.id; S.quiz={}; (week.questions||[]).forEach(q=> S.quiz[q.id]={given:'',checked:false,correct:false}); render(); };
+      right.appendChild(startBtn);
+    }
+    wrap.appendChild(card);
+  });
+  return wrap;
+}
+
+function renderQuizTaking(week){
+  const wrap=el('<div></div>');
+  const back=el('<a href="#" style="color:var(--sky-deep);font-size:13px;">← back to passport</a>');
+  back.onclick=(e)=>{ e.preventDefault(); S.activeWeekId=null; render(); };
+  wrap.appendChild(back);
+  wrap.appendChild(el(`<h3 style="font-family:Fredoka,sans-serif;margin:10px 0 14px;">${esc(week.label)}</h3>`));
+  (week.questions||[]).forEach((q,i)=>{
+    const st=S.quiz[q.id];
+    const qbox=el(`
+      <div class="mmc-quiz-q">
+        <div class="qnum">Question ${i+1} of ${week.questions.length}</div>
+        <div class="qtext">${esc(q.prompt)}</div>
+        <div class="answer-row">
+          <input type="text" value="${esc(st.given)}" ${st.checked?'disabled':''} placeholder="Your answer">
+          <button class="mmc-btn ${st.checked?'ghost':'gold'} sm" ${st.checked?'disabled':''}>${st.checked?'Checked':'Check'}</button>
+        </div>
+      </div>
+    `);
+    const input=qbox.querySelector('input'); const btn=qbox.querySelector('button');
+    input.oninput=(e)=>{ st.given=e.target.value; };
+    input.addEventListener('keydown', e=>{ if(e.key==='Enter' && !st.checked) doCheck(); });
+    btn.onclick=doCheck;
+    function doCheck(){ if(st.checked) return; st.checked=true; st.correct=checkAnswer(st.given,q.answer); render(); }
+    if(st.checked){
+      const fb=el(`<div class="mmc-feedback ${st.correct?'ok':'no'}">${st.correct? '✓ Correct!' : `✗ Not quite. The answer was ${esc(q.answer)}.`}${q.explanation? ' — '+esc(q.explanation):''}</div>`);
+      qbox.appendChild(fb);
+    }
+    wrap.appendChild(qbox);
+  });
+  const allChecked=(week.questions||[]).every(q=>S.quiz[q.id].checked);
+  const finishBtn=el(`<button class="mmc-btn gold" ${allChecked?'':'disabled'} style="margin-top:6px;">Finish week ✓</button>`);
+  if(!allChecked) wrap.appendChild(el('<div class="meta" style="margin-bottom:8px;">Check every question to finish.</div>'));
+  finishBtn.onclick=async ()=>{
+    const score=week.questions.filter(q=>S.quiz[q.id].correct).length;
+    const total=week.questions.length;
+    const answers=week.questions.map(q=>({ qId:q.id, given:S.quiz[q.id].given, correct:S.quiz[q.id].correct }));
+    try{
+      await setDoc(doc(db,'results', `${S.user.uid}_${week.id}`), {
+        uid:S.user.uid, studentName:S.profile? S.profile.displayName : S.user.email, studentEmail:S.user.email,
+        weekId:week.id, weekLabel:week.label, score, total, answers, submittedAt:serverTimestamp()
+      });
+    }catch(e){ S.toast='Could not save your result — check your connection and try again.'; render(); return; }
+    S.activeWeekId=null; render();
+  };
+  wrap.appendChild(finishBtn);
+  return wrap;
+}
+
+render();
+</script>
+</body>
+</html>
