@@ -180,19 +180,22 @@ function gcd(a,b){ a=Math.abs(a); b=Math.abs(b); while(b){ [a,b]=[b,a%b]; } retu
 function simplify(n,d){ const g=gcd(n,d)||1; return [n/g, d/g]; }
 function fracStr(n,d){ const [sn,sd]=simplify(n,d); return sd===1 ? String(sn) : (sn+'/'+sd); }
 function formatGrouped(n){ return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+function shuffleArr(arr){ const a=arr.slice(); for(let i=a.length-1;i>0;i--){ const j=randInt(0,i); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 
 // ---------- SVG diagram helpers ----------
 function svgWrap(inner, w, h){
   return `<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:260px;height:auto;background:#fff;border:1px solid var(--paper-line);border-radius:8px;display:block;">${inner}</svg>`;
 }
-function drawShadedGrid(n){
+function drawShadedGrid(rows, cols, n){
+  const cell = Math.max(12, Math.min(22, Math.floor(220/Math.max(rows,cols))));
   let cells='';
-  for(let i=0;i<100;i++){
-    const r=Math.floor(i/10), c=i%10;
+  const total=rows*cols;
+  for(let i=0;i<total;i++){
+    const r=Math.floor(i/cols), c=i%cols;
     const fill = i<n ? '#3F7A57' : '#ffffff';
-    cells+=`<rect x="${c*22}" y="${r*22}" width="22" height="22" fill="${fill}" stroke="#E4DCC8"/>`;
+    cells+=`<rect x="${c*cell}" y="${r*cell}" width="${cell}" height="${cell}" fill="${fill}" stroke="#E4DCC8"/>`;
   }
-  return svgWrap(cells,220,220);
+  return svgWrap(cells, cols*cell, rows*cell);
 }
 function drawRectShape(w,h){
   const cell=26, pad=1, gridW=w+pad*2, gridH=h+pad*2;
@@ -223,6 +226,21 @@ function drawAngle(deg){
   return svgWrap(`<line x1="${cx}" y1="${cy}" x2="${x1}" y2="${y1}" stroke="#2B2620" stroke-width="3"/>
     <line x1="${cx}" y1="${cy}" x2="${x2}" y2="${y2}" stroke="#2B2620" stroke-width="3"/>
     <path d="M ${ax1} ${ay1} A ${arcR} ${arcR} 0 ${largeArc} 0 ${ax2} ${ay2}" fill="none" stroke="#C4801F" stroke-width="2.5"/>
+    <circle cx="${cx}" cy="${cy}" r="3" fill="#2B2620"/>`, 240,190);
+}
+function drawCompositeAngle(a1,a2){
+  const cx=115, cy=150, r=110, arcR=28, arcR2=44;
+  function pt(a,len){ const rad=a*Math.PI/180; return [cx+len*Math.cos(rad), cy-len*Math.sin(rad)]; }
+  const [x0,y0]=pt(0,r), [x1,y1]=pt(a1,r), [x2,y2]=pt(a1+a2,r);
+  const [ax0,ay0]=pt(0,arcR), [ax1,ay1]=pt(a1,arcR);
+  const [bx1,by1]=pt(a1,arcR2), [bx2,by2]=pt(a1+a2,arcR2);
+  const large1=a1>180?1:0, large2=a2>180?1:0;
+  return svgWrap(`
+    <line x1="${cx}" y1="${cy}" x2="${x0}" y2="${y0}" stroke="#2B2620" stroke-width="3"/>
+    <line x1="${cx}" y1="${cy}" x2="${x1}" y2="${y1}" stroke="#2B2620" stroke-width="3"/>
+    <line x1="${cx}" y1="${cy}" x2="${x2}" y2="${y2}" stroke="#2B2620" stroke-width="3"/>
+    <path d="M ${ax0} ${ay0} A ${arcR} ${arcR} 0 ${large1} 0 ${ax1} ${ay1}" fill="none" stroke="#C4801F" stroke-width="2.5"/>
+    <path d="M ${bx1} ${by1} A ${arcR2} ${arcR2} 0 ${large2} 0 ${bx2} ${by2}" fill="none" stroke="#8B5CF6" stroke-width="2.5"/>
     <circle cx="${cx}" cy="${cy}" r="3" fill="#2B2620"/>`, 240,190);
 }
 function drawLayers(layers,rows,cols){
@@ -277,19 +295,41 @@ function genOrdering(diff){
 }
 function genFactors(diff){
   const range= diff==='easy'?[12,30]: diff==='medium'?[20,60]:[40,100];
-  const num=randInt(range[0],range[1]);
-  const factors=[]; for(let i=1;i<=num;i++) if(num%i===0) factors.push(i);
-  return { prompt:`List all the factors of ${num} (separate with commas).`, answer:factors.join(','),
-    explanation:`The factors of ${num} are: ${factors.join(', ')}.`, checkType:'numset' };
+  let num, factors;
+  do{
+    num=randInt(range[0],range[1]);
+    factors=[]; for(let i=1;i<=num;i++) if(num%i===0) factors.push(i);
+  } while(factors.length<4);
+  const decoyFactors = shuffleArr(factors).slice(0,3);
+  let nonFactor=null;
+  for(let tries=0; tries<40 && nonFactor===null; tries++){
+    const c=randInt(2,num-1);
+    if(!factors.includes(c)) nonFactor=c;
+  }
+  if(nonFactor===null) nonFactor = num + randInt(1,9);
+  const choices=shuffleArr([String(nonFactor), ...decoyFactors.map(String)]);
+  return { prompt:`Which of these is NOT a factor of ${num}?`, answer:String(nonFactor), inputType:'choice', choices,
+    explanation:`The factors of ${num} are: ${factors.join(', ')}. ${nonFactor} is not a factor.` };
 }
 function genAddition(diff){ const r=OPR[diff]; const a=randInt(100,r.addMax), b=randInt(100,r.addMax);
   return { prompt:`${formatGrouped(a)} + ${formatGrouped(b)} = ?`, answer:String(a+b), explanation:`${formatGrouped(a)} + ${formatGrouped(b)} = ${formatGrouped(a+b)}` }; }
 function genSubtraction(diff){ const r=OPR[diff]; const a=randInt(100,r.addMax), b=randInt(0,a);
   return { prompt:`${formatGrouped(a)} − ${formatGrouped(b)} = ?`, answer:String(a-b), explanation:`${formatGrouped(a)} − ${formatGrouped(b)} = ${formatGrouped(a-b)}` }; }
-function genMultiplication(diff){ const r=OPR[diff]; const a=randInt(r.mulA[0],r.mulA[1]), b=randInt(r.mulB[0],r.mulB[1]);
-  return { prompt:`${a} × ${b} = ?`, answer:String(a*b), explanation:`${a} × ${b} = ${a*b}` }; }
-function genDivision(diff){ const r=OPR[diff]; const divisor=randInt(r.divDivisor[0],r.divDivisor[1]), quotient=randInt(r.divQuotient[0],r.divQuotient[1]); const a=divisor*quotient;
-  return { prompt:`${formatGrouped(a)} ÷ ${divisor} = ?`, answer:String(quotient), explanation:`${formatGrouped(a)} ÷ ${divisor} = ${quotient}` }; }
+function genMultiplication(diff){
+  let a,b;
+  if(diff==='easy'){ a=randInt(10,99); b=randInt(2,9); }
+  else if(diff==='medium'){ a=randInt(100,999); b=randInt(2,9); }
+  else { a=randInt(100,999); b=randInt(10,99); }
+  return { prompt:`${formatGrouped(a)} × ${b} = ?`, answer:String(a*b), explanation:`${formatGrouped(a)} × ${b} = ${formatGrouped(a*b)}` };
+}
+function genDivision(diff){
+  let divisor, quotient;
+  if(diff==='easy'){ divisor=randInt(2,9); quotient=randInt(2,9); }
+  else if(diff==='medium'){ divisor=randInt(2,9); quotient=randInt(10,19); }
+  else { divisor=randInt(2,9); const lo=Math.ceil(100/divisor), hi=Math.floor(999/divisor); quotient=randInt(lo,hi); }
+  const a=divisor*quotient;
+  return { prompt:`${formatGrouped(a)} ÷ ${divisor} = ?`, answer:String(quotient), explanation:`${formatGrouped(a)} ÷ ${divisor} = ${quotient}` };
+}
 function genFracHalf(diff){
   const denoms = diff==='easy'?[3,4,5,6,8,10]: diff==='medium'?[3,4,5,6,7,8,9,10,12]:[3,5,6,7,8,9,10,11,12,13];
   const d=pick(denoms); const n=randInt(1,d-1); const left=n*2, right=d;
@@ -297,10 +337,40 @@ function genFracHalf(diff){
   return { prompt:`Is ${n}/${d} less than, more than, or equal to 1/2?`, answer:sign, inputType:'choice', choices:['less than','more than','equal to'],
     explanation:`${n}/${d} compared to 1/2: ${n}×2=${left} vs ${d}, so it is ${sign} 1/2.` };
 }
+const GRID_SIZES = [ {rows:2,cols:5},{rows:4,cols:5},{rows:5,cols:6},{rows:5,cols:8},{rows:5,cols:10},{rows:6,cols:10},{rows:8,cols:10},{rows:10,cols:10} ];
 function genShadedGrid(diff){
-  const shaded = diff==='easy'? randInt(1,9)*10 : diff==='medium'? randInt(5,95) : randInt(1,99);
-  return { prompt:`What fraction is shaded? Answer in hundredths (e.g. 45/100).`, answer:`${shaded}/100`,
-    explanation:`${shaded} out of 100 squares are shaded, so the fraction is ${shaded}/100.`, svg:drawShadedGrid(shaded) };
+  if(diff==='easy'){
+    const n=randInt(1,99);
+    return { prompt:`What fraction is shaded? Complete the fraction: ___/100`, answer:String(n),
+      explanation:`${n} out of 100 squares are shaded, so the fraction is ${n}/100.`, svg:drawShadedGrid(10,10,n) };
+  }
+  if(diff==='medium'){
+    const size=pick(GRID_SIZES); const total=size.rows*size.cols;
+    const n=randInt(1,total-1);
+    const correct=`${n}/${total}`;
+    const seen=new Set([correct]); const decoys=[];
+    const candidates=[total-n, n+size.cols, n-size.cols, n+1, n-1, n+size.rows, n-size.rows].filter(x=>x>0&&x<total&&x!==n);
+    for(const c of shuffleArr(candidates)){ const f=`${c}/${total}`; if(!seen.has(f)){ seen.add(f); decoys.push(f); if(decoys.length===3) break; } }
+    while(decoys.length<3){ const c=randInt(1,total-1); const f=`${c}/${total}`; if(!seen.has(f)){ seen.add(f); decoys.push(f); } }
+    const choices=shuffleArr([correct,...decoys.slice(0,3)]);
+    return { prompt:`What fraction of the grid is shaded?`, answer:correct, inputType:'choice', choices,
+      explanation:`${n} out of ${total} squares are shaded, so the fraction is ${n}/${total}.`, svg:drawShadedGrid(size.rows,size.cols,n) };
+  }
+  // hard: multiple choice, correct answer is the simplified fraction
+  const pool=GRID_SIZES.filter(s=>s.rows*s.cols>=20);
+  const size=pick(pool); const total=size.rows*size.cols;
+  let n=randInt(2,total-2);
+  if(gcd(n,total)<2){ n = total%2===0 ? total-2 : total-3; } // ensure it's reducible
+  const correct=fracStr(n,total);
+  const raw=`${n}/${total}`;
+  const seen=new Set([correct]); const decoys=[];
+  if(raw!==correct){ seen.add(raw); decoys.push(raw); }
+  const candidates=[total-n, n+size.cols, n-size.cols, n+2, n-2].filter(x=>x>0&&x<total&&x!==n);
+  for(const c of shuffleArr(candidates)){ const f=fracStr(c,total); if(!seen.has(f)){ seen.add(f); decoys.push(f); if(decoys.length>=3) break; } }
+  while(decoys.length<3){ const c=randInt(1,total-1); const f=fracStr(c,total); if(!seen.has(f)){ seen.add(f); decoys.push(f); } }
+  const choices=shuffleArr([correct, ...decoys.slice(0,3)]);
+  return { prompt:`What fraction of the grid is shaded? Give your answer in simplest form.`, answer:correct, inputType:'choice', choices,
+    explanation:`${n} out of ${total} squares are shaded — ${n}/${total} simplifies to ${correct}.`, svg:drawShadedGrid(size.rows,size.cols,n) };
 }
 function genDecimalPlace(diff){
   const decDigits= diff==='easy'?1:2;
@@ -321,17 +391,29 @@ function genOrderDecimals(diff){
 }
 const DENOMS=[{v:5,l:'5c'},{v:10,l:'10c'},{v:20,l:'20c'},{v:50,l:'50c'},{v:100,l:'$1'},{v:200,l:'$2'}];
 function fmtCents(c){ return c>=100 ? '$'+(c/100).toFixed(2) : c+'c'; }
-function genCoins(diff){
-  const range = diff==='easy'?[100,300]: diff==='medium'?[200,600]:[500,1500];
-  let target=Math.round(randInt(range[0],range[1])/5)*5;
+function buildCoinsQuestion(target, promptText, explanationText){
   let remaining=target; const solution=[];
   for(let i=DENOMS.length-1;i>=0;i--){ while(remaining>=DENOMS[i].v){ solution.push(DENOMS[i]); remaining-=DENOMS[i].v; } }
   const decoyCount = solution.length>=8 ? randInt(1,2) : randInt(2,4);
   const decoys=[]; for(let i=0;i<decoyCount;i++) decoys.push(pick(DENOMS));
   const coins=[...solution,...decoys].map((c,i)=>({v:c.v,l:c.l,id:'c'+i}));
   for(let i=coins.length-1;i>0;i--){ const j=randInt(0,i); [coins[i],coins[j]]=[coins[j],coins[i]]; }
-  return { prompt:`Select coins that add up to exactly ${fmtCents(target)}.`, inputType:'coins', targetCents:target, coins,
-    explanation:`Any combination of the coins shown that adds up to ${fmtCents(target)} is correct.` };
+  return { prompt:promptText, inputType:'coins', targetCents:target, coins, explanation:explanationText };
+}
+function genCoins(diff){
+  if(diff!=='hard'){
+    const range = diff==='easy'?[100,300]:[200,600];
+    const target=Math.round(randInt(range[0],range[1])/5)*5;
+    return buildCoinsQuestion(target, `Select coins that add up to exactly ${fmtCents(target)}.`,
+      `Any combination of the coins shown that adds up to ${fmtCents(target)} is correct.`);
+  }
+  const price=Math.round(randInt(105,895)/5)*5;
+  const paymentOptions=[100,200,500,1000].filter(p=>p>price);
+  const payment = paymentOptions.length? pick(paymentOptions) : price+randInt(20,200);
+  const change = payment-price;
+  return buildCoinsQuestion(change,
+    `You buy something for ${fmtCents(price)} and pay with ${fmtCents(payment)}. Click the coins to make the change.`,
+    `Change = ${fmtCents(payment)} − ${fmtCents(price)} = ${fmtCents(change)}. Any combination of the coins shown that adds up to ${fmtCents(change)} is correct.`);
 }
 function genArea(diff){
   const range= diff==='easy'?[2,6]: diff==='medium'?[3,9]:[4,12];
@@ -341,10 +423,24 @@ function genArea(diff){
 }
 function genClock(diff){
   const hour=randInt(1,12);
-  const minuteOptions = diff==='easy'? [0,15,30,45] : [0,5,10,15,20,25,30,35,40,45,50,55];
+  const minuteOptions = diff==='easy'? [0,30] : diff==='medium'? [0,5,10,15,20,25,30,35,40,45,50,55] : Array.from({length:60},(_,i)=>i);
   const minute=pick(minuteOptions); const mm=String(minute).padStart(2,'0');
-  return { prompt:`What time does the clock show? (Answer like 3:45)`, answer:`${hour}:${mm}`, checkType:'time',
-    explanation:`The clock shows ${hour}:${mm}.`, svg:drawClock(hour,minute) };
+  const correct=`${hour}:${mm}`;
+  const step = diff==='easy'?30: diff==='medium'?5:1;
+  const seen=new Set([correct]); const decoys=[];
+  const candidates=[
+    `${(hour%12)+1}:${mm}`,
+    `${hour}:${String((minute+step)%60).padStart(2,'0')}`,
+    `${hour===1?12:hour-1}:${mm}`,
+  ].filter(c=>{ const [h,m]=c.split(':').map(Number); return h>=1&&h<=12 && m>=0&&m<=59; });
+  for(const c of shuffleArr(candidates)){ if(!seen.has(c)){ seen.add(c); decoys.push(c); if(decoys.length>=3) break; } }
+  while(decoys.length<3){
+    const h=randInt(1,12); const m=pick(minuteOptions); const c=`${h}:${String(m).padStart(2,'0')}`;
+    if(!seen.has(c)){ seen.add(c); decoys.push(c); }
+  }
+  const choices=shuffleArr([correct, ...decoys.slice(0,3)]);
+  return { prompt:`What time does the clock show?`, answer:correct, inputType:'choice', choices,
+    explanation:`The clock shows ${correct}.`, svg:drawClock(hour,minute) };
 }
 const UNIT_SCENARIOS=[
   {q:'the length of a tennis court', choices:['millimetres','centimetres','metres','kilometres'], answer:'metres'},
@@ -360,19 +456,39 @@ function genUnitChoice(diff){ const s=pick(UNIT_SCENARIOS);
   return { prompt:`Which unit would you use to measure ${s.q}?`, answer:s.answer, inputType:'choice', choices:s.choices,
     explanation:`${s.q.charAt(0).toUpperCase()+s.q.slice(1)} is best measured in ${s.answer}.` }; }
 const CONVERSIONS=[{from:'kg',to:'g',factor:1000},{from:'km',to:'m',factor:1000},{from:'L',to:'mL',factor:1000},{from:'m',to:'cm',factor:100},{from:'cm',to:'mm',factor:10}];
-function genConversion(diff){ const c=pick(CONVERSIONS);
+function genConversion(diff){
+  const c=pick(CONVERSIONS);
   const range= diff==='easy'?[1,20]: diff==='medium'?[1,100]:[1,999];
   const val=randInt(range[0],range[1]); const result=val*c.factor;
-  return { prompt:`Complete the conversion: ${val} ${c.from} = ___ ${c.to}`, answer:String(result),
-    explanation:`${val} ${c.from} × ${c.factor} = ${result} ${c.to}.` }; }
+  const correct=String(result);
+  const rawCandidates=[result/10, result*10, val+c.factor, result+c.factor, Math.round(result*1.1), result-c.factor]
+    .map(v=>String(Math.round(v))).filter(v=>v!==correct && Number(v)>0);
+  const seen=new Set([correct]); const decoys=[];
+  for(const d of shuffleArr([...new Set(rawCandidates)])){ if(!seen.has(d)){ seen.add(d); decoys.push(d); if(decoys.length>=3) break; } }
+  while(decoys.length<3){ const d=String(Math.max(1,result+randInt(-50,50))); if(!seen.has(d)){ seen.add(d); decoys.push(d); } }
+  const choices=shuffleArr([correct, ...decoys.slice(0,3)]);
+  return { prompt:`Complete the conversion: ${val} ${c.from} = ___ ${c.to}`, answer:correct, inputType:'choice', choices,
+    explanation:`${val} ${c.from} × ${c.factor} = ${result} ${c.to}.` };
+}
 function genAngle(diff){
-  const bucket=pick(['acute','right','obtuse','straight','reflex']);
-  let deg;
-  if(bucket==='acute') deg=randInt(15,80); else if(bucket==='right') deg=90;
-  else if(bucket==='obtuse') deg=randInt(100,170); else if(bucket==='straight') deg=180;
-  else deg=randInt(190,340);
-  return { prompt:`What type of angle is shown?`, answer:bucket, inputType:'choice', choices:['acute','right','obtuse','straight','reflex'],
-    explanation:`This angle measures about ${deg}°, which makes it a ${bucket} angle.`, svg:drawAngle(deg) };
+  if(diff!=='hard'){
+    const bucket=pick(['acute','right','obtuse','straight','reflex']);
+    let deg;
+    if(bucket==='acute') deg=randInt(15,80); else if(bucket==='right') deg=90;
+    else if(bucket==='obtuse') deg=randInt(100,170); else if(bucket==='straight') deg=180;
+    else deg=randInt(190,340);
+    return { prompt:`What type of angle is shown?`, answer:bucket, inputType:'choice', choices:['acute','right','obtuse','straight','reflex'],
+      explanation:`This angle measures about ${deg}°, which makes it a ${bucket} angle.`, svg:drawAngle(deg) };
+  }
+  const a1=randInt(20,80), a2=randInt(20,80); const total=a1+a2;
+  const correct=String(total);
+  const seen=new Set([correct]); const decoys=[];
+  const candidates=[String(a1), String(a2), String(Math.abs(a1-a2)), String(total+10), String(total-10)].filter(c=>c!==correct && Number(c)>0);
+  for(const c of shuffleArr(candidates)){ if(!seen.has(c)){ seen.add(c); decoys.push(c); if(decoys.length>=3) break; } }
+  while(decoys.length<3){ const c=String(Math.max(1,total+randInt(-30,30))); if(!seen.has(c)){ seen.add(c); decoys.push(c); } }
+  const choices=shuffleArr([correct, ...decoys.slice(0,3)]);
+  return { prompt:`Two angles meet at a point: one is ${a1}° and the other is ${a2}°. What is the total angle?`, answer:correct, inputType:'choice', choices,
+    explanation:`${a1}° + ${a2}° = ${total}°.`, svg:drawCompositeAngle(a1,a2) };
 }
 function genVolume(diff){
   const layers= diff==='easy'?randInt(2,3): diff==='medium'?randInt(2,4):randInt(3,5);
@@ -1271,7 +1387,7 @@ function renderTeacherLiveGame(){
       <div class="mmc-card">
         <h3>🔴 Room open — ${esc(room.level)} level</h3>
         <div class="meta">Students see a Join button now. Start whenever you're ready — everyone's timer begins at the same moment.</div>
-        <div class="meta" style="font-weight:800;color:var(--ink);">${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} waiting</div>
+        <div class="meta" style="font-weight:800;color:var(--ink);">${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} waiting · Room: <code class="mmc-code">${esc(room.id.slice(0,6))}</code></div>
         <div class="mmc-row" style="margin-top:8px;">
           <button class="mmc-btn gold" id="mmc-live-start">▶ Start Game</button>
           <button class="mmc-btn danger sm" id="mmc-live-cancel">Cancel room</button>
@@ -1301,7 +1417,7 @@ function renderTeacherLiveGame(){
     const head=el(`
       <div class="mmc-card">
         <div class="mmc-row" style="justify-content:space-between;">
-          <div><h3 style="text-transform:capitalize;">${esc(room.level)} — Live!</h3><div class="meta">${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'}</div></div>
+          <div><h3 style="text-transform:capitalize;">${esc(room.level)} — Live!</h3><div class="meta">${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} · Room: <code class="mmc-code">${esc(room.id.slice(0,6))}</code></div></div>
           <div id="mmc-live-timer" style="font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:700;color:var(--purple-deep);">${room.startedAt? formatMMSS(liveTimeLeft(room)) : 'Starting…'}</div>
         </div>
         <button class="mmc-btn danger sm" id="mmc-live-end" style="margin-top:8px;">End now</button>
@@ -1361,7 +1477,7 @@ function renderMyLiveSession(){
   const head=el(`
     <div class="mmc-card">
       <div class="mmc-row" style="justify-content:space-between;">
-        <div><h3 style="text-transform:capitalize;">${esc(S.myLive.level)} — Live!</h3><div class="meta">Your score: ${S.myLive.score} / ${S.myLive.attempted}</div></div>
+        <div><h3 style="text-transform:capitalize;">${esc(S.myLive.level)} — Live!</h3><div class="meta">Your score: ${S.myLive.score} / ${S.myLive.attempted} · Room: <code class="mmc-code">${esc(S.myLive.gameId.slice(0,6))}</code></div></div>
         <div id="mmc-live-my-timer" style="font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:700;color:var(--purple-deep);">${room? formatMMSS(liveTimeLeft(room)) : ''}</div>
       </div>
     </div>
@@ -1397,7 +1513,7 @@ function renderStudentLiveGame(){
       const card=el(`
         <div class="mmc-card">
           <h3>🔴 ${esc(room.level)} game starting soon!</h3>
-          <div class="meta">${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} waiting</div>
+          <div class="meta">${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} waiting · Room: <code class="mmc-code">${esc(room.id.slice(0,6))}</code></div>
           <button class="mmc-btn gold" id="mmc-live-join">Join ▶</button>
         </div>
       `);
