@@ -736,11 +736,14 @@ function genAngle(diff){
     return { prompt:`What type of angle is shown?`, answer:bucket, inputType:'choice', choices:['acute','right','obtuse','straight','reflex'],
       explanation:`This angle measures about ${deg}°, which makes it a ${bucket} angle.`, svg:drawAngle(deg) };
   }
-  // hard: classify three angles at once (no guarantee of one-of-each — could repeat categories)
-  const cats=['acute','right','obtuse','reflex'];
+  // hard: classify three angles at once — right (90°) shows up now and then, but never twice
+  // in the same question, since a repeated identical value is a giveaway rather than a real test.
+  const nonRightCats=['acute','obtuse','reflex'];
+  const includeRight = Math.random()<0.45;
+  const rightSlot = includeRight ? randInt(0,2) : -1;
   const items=[];
   for(let i=0;i<3;i++){
-    const cat=pick(cats);
+    const cat = i===rightSlot ? 'right' : pick(nonRightCats);
     let deg;
     if(cat==='acute') deg=randInt(1,89);
     else if(cat==='right') deg=90;
@@ -1828,7 +1831,7 @@ function renderAuth(){
 // ================= TEACHER =================
 function renderTeacher(){
   const wrap=el('<div></div>');
-  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-t="weeks">This week's set</button><button class="mmc-tab" data-t="ledger">Gradebook</button><button class="mmc-tab" data-t="students">Students</button><button class="mmc-tab" data-t="timetable">Times Tables</button><button class="mmc-tab" data-t="live">🔴 Racing Ground</button></div>`);
+  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-t="weeks">Skills Practice</button><button class="mmc-tab" data-t="ledger">Gradebook</button><button class="mmc-tab" data-t="students">Students</button><button class="mmc-tab" data-t="timetable">Times Tables</button><button class="mmc-tab" data-t="live">🔴 Racing Ground</button></div>`);
   tabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.t===S.teacherTab) b.classList.add('active');
     b.onclick=()=>{ S.teacherTab=b.dataset.t; render(); }; });
   wrap.appendChild(tabs);
@@ -1933,6 +1936,74 @@ async function publishWeek(week){
   try{ await updateDoc(doc(db,'weeks',week.id), {status:'published', scheduledAt:null}); S.editingDraftId=null; render(); }
   catch(e){ S.toast='Could not publish — check your connection.'; render(); }
 }
+async function deleteWeekAction(week){
+  if(!confirm(`Permanently delete "${week.label}"? This can't be undone — if you might want this again later, use Archive instead.`)) return;
+  try{ await deleteDoc(doc(db,'weeks',week.id)); }catch(e){ S.toast='Could not delete — check your connection.'; render(); }
+}
+async function archiveWeekAction(week){
+  const msg = week.status==='published'
+    ? `Archive "${week.label}"? Students will no longer be able to access it. You can restore it any time from Archived Sets.`
+    : `Archive "${week.label}"? You can restore it any time from Archived Sets.`;
+  if(!confirm(msg)) return;
+  try{ await updateDoc(doc(db,'weeks',week.id), {status:'archived', scheduledAt:null}); if(S.editingDraftId===week.id) S.editingDraftId=null; render(); }
+  catch(e){ S.toast='Could not archive — check your connection.'; render(); }
+}
+async function scheduleWeekAction(week, dateStr){
+  if(!dateStr){ S.toast='Pick a date and time first.'; render(); return; }
+  const when=new Date(dateStr);
+  if(when.getTime()<=Date.now()){ S.toast='Pick a time in the future.'; render(); return; }
+  try{ await updateDoc(doc(db,'weeks',week.id), {scheduledAt:when}); }
+  catch(e){ S.toast='Could not schedule — check your connection.'; render(); }
+}
+async function unscheduleWeekAction(week){
+  try{ await updateDoc(doc(db,'weeks',week.id), {scheduledAt:null}); }
+  catch(e){ S.toast='Could not cancel — check your connection.'; render(); }
+}
+// Builds one full copy of the week's control panel (Edit/Publish/Archive/Delete + the
+// scheduler). Called twice per card (top and bottom) so teachers reviewing a long set can
+// act from wherever they are — but every button here wires back to the SAME shared action
+// functions above, so there is exactly one place the actual publish/archive/schedule/delete
+// logic lives, not a duplicated copy per location.
+function buildWeekControlPanel(week, isEditing, suffix){
+  const live = isWeekLive(week);
+  const isScheduled = week.status==='draft' && week.scheduledAt && !live;
+  const panel=el('<div></div>');
+  const btnRow=el('<div class="mmc-row"></div>');
+  if(week.status==='draft'){
+    const editBtn=el(`<button class="mmc-btn ghost sm">${isEditing?'Close':'Edit'}</button>`);
+    editBtn.onclick=()=>{ S.editingDraftId = isEditing? null : week.id; render(); };
+    btnRow.appendChild(editBtn);
+  }
+  if(week.status==='draft' && !live){
+    const pubBtn=el('<button class="mmc-btn gold sm">Publish now</button>');
+    pubBtn.onclick=()=>publishWeek(week);
+    btnRow.appendChild(pubBtn);
+  }
+  const archiveBtn=el('<button class="mmc-btn ghost sm">📦 Archive</button>');
+  archiveBtn.onclick=()=>archiveWeekAction(week);
+  btnRow.appendChild(archiveBtn);
+  const deleteBtn=el('<button class="mmc-btn danger sm">Delete</button>');
+  deleteBtn.onclick=()=>deleteWeekAction(week);
+  btnRow.appendChild(deleteBtn);
+  panel.appendChild(btnRow);
+  if(week.status==='draft' && !live){
+    const inputId=`mmc-sched-${week.id}-${suffix}`;
+    const schedRow=el(`
+      <div class="mmc-row" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--paper-line);">
+        <div class="mmc-field" style="margin-bottom:0;flex:1;min-width:200px;"><label>Auto-activate at</label>
+          <input type="datetime-local" id="${inputId}" value="${week.scheduledAt ? new Date((week.scheduledAt.seconds||0)*1000 - new Date().getTimezoneOffset()*60000).toISOString().slice(0,16) : ''}"></div>
+        <button class="mmc-btn ghost sm" data-act="schedule">${isScheduled?'Update schedule':'Schedule'}</button>
+        ${isScheduled ? '<button class="mmc-btn ghost sm" data-act="unschedule">Cancel schedule</button>' : ''}
+      </div>
+    `);
+    const schedInput=schedRow.querySelector(`#${inputId}`);
+    schedRow.querySelector('[data-act="schedule"]').onclick=()=>scheduleWeekAction(week, schedInput.value);
+    const unschedBtn=schedRow.querySelector('[data-act="unschedule"]');
+    if(unschedBtn) unschedBtn.onclick=()=>unscheduleWeekAction(week);
+    panel.appendChild(schedRow);
+  }
+  return panel;
+}
 function renderWeekCard(week){
   const isEditing = S.editingDraftId===week.id;
   const live = isWeekLive(week);
@@ -1944,71 +2015,17 @@ function renderWeekCard(week){
         : '<span style="color:#E85C0A;font-size:12px;font-weight:700;">DRAFT</span>'));
   const card=el(`
     <div class="mmc-card">
-      <div class="mmc-row" style="justify-content:space-between;">
-        <div>
-          <h3>${esc(week.label)} ${statusBadge}</h3>
-          <div class="meta">${esc(week.difficulty)} · ${(week.questions||[]).length} questions</div>
-        </div>
-        <div class="mmc-row">
-          ${week.status==='draft' ? `<button class="mmc-btn ghost sm" data-act="edit">${isEditing?'Close':'Edit'}</button>` : ''}
-          ${week.status==='draft' && !live ? `<button class="mmc-btn gold sm" data-act="publish">Publish now</button>` : ''}
-          <button class="mmc-btn ghost sm" data-act="archive">📦 Archive</button>
-          <button class="mmc-btn danger sm" data-act="delete">Delete</button>
-        </div>
-      </div>
+      <h3>${esc(week.label)} ${statusBadge}</h3>
+      <div class="meta" style="margin-bottom:10px;">${esc(week.difficulty)} · ${(week.questions||[]).length} questions</div>
     </div>
   `);
-  card.querySelector('[data-act="delete"]').onclick=async ()=>{
-    if(!confirm(`Permanently delete "${week.label}"? This can't be undone — if you might want this again later, use Archive instead.`)) return;
-    try{ await deleteDoc(doc(db,'weeks',week.id)); }catch(e){ S.toast='Could not delete — check your connection.'; render(); }
-  };
-  card.querySelector('[data-act="archive"]').onclick=async ()=>{
-    const msg = week.status==='published'
-      ? `Archive "${week.label}"? Students will no longer be able to access it. You can restore it any time from Archived Sets.`
-      : `Archive "${week.label}"? You can restore it any time from Archived Sets.`;
-    if(!confirm(msg)) return;
-    try{ await updateDoc(doc(db,'weeks',week.id), {status:'archived', scheduledAt:null}); if(isEditing) S.editingDraftId=null; }
-    catch(e){ S.toast='Could not archive — check your connection.'; render(); }
-  };
-  const editBtn=card.querySelector('[data-act="edit"]');
-  if(editBtn) editBtn.onclick=()=>{ S.editingDraftId = isEditing? null : week.id; render(); };
-  const pubBtn=card.querySelector('[data-act="publish"]');
-  if(pubBtn) pubBtn.onclick=()=>publishWeek(week);
-  if(week.status==='draft' && !live){
-    const schedRow=el(`
-      <div class="mmc-row" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--paper-line);">
-        <div class="mmc-field" style="margin-bottom:0;flex:1;min-width:200px;"><label>Auto-activate at</label>
-          <input type="datetime-local" id="mmc-sched-${week.id}" value="${week.scheduledAt ? new Date((week.scheduledAt.seconds||0)*1000 - new Date().getTimezoneOffset()*60000).toISOString().slice(0,16) : ''}"></div>
-        <button class="mmc-btn ghost sm" data-act="schedule">${isScheduled?'Update schedule':'Schedule'}</button>
-        ${isScheduled ? '<button class="mmc-btn ghost sm" data-act="unschedule">Cancel schedule</button>' : ''}
-      </div>
-    `);
-    const schedInput=schedRow.querySelector(`#mmc-sched-${week.id}`);
-    schedRow.querySelector('[data-act="schedule"]').onclick=async ()=>{
-      const v=schedInput.value;
-      if(!v){ S.toast='Pick a date and time first.'; render(); return; }
-      const when=new Date(v);
-      if(when.getTime()<=Date.now()){ S.toast='Pick a time in the future.'; render(); return; }
-      try{ await updateDoc(doc(db,'weeks',week.id), {scheduledAt:when}); }
-      catch(e){ S.toast='Could not schedule — check your connection.'; render(); }
-    };
-    const unschedBtn=schedRow.querySelector('[data-act="unschedule"]');
-    if(unschedBtn) unschedBtn.onclick=async ()=>{
-      try{ await updateDoc(doc(db,'weeks',week.id), {scheduledAt:null}); }
-      catch(e){ S.toast='Could not cancel — check your connection.'; render(); }
-    };
-    card.appendChild(schedRow);
-  }
+  card.appendChild(buildWeekControlPanel(week, isEditing, 'top'));
   if(isEditing){
     card.appendChild(renderQuestionEditor(week));
-    if(week.status==='draft' && !live){
-      const bottomPub=el('<div class="mmc-row" style="justify-content:flex-end;margin-top:14px;padding-top:14px;border-top:2px solid var(--paper-line);"></div>');
-      bottomPub.appendChild(el('<div class="meta" style="margin:0;flex:1;">Reviewed the whole set? Publish it right from here.</div>'));
-      const bottomPubBtn=el('<button class="mmc-btn gold">Publish now</button>');
-      bottomPubBtn.onclick=()=>publishWeek(week);
-      bottomPub.appendChild(bottomPubBtn);
-      card.appendChild(bottomPub);
-    }
+    const bottomWrap=el('<div style="margin-top:14px;padding-top:14px;border-top:2px solid var(--paper-line);"></div>');
+    bottomWrap.appendChild(el('<div class="meta" style="margin:0 0 8px;">Reviewed the whole set? Act on it right from here.</div>'));
+    bottomWrap.appendChild(buildWeekControlPanel(week, isEditing, 'bottom'));
+    card.appendChild(bottomWrap);
   }
   return card;
 }
