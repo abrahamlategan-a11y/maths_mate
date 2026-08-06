@@ -1409,7 +1409,19 @@ function renderThemeCustomizeCard(){
   const tier = computeBadgeInfo(S.ttAttempts).tier;
   const card=el(`<div class="mmc-card"><h3>🎨 Page Colours</h3></div>`);
   if(tier.key==='rookie'){
-    card.appendChild(el('<div class="meta">🔒 Reach Up and Comer status to unlock preset colour themes for your whole page — Experts get free reign to pick any colours at all.</div>'));
+    const rookiePreset = PRESET_PALETTES.find(p=>p.key==='ocean');
+    card.appendChild(el('<div class="meta">Even Rookies get one colour change! Reach Up and Comer for more presets, and Expert for full free choice.</div>'));
+    const row=el('<div class="mmc-choices"></div>');
+    const isClassic = !S.profile || !S.profile.themePrimary;
+    const classicBtn=el(`<button type="button" class="mmc-choice-btn${isClassic?' selected':''}">Classic</button>`);
+    classicBtn.onclick=()=>applyThemeChoice(null,null,null);
+    row.appendChild(classicBtn);
+    const isEquipped = S.profile && S.profile.themePrimary===rookiePreset.primary && S.profile.themeSecondary===rookiePreset.secondary && S.profile.themeAccent===rookiePreset.accent;
+    const swatch = `<span style="display:inline-flex;gap:2px;margin-right:5px;">${[rookiePreset.primary,rookiePreset.secondary,rookiePreset.accent].map(c=>`<span style="width:11px;height:11px;border-radius:50%;background:${c};display:inline-block;border:1px solid var(--ink);"></span>`).join('')}</span>`;
+    const presetBtn=el(`<button type="button" class="mmc-choice-btn${isEquipped?' selected':''}" style="display:inline-flex;align-items:center;">${swatch}${esc(rookiePreset.label)}</button>`);
+    presetBtn.onclick=()=>applyThemeChoice(rookiePreset.primary,rookiePreset.secondary,rookiePreset.accent);
+    row.appendChild(presetBtn);
+    card.appendChild(row);
     return card;
   }
   if(tier.key==='upandcomer'){
@@ -1500,7 +1512,7 @@ const S = {
   weeks:[], results:[], profiles:{},
   teacherTab:'weeks', editingDraftId:null,
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null,
-  weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false,
+  weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   genForm:{ label:'', difficulty:'easy', strategy:'random' },
   activeWeekId:null, quiz:{}, toast:null,
   bulkCreating:false, bulkProgress:null, bulkResults:null, bulkNamesText:'', bulkPassword:'',
@@ -1510,10 +1522,26 @@ const S = {
 };
 let unsubs = [];
 let liveParticipantsUnsub = null, liveParticipantsRoomId = null;
+let scheduledWeeksUnsub = null, scheduledWeeksInterval = null;
+function subscribeScheduledWeeks(){
+  const teacherUid=(S.profile&&S.profile.teacherUid)||'__none__';
+  if(scheduledWeeksUnsub){ try{scheduledWeeksUnsub();}catch(e){} scheduledWeeksUnsub=null; }
+  const cutoff=new Date();
+  scheduledWeeksUnsub=onSnapshot(query(collection(db,'weeks'),
+    where('status','==','draft'), where('teacherUid','==',teacherUid), where('scheduledAt','<=',cutoff)), snap=>{
+    S.weeksScheduled=snap.docs.map(d=>({id:d.id,...d.data()}));
+    S.weeks=[...(S.weeksPublished||[]), ...S.weeksScheduled];
+    render();
+  }, (err)=>{ /* a scheduled week right at its boundary can transiently fail this query if the
+                 device's clock is slightly fast — self-corrects on the next 60s refresh, so
+                 this is deliberately silent rather than alarming the student with an error. */ });
+}
 function clearSubs(){
   unsubs.forEach(u=>{ try{u();}catch(e){} }); unsubs=[];
   if(liveParticipantsUnsub){ try{liveParticipantsUnsub();}catch(e){} liveParticipantsUnsub=null; liveParticipantsRoomId=null; liveParticipantsGen++; }
   if(teacherLiveTimerHandle){ clearInterval(teacherLiveTimerHandle); teacherLiveTimerHandle=null; teacherLiveTimerRoomId=null; }
+  if(scheduledWeeksUnsub){ try{scheduledWeeksUnsub();}catch(e){} scheduledWeeksUnsub=null; }
+  if(scheduledWeeksInterval){ clearInterval(scheduledWeeksInterval); scheduledWeeksInterval=null; }
 }
 function currentLiveRoom(){
   if(!S.liveGames || !S.liveGames.length) return null;
@@ -1543,6 +1571,22 @@ function ensureParticipantsSub(gameId){
 
 function el(html){ const t=document.createElement('template'); t.innerHTML=html.trim(); return t.content.firstElementChild; }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// A week is "live" (visible to students) if it's explicitly published, OR it's still a
+// draft but has a scheduled activation time that has now passed.
+function isWeekLive(week){
+  if(week.status==='published') return true;
+  if(week.status==='draft' && week.scheduledAt){
+    const ms = week.scheduledAt.seconds!=null ? week.scheduledAt.seconds*1000 : (week.scheduledAt instanceof Date ? week.scheduledAt.getTime() : null);
+    return ms!=null && Date.now()>=ms;
+  }
+  return false;
+}
+function formatScheduledAt(ts){
+  if(!ts) return '';
+  const ms = ts.seconds!=null ? ts.seconds*1000 : (ts instanceof Date ? ts.getTime() : null);
+  if(ms==null) return '';
+  return new Date(ms).toLocaleString(undefined, {weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit'});
+}
 function fracHTML(num,den){ return `<span class="mmc-frac"><span class="num">${esc(num)}</span><span class="line"></span><span class="den">${esc(den)}</span></span>`; }
 function fracChoiceHTML(c){
   const m=String(c).match(/^(-?\d+)\/(-?\d+)$/);
@@ -1597,11 +1641,16 @@ function subscribeData(){
     unsubs.push(onSnapshot(query(collection(db,'ttAttempts'), where('teacherUid','==',S.user.uid)), snap=>{ S.ttAttempts=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, (err)=>{ S.toast='Timetable data error: '+err.message; render(); }));
     unsubs.push(onSnapshot(query(collection(db,'liveGames'), where('teacherUid','==',S.user.uid)), snap=>{
       S.liveGames=snap.docs.map(d=>({id:d.id,...d.data()})); ensureParticipantsSub(currentLiveRoom()?.id||null); ensureTeacherLiveTimer(); render();
-    }, (err)=>{ S.toast='Live Game error: '+err.message; render(); }));
+    }, (err)=>{ S.toast='Racing Ground error: '+err.message; render(); }));
   } else {
     unsubs.push(onSnapshot(query(collection(db,'weeks'), where('status','==','published'), where('teacherUid','==',(S.profile&&S.profile.teacherUid)||'__none__')), snap=>{
-      S.weeks=snap.docs.map(d=>({id:d.id,...d.data()})); render();
+      S.weeksPublished=snap.docs.map(d=>({id:d.id,...d.data()}));
+      S.weeks=[...S.weeksPublished, ...(S.weeksScheduled||[])];
+      render();
     }, (err)=>{ S.toast='Weeks error: '+err.message; render(); }));
+    subscribeScheduledWeeks();
+    if(scheduledWeeksInterval) clearInterval(scheduledWeeksInterval);
+    scheduledWeeksInterval=setInterval(subscribeScheduledWeeks, 60000); // re-check every minute so newly-due weeks appear without a manual reload
     unsubs.push(onSnapshot(query(collection(db,'results'), where('uid','==',S.user.uid)), snap=>{
       S.results=snap.docs.map(d=>({id:d.id,...d.data()})); render();
     }, (err)=>{ S.toast='Results error: '+err.message; render(); }));
@@ -1613,7 +1662,7 @@ function subscribeData(){
     }, (err)=>{ S.toast='Timetable data error: '+err.message; render(); }));
     unsubs.push(onSnapshot(query(collection(db,'liveGames'), where('teacherUid','==',(S.profile&&S.profile.teacherUid)||'__none__')), snap=>{
       S.liveGames=snap.docs.map(d=>({id:d.id,...d.data()})); ensureParticipantsSub(currentLiveRoom()?.id||null); render();
-    }, (err)=>{ S.toast='Live Game error: '+err.message; render(); }));
+    }, (err)=>{ S.toast='Racing Ground error: '+err.message; render(); }));
   }
 }
 
@@ -1710,7 +1759,7 @@ function renderAuth(){
 // ================= TEACHER =================
 function renderTeacher(){
   const wrap=el('<div></div>');
-  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-t="weeks">This week's set</button><button class="mmc-tab" data-t="ledger">Gradebook</button><button class="mmc-tab" data-t="students">Students</button><button class="mmc-tab" data-t="timetable">Timetable</button><button class="mmc-tab" data-t="live">🔴 Live Game</button></div>`);
+  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-t="weeks">This week's set</button><button class="mmc-tab" data-t="ledger">Gradebook</button><button class="mmc-tab" data-t="students">Students</button><button class="mmc-tab" data-t="timetable">Times Tables</button><button class="mmc-tab" data-t="live">🔴 Racing Ground</button></div>`);
   tabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.t===S.teacherTab) b.classList.add('active');
     b.onclick=()=>{ S.teacherTab=b.dataset.t; render(); }; });
   wrap.appendChild(tabs);
@@ -1768,16 +1817,23 @@ function renderTeacherWeeks(){
 
 function renderWeekCard(week){
   const isEditing = S.editingDraftId===week.id;
+  const live = isWeekLive(week);
+  const isScheduled = week.status==='draft' && week.scheduledAt && !live;
+  const statusBadge = week.status==='published'
+    ? '<span style="color:#2E9E4F;font-size:12px;font-weight:700;">PUBLISHED</span>'
+    : (live ? '<span style="color:#2E9E4F;font-size:12px;font-weight:700;">LIVE (scheduled)</span>'
+      : (isScheduled ? `<span style="color:#8B5CF6;font-size:12px;font-weight:700;">⏰ SCHEDULED — ${esc(formatScheduledAt(week.scheduledAt))}</span>`
+        : '<span style="color:#E85C0A;font-size:12px;font-weight:700;">DRAFT</span>'));
   const card=el(`
     <div class="mmc-card">
       <div class="mmc-row" style="justify-content:space-between;">
         <div>
-          <h3>${esc(week.label)} ${week.status==='draft' ? '<span style="color:#E85C0A;font-size:12px;font-weight:700;">DRAFT</span>' : '<span style="color:#2E9E4F;font-size:12px;font-weight:700;">PUBLISHED</span>'}</h3>
+          <h3>${esc(week.label)} ${statusBadge}</h3>
           <div class="meta">${esc(week.difficulty)} · ${(week.questions||[]).length} questions</div>
         </div>
         <div class="mmc-row">
           ${week.status==='draft' ? `<button class="mmc-btn ghost sm" data-act="edit">${isEditing?'Close':'Edit'}</button>` : ''}
-          ${week.status==='draft' ? `<button class="mmc-btn gold sm" data-act="publish">Publish</button>` : ''}
+          ${week.status==='draft' && !live ? `<button class="mmc-btn gold sm" data-act="publish">Publish now</button>` : ''}
           <button class="mmc-btn danger sm" data-act="delete">Delete</button>
         </div>
       </div>
@@ -1791,9 +1847,34 @@ function renderWeekCard(week){
   if(editBtn) editBtn.onclick=()=>{ S.editingDraftId = isEditing? null : week.id; render(); };
   const pubBtn=card.querySelector('[data-act="publish"]');
   if(pubBtn) pubBtn.onclick=async ()=>{
-    try{ await updateDoc(doc(db,'weeks',week.id), {status:'published'}); S.editingDraftId=null; }
+    try{ await updateDoc(doc(db,'weeks',week.id), {status:'published', scheduledAt:null}); S.editingDraftId=null; }
     catch(e){ S.toast='Could not publish — check your connection.'; render(); }
   };
+  if(week.status==='draft' && !live){
+    const schedRow=el(`
+      <div class="mmc-row" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--paper-line);">
+        <div class="mmc-field" style="margin-bottom:0;flex:1;min-width:200px;"><label>Auto-activate at</label>
+          <input type="datetime-local" id="mmc-sched-${week.id}" value="${week.scheduledAt ? new Date((week.scheduledAt.seconds||0)*1000 - new Date().getTimezoneOffset()*60000).toISOString().slice(0,16) : ''}"></div>
+        <button class="mmc-btn ghost sm" data-act="schedule">${isScheduled?'Update schedule':'Schedule'}</button>
+        ${isScheduled ? '<button class="mmc-btn ghost sm" data-act="unschedule">Cancel schedule</button>' : ''}
+      </div>
+    `);
+    const schedInput=schedRow.querySelector(`#mmc-sched-${week.id}`);
+    schedRow.querySelector('[data-act="schedule"]').onclick=async ()=>{
+      const v=schedInput.value;
+      if(!v){ S.toast='Pick a date and time first.'; render(); return; }
+      const when=new Date(v);
+      if(when.getTime()<=Date.now()){ S.toast='Pick a time in the future.'; render(); return; }
+      try{ await updateDoc(doc(db,'weeks',week.id), {scheduledAt:when}); }
+      catch(e){ S.toast='Could not schedule — check your connection.'; render(); }
+    };
+    const unschedBtn=schedRow.querySelector('[data-act="unschedule"]');
+    if(unschedBtn) unschedBtn.onclick=async ()=>{
+      try{ await updateDoc(doc(db,'weeks',week.id), {scheduledAt:null}); }
+      catch(e){ S.toast='Could not cancel — check your connection.'; render(); }
+    };
+    card.appendChild(schedRow);
+  }
   if(isEditing) card.appendChild(renderQuestionEditor(week));
   return card;
 }
@@ -1929,7 +2010,7 @@ function renderGradebookDetail(){
       </div>
     `);
     card.querySelector('#mmc-gb-close').onclick=()=>{ S.gradebookDetail=null; render(); };
-    const pubWeeks=S.weeks.filter(w=>w.status==='published').sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
+    const pubWeeks=S.weeks.filter(isWeekLive).sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
     let any=false;
     pubWeeks.forEach(w=>{
       const q=(w.questions||[]).find(x=>x.slot===d.slot);
@@ -1958,7 +2039,7 @@ function renderGradebookDetail(){
 
 function renderLedgerSummary(){
   const wrap=el('<div></div>');
-  const pubWeeks = S.weeks.filter(w=>w.status==='published').sort((a,b)=> (a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
+  const pubWeeks = S.weeks.filter(isWeekLive).sort((a,b)=> (a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
   const studentUids = Object.keys(S.profiles).filter(uid=>{
     const email=(S.profiles[uid].email||'').toLowerCase();
     return !S.teacherEmails.map(e=>String(e).toLowerCase()).includes(email);
@@ -2003,7 +2084,7 @@ function renderLedgerSummary(){
 
 function renderLedgerByWeek(){
   const wrap=el('<div></div>');
-  const pubWeeks = S.weeks.filter(w=>w.status==='published').sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+  const pubWeeks = S.weeks.filter(isWeekLive).sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
   if(pubWeeks.length===0){ wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">📒</div>No published weeks yet.</div>')); return wrap; }
   if(!S.gradebookWeekId || !pubWeeks.some(w=>w.id===S.gradebookWeekId)) S.gradebookWeekId=pubWeeks[0].id;
 
@@ -2066,7 +2147,7 @@ function renderLedgerByQuestion(){
   const detail=renderGradebookDetail();
   if(detail && S.gradebookDetail && S.gradebookDetail.type==='question') wrap.appendChild(detail);
 
-  const pubWeeks = S.weeks.filter(w=>w.status==='published');
+  const pubWeeks = S.weeks.filter(isWeekLive);
   const qidToSlotByWeek={};
   pubWeeks.forEach(w=>{ const m={}; (w.questions||[]).forEach(q=>{ m[q.id]=q.slot; }); qidToSlotByWeek[w.id]=m; });
 
@@ -2081,6 +2162,24 @@ function renderLedgerByQuestion(){
   for(let s=1;s<=20;s++) trh.appendChild(el(`<th title="${esc(SLOTS[s-1].title)}">Q${s}</th>`));
   table.appendChild(thead);
   const tbody=el('<tbody></tbody>');
+
+  const avgRow=el('<tr style="background:var(--bg);font-weight:700;"></tr>');
+  avgRow.appendChild(el('<td>Class average</td>'));
+  for(let s=1;s<=20;s++){
+    let avgCorrect=0, avgTotal=0;
+    S.results.forEach(rec=>{
+      const map=qidToSlotByWeek[rec.weekId]; if(!map) return;
+      (rec.answers||[]).forEach(a=>{ if(map[a.qId]===s){ avgTotal++; if(a.correct) avgCorrect++; } });
+    });
+    if(avgTotal===0) avgRow.appendChild(el('<td style="color:var(--ink-soft);">—</td>'));
+    else {
+      const pct=Math.round((avgCorrect/avgTotal)*100);
+      const emoji = pct>=80?'🟩':(pct>=50?'🟧':'🟥');
+      avgRow.appendChild(el(`<td title="${avgCorrect}/${avgTotal} correct across the class">${emoji} ${pct}%</td>`));
+    }
+  }
+  tbody.appendChild(avgRow);
+
   studentUids.forEach(uid=>{
     const tr=el('<tr></tr>');
     tr.appendChild(el(`<td>${esc(S.profiles[uid].displayName||uid)}</td>`));
@@ -2142,7 +2241,7 @@ function renderTeacherTimetable(){
   }
 
   const tableWrap=el('<div class="mmc-ledger-wrap"></div>');
-  const table=el(`<table class="mmc-ledger"><thead><tr><th>Student</th><th>Best Easy</th><th>Best Medium</th><th>Best Hard</th><th>Attempts</th><th>Last attempt</th></tr></thead><tbody></tbody></table>`);
+  const table=el(`<table class="mmc-ledger"><thead><tr><th>Student</th><th>Status</th><th>Best Easy</th><th>Best Medium</th><th>Best Hard</th><th>Attempts</th><th>Last attempt</th></tr></thead><tbody></tbody></table>`);
   const tbody=table.querySelector('tbody');
   studentUids.forEach(uid=>{
     const mine=S.ttAttempts.filter(a=>a.uid===uid);
@@ -2150,7 +2249,8 @@ function renderTeacherTimetable(){
       const best=at.reduce((b,a)=>a.score>b.score?a:b, at[0]); return `${best.score}/${best.attempted} (${best.accuracy}%)`; };
     const last=mine.slice().sort((a,b)=>(b.submittedAt?.seconds||0)-(a.submittedAt?.seconds||0))[0];
     const lastStr = last && last.submittedAt?.seconds ? new Date(last.submittedAt.seconds*1000).toLocaleDateString() : '—';
-    tbody.appendChild(el(`<tr><td>${esc(S.profiles[uid].displayName||uid)}</td><td>${esc(bestOf('easy'))}</td><td>${esc(bestOf('medium'))}</td><td>${esc(bestOf('hard'))}</td><td>${mine.length}</td><td>${esc(lastStr)}</td></tr>`));
+    const tier = computeBadgeInfo(mine).tier;
+    tbody.appendChild(el(`<tr><td>${esc(S.profiles[uid].displayName||uid)}</td><td>${tier.emoji} ${esc(tier.label)}</td><td>${esc(bestOf('easy'))}</td><td>${esc(bestOf('medium'))}</td><td>${esc(bestOf('hard'))}</td><td>${mine.length}</td><td>${esc(lastStr)}</td></tr>`));
   });
   table.appendChild(tbody);
   tableWrap.appendChild(table);
@@ -2323,7 +2423,7 @@ function renderStudent(){
   syncMyLiveSession();
   if(S.myLive && S.myLive.answering) return renderMyLiveSession();
   const wrap=el('<div></div>');
-  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-st="weekly">Weekly Quiz</button><button class="mmc-tab" data-st="timetable">Times Table Training Ground</button><button class="mmc-tab" data-st="live">🔴 Live Game</button><button class="mmc-tab" data-st="settings">⚙️ Settings</button></div>`);
+  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-st="weekly">Weekly Quiz</button><button class="mmc-tab" data-st="timetable">Times Table Training Ground</button><button class="mmc-tab" data-st="live">🔴 Racing Ground</button><button class="mmc-tab" data-st="settings">⚙️ Settings</button></div>`);
   tabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.st===S.studentTab) b.classList.add('active');
     b.onclick=()=>{ S.studentTab=b.dataset.st; render(); }; });
   wrap.appendChild(tabs);
@@ -2487,7 +2587,7 @@ function renderStatusUpgradePanel(currentTierKey){
   const wrap=el('<div class="mmc-card" style="margin-top:14px;"></div>');
   wrap.appendChild(el('<h3 style="margin-bottom:10px;">📈 How to level up</h3>'));
   const tiers=[
-    { key:'rookie', emoji:'🐴', label:'Rookie', reach:'Everyone starts here.', keep:'—', perks:'Classic horse look only.' },
+    { key:'rookie', emoji:'🐴', label:'Rookie', reach:'Everyone starts here.', keep:'—', perks:'One page colour option.' },
     { key:'upandcomer', emoji:'🌟', label:'Up and Comer', reach:'15+ practice attempts with 50%+ average accuracy.', keep:'Practice at least once every 14 days.', perks:'2 extra horse colours, 1 hat, and preset page colour themes for the whole site.' },
     { key:'expert', emoji:'🏆', label:'Expert', reach:'30+ practice attempts, including 10+ at Hard level with 60%+ accuracy on those Hard attempts.', keep:'Practice at least once every 3 days.', perks:'Every horse colour, every hat, a custom race nickname, and full free choice of any page colours.' },
   ];
@@ -2723,7 +2823,7 @@ function renderTeacherLiveGame(){
     }
     const form=el(`
       <div class="mmc-card">
-        <h3>Start a Live Game</h3>
+        <h3>Start the Racing Ground</h3>
         <div class="meta">Students join a lobby, then everyone's 5-minute timer starts together with a live leaderboard.</div>
         <div class="mmc-field" style="max-width:220px;"><label>Level</label>
           <select id="mmc-live-level">${['easy','medium','hard'].map(l=>`<option value="${l}" ${S.liveGenForm.level===l?'selected':''}>${l[0].toUpperCase()+l.slice(1)}</option>`).join('')}</select>
@@ -2782,7 +2882,7 @@ function renderTeacherLiveGame(){
       </div>
     `);
     head.querySelector('#mmc-live-end').onclick=async ()=>{
-      if(!confirm('End the live game now for everyone? This freezes the final standings.')) return;
+      if(!confirm('End the Racing Ground now for everyone? This freezes the final standings.')) return;
       try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended'}); }catch(e){ S.toast='Could not end — check your connection.'; render(); }
     };
     wrap.appendChild(head);
@@ -2877,7 +2977,7 @@ function renderStudentLiveGame(){
   const wrap=el('<div></div>');
   const room=currentLiveRoom();
   if(!room){
-    wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">🔴</div>No live game right now — ask your teacher to start one!</div>'));
+    wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">🔴</div>No race right now — ask your teacher to start one!</div>'));
     return wrap;
   }
   const joined = S.liveParticipants.some(p=>p.id===S.user.uid);
@@ -2885,7 +2985,7 @@ function renderStudentLiveGame(){
     if(!joined){
       const card=el(`
         <div class="mmc-card">
-          <h3>🔴 ${esc(room.level)} game starting soon!</h3>
+          <h3>🔴 ${esc(room.level)} race starting soon!</h3>
           <div class="meta">${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} waiting · Room: <code class="mmc-code">${esc(room.id.slice(0,6))}</code></div>
           <button class="mmc-btn gold" id="mmc-live-join">Join ▶</button>
         </div>
