@@ -117,6 +117,14 @@
   .mmc-coin-chip.selected { background:var(--yellow); }
   .mmc-coin-chip:disabled { opacity:.7; }
   .mmc-coin-total { font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--ink-soft); margin-bottom:8px; font-weight:700; }
+  .mmc-frac-eq { display:inline-flex; align-items:center; gap:10px; font-size:22px; font-weight:700; flex-wrap:wrap; justify-content:center; }
+  .mmc-frac { display:inline-flex; flex-direction:column; align-items:center; vertical-align:middle; font-family:'IBM Plex Mono',monospace; font-weight:700; }
+  .mmc-frac .num, .mmc-frac .den { padding:2px 8px; line-height:1.25; }
+  .mmc-frac .line { width:100%; height:0; border-top:2.5px solid var(--ink); margin:1px 0; }
+  .mmc-frac input { width:48px; text-align:center; font-size:18px; padding:5px 2px; border-radius:7px; border:2px solid var(--paper-line); font-family:'IBM Plex Mono',monospace; font-weight:700; }
+  .mmc-frac input:focus { outline:none; border-color:var(--purple); }
+  .mmc-choice-btn .mmc-frac { font-size:15px; }
+  .mmc-choice-btn .mmc-frac .num, .mmc-choice-btn .mmc-frac .den { padding:1px 4px; }
 
   .mmc-stamp { display:inline-flex; flex-direction:column; align-items:center; justify-content:center; min-width:92px; padding:10px 14px;
     border-radius:14px; border:3px solid var(--ink); transform:rotate(-3deg); font-family:'Baloo 2',sans-serif; box-shadow:3px 3px 0 var(--ink); }
@@ -579,6 +587,47 @@ const UNIT_SCENARIOS=[
 function genUnitChoice(diff){ const s=pick(UNIT_SCENARIOS);
   return { prompt:`Which unit would you use to measure ${s.q}?`, answer:s.answer, inputType:'choice', choices:s.choices,
     explanation:`${s.q.charAt(0).toUpperCase()+s.q.slice(1)} is best measured in ${s.answer}.` }; }
+
+// Q17: Simplify a fraction
+const NICE_DENOMS_EASY=[2,3,4,5];
+const NICE_DENOMS_MED=[2,3,4,5,6,7,8,9,10,12];
+function pickSimplifiedFraction(denomPool){
+  const d1=pick(denomPool); let n1;
+  do{ n1=randInt(1,d1-1); } while(gcd(n1,d1)!==1);
+  return {n1,d1};
+}
+function genFractionSimplify(diff){
+  if(diff==='easy'){
+    const {n1,d1}=pickSimplifiedFraction(NICE_DENOMS_EASY);
+    const k=randInt(2,6); const n0=n1*k, d0=d1*k;
+    return { prompt:`Fill in the missing numerator to complete the equivalent fraction.`, answer:String(n1),
+      inputType:'fracEasy', givenNum:n0, givenDen:d0, targetDen:d1,
+      explanation:`${n0}/${d0} simplifies by dividing top and bottom by ${k}: ${n0}÷${k} = ${n1}, ${d0}÷${k} = ${d1}.` };
+  }
+  if(diff==='medium'){
+    const {n1,d1}=pickSimplifiedFraction(NICE_DENOMS_MED);
+    const k=randInt(2,5); const n0=n1*k, d0=d1*k;
+    const correct=`${n1}/${d1}`;
+    const seen=new Set([correct]); const decoys=[];
+    const raw=`${n0}/${d0}`; if(raw!==correct){ seen.add(raw); decoys.push(raw); }
+    const flipped=`${d1}/${n1}`; if(!seen.has(flipped)){ seen.add(flipped); decoys.push(flipped); }
+    const forgotDen=`${n1}/${d0}`; if(!seen.has(forgotDen)){ seen.add(forgotDen); decoys.push(forgotDen); }
+    const forgotNum=`${n0}/${d1}`; if(!seen.has(forgotNum)){ seen.add(forgotNum); decoys.push(forgotNum); }
+    while(decoys.length<3){
+      const {n1:rn,d1:rd}=pickSimplifiedFraction(NICE_DENOMS_MED); const f=`${rn}/${rd}`;
+      if(!seen.has(f)){ seen.add(f); decoys.push(f); }
+    }
+    const choices=shuffleArr([correct, ...decoys.slice(0,3)]);
+    return { prompt:`Simplify this fraction to its lowest terms.`, answer:correct, inputType:'choice', choices, renderFractionChoices:true,
+      givenNum:n0, givenDen:d0,
+      explanation:`${n0}/${d0} ÷ ${k}/${k} = ${n1}/${d1}.` };
+  }
+  const {n1,d1}=pickSimplifiedFraction(NICE_DENOMS_MED);
+  const k=randInt(2,6); const n0=n1*k, d0=d1*k;
+  return { prompt:`Simplify this fraction to its lowest terms.`, answer:`${n1}/${d1}`, inputType:'fracHard',
+    givenNum:n0, givenDen:d0,
+    explanation:`${n0}/${d0} ÷ ${k}/${k} = ${n1}/${d1}.` };
+}
 const CONVERSIONS=[{from:'kg',to:'g',factor:1000},{from:'km',to:'m',factor:1000},{from:'L',to:'mL',factor:1000},{from:'m',to:'cm',factor:100},{from:'cm',to:'mm',factor:10}];
 function genConversion(diff){
   const c=pick(CONVERSIONS);
@@ -1172,7 +1221,7 @@ const SLOTS=[
   {title:'Coins', gen:genCoins},
   {title:'Area', gen:genArea},
   {title:'Telling time', gen:genClock},
-  {title:'Choosing units', gen:genUnitChoice},
+  {title:'Simplify a fraction', gen:genFractionSimplify},
   {title:'Unit conversion', gen:genConversion},
   {title:'Angle types', gen:genAngle},
   {title:'Word problem', gen:(diff,strategyKey)=>genWordProblem(diff,strategyKey)},
@@ -1184,7 +1233,9 @@ function buildQuestion(slotIdx, diff, strategyKey){
     inputType:q.inputType||'text', choices:q.choices||null, svg:q.svg||null,
     checkType:q.checkType||null, targetCents:q.targetCents!=null?q.targetCents:null, coins:q.coins||null,
     items:q.items||null, minCoins:q.minCoins!=null?q.minCoins:null,
-    strategyKey:q.strategyKey||null, strategyLabel:q.strategyLabel||null };
+    strategyKey:q.strategyKey||null, strategyLabel:q.strategyLabel||null,
+    givenNum:q.givenNum!=null?q.givenNum:null, givenDen:q.givenDen!=null?q.givenDen:null,
+    targetDen:q.targetDen!=null?q.targetDen:null, renderFractionChoices:q.renderFractionChoices||false };
 }
 function generateWeekQuestions(diff, strategyKey){ return SLOTS.map((s,i)=>buildQuestion(i,diff,strategyKey)); }
 
@@ -1218,6 +1269,12 @@ function gradeQuestion(q, given){
   if(q.checkType==='numset'){ const gi=new Set(parseNumList(given)), an=new Set(parseNumList(q.answer));
     if(gi.size!==an.size) return false; for(const v of an) if(!gi.has(v)) return false; return true; }
   if(q.inputType==='choice'){ return normalize(given)===normalize(q.answer); }
+  if(q.inputType==='fracHard'){
+    const gm=String(given).match(/^\s*(-?\d+)\s*\/\s*(-?\d+)\s*$/);
+    if(!gm) return false;
+    const am=String(q.answer).match(/^(-?\d+)\/(-?\d+)$/);
+    return !!am && gm[1]===am[1] && gm[2]===am[2];
+  }
   return checkAnswer(given, q.answer);
 }
 
@@ -1292,6 +1349,11 @@ function ensureParticipantsSub(gameId){
 
 function el(html){ const t=document.createElement('template'); t.innerHTML=html.trim(); return t.content.firstElementChild; }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fracHTML(num,den){ return `<span class="mmc-frac"><span class="num">${esc(num)}</span><span class="line"></span><span class="den">${esc(den)}</span></span>`; }
+function fracChoiceHTML(c){
+  const m=String(c).match(/^(-?\d+)\/(-?\d+)$/);
+  return m ? fracHTML(m[1],m[2]) : esc(c);
+}
 function tierFor(score,total){ const pct = total? score/total : 0;
   if(pct>=0.9) return {tone:'gold', msg:'Brilliant!'};
   if(pct>=0.7) return {tone:'green', msg:'Great job!'};
@@ -1529,7 +1591,7 @@ function renderQuestionEditor(week){
     catch(e){ S.toast='Could not save changes — check your connection.'; render(); }
   }
   (week.questions||[]).forEach((q,i)=>{
-    const isStructured = !!(q.svg || q.inputType==='choice' || q.inputType==='coins' || q.inputType==='order');
+    const isStructured = !!(q.svg || q.inputType==='choice' || q.inputType==='coins' || q.inputType==='order' || q.inputType==='fracEasy' || q.inputType==='fracHard');
     const row=el(`
       <div class="mmc-qedit">
         <div class="idx">Q${i+1} — ${esc(q.title||'Question')}${q.strategyLabel?` (${esc(q.strategyLabel)})`:''}</div>
@@ -1545,6 +1607,12 @@ function renderQuestionEditor(week){
         ` : q.inputType==='order' ? `
           <div class="label2">Correct order</div>
           <div class="meta" style="margin-bottom:8px;">${esc((q.answer||'').split(',').join(' → '))} — use Regenerate for different numbers.</div>
+        ` : q.inputType==='fracEasy' ? `
+          <div class="label2">Fraction</div>
+          <div class="meta" style="margin-bottom:8px;">${esc(q.givenNum)}/${esc(q.givenDen)} = ?/${esc(q.targetDen)} · answer: ${esc(q.answer)} — use Regenerate for different numbers.</div>
+        ` : q.inputType==='fracHard' ? `
+          <div class="label2">Fraction to simplify</div>
+          <div class="meta" style="margin-bottom:8px;">${esc(q.givenNum)}/${esc(q.givenDen)} → ${esc(q.answer)} — use Regenerate for different numbers.</div>
         ` : `
           <div class="label2">Answer</div>
           <input type="text" data-f="answer" value="${esc(q.answer)}">
@@ -2259,13 +2327,51 @@ function renderQuizTaking(week){
     if(q.inputType==='choice'){
       const choiceRow=el('<div class="mmc-choices"></div>');
       (q.choices||[]).forEach(c=>{
-        const b=el(`<button type="button" class="mmc-choice-btn ${st.given===c?'selected':''}" ${st.checked?'disabled':''}>${esc(c)}</button>`);
+        const label = q.renderFractionChoices ? fracChoiceHTML(c) : esc(c);
+        const b=el(`<button type="button" class="mmc-choice-btn ${st.given===c?'selected':''}" ${st.checked?'disabled':''}>${label}</button>`);
         b.onclick=()=>{ if(st.checked) return; st.given=c; render(); };
         choiceRow.appendChild(b);
       });
       qbox.appendChild(choiceRow);
       const checkBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" ${st.checked||!st.given?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
       checkBtn.onclick=doCheck;
+      qbox.appendChild(checkBtn);
+    } else if(q.inputType==='fracEasy'){
+      const row=el(`
+        <div class="mmc-frac-eq">
+          ${fracHTML(q.givenNum, q.givenDen)}
+          <span>=</span>
+          <span class="mmc-frac"><input type="text" id="mmc-frac-in" autocomplete="off" value="${esc(st.given)}" ${st.checked?'disabled':''}><span class="line"></span><span class="den">${esc(q.targetDen)}</span></span>
+        </div>
+      `);
+      const input=row.querySelector('#mmc-frac-in');
+      input.oninput=(e)=>{ st.given=e.target.value; };
+      input.addEventListener('keydown', e=>{ if(e.key==='Enter' && !st.checked) doCheck(); });
+      qbox.appendChild(row);
+      const checkBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" style="margin-top:10px;" ${st.checked||!st.given?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
+      checkBtn.onclick=doCheck;
+      qbox.appendChild(checkBtn);
+    } else if(q.inputType==='fracHard'){
+      const parts=String(st.given||'').split('/');
+      const row=el(`
+        <div class="mmc-frac-eq">
+          ${fracHTML(q.givenNum, q.givenDen)}
+          <span>=</span>
+          <span class="mmc-frac">
+            <input type="text" id="mmc-frac-num" autocomplete="off" value="${esc(parts[0]||'')}" ${st.checked?'disabled':''}>
+            <span class="line"></span>
+            <input type="text" id="mmc-frac-den" autocomplete="off" value="${esc(parts[1]||'')}" ${st.checked?'disabled':''}>
+          </span>
+        </div>
+      `);
+      const numIn=row.querySelector('#mmc-frac-num'), denIn=row.querySelector('#mmc-frac-den');
+      const sync=()=>{ st.given=`${numIn.value.trim()}/${denIn.value.trim()}`; };
+      numIn.oninput=sync; denIn.oninput=sync;
+      [numIn,denIn].forEach(inp=>inp.addEventListener('keydown', e=>{ if(e.key==='Enter' && !st.checked) doCheck(); }));
+      qbox.appendChild(row);
+      const filled = numIn.value.trim()!=='' && denIn.value.trim()!=='';
+      const checkBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" style="margin-top:10px;" ${st.checked||!filled?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
+      checkBtn.onclick=()=>{ sync(); doCheck(); };
       qbox.appendChild(checkBtn);
     } else if(q.inputType==='coins'){
       const coinRow=el('<div class="mmc-choices"></div>');
