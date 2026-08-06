@@ -695,32 +695,21 @@ function genAngle(diff){
     return { prompt:`What type of angle is shown?`, answer:bucket, inputType:'choice', choices:['acute','right','obtuse','straight','reflex'],
       explanation:`This angle measures about ${deg}°, which makes it a ${bucket} angle.`, svg:drawAngle(deg) };
   }
-  // hard: interior angles of a triangle or a four-sided shape — find the missing angle
-  if(pick([true,false])){
-    let a,b,missing;
-    do{ a=randInt(20,120); b=randInt(20,120); missing=180-a-b; } while(missing<10 || missing>150);
-    const correct=String(missing);
-    const seen=new Set([correct]); const decoys=[];
-    const candidates=[String(180-a), String(180-b), String(a+b), String(missing+10), String(missing-10)].filter(c=>c!==correct && Number(c)>0 && Number(c)<180);
-    for(const c of shuffleArr(candidates)){ if(!seen.has(c)){ seen.add(c); decoys.push(c); if(decoys.length>=3) break; } }
-    while(decoys.length<3){ const c=String(Math.max(1,missing+randInt(-20,20))); if(!seen.has(c)){ seen.add(c); decoys.push(c); } }
-    const choices=shuffleArr([correct, ...decoys.slice(0,3)]);
-    const labels=shuffleArr([`${a}°`,`${b}°`,'?']);
-    return { prompt:`A triangle has interior angles of ${a}° and ${b}°. What is the size of the third angle?`, answer:correct, inputType:'choice', choices,
-      explanation:`The angles in a triangle add up to 180°. 180° − ${a}° − ${b}° = ${missing}°.`, svg:drawTriangleAngles(labels) };
-  } else {
-    let a,b,c,missing;
-    do{ a=randInt(50,130); b=randInt(50,130); c=randInt(50,130); missing=360-a-b-c; } while(missing<20 || missing>170);
-    const correct=String(missing);
-    const seen=new Set([correct]); const decoys=[];
-    const candidates=[String(360-a-b), String(360-a-c), String(a+b+c), String(missing+15), String(missing-15)].filter(x=>x!==correct && Number(x)>0 && Number(x)<360);
-    for(const cd of shuffleArr(candidates)){ if(!seen.has(cd)){ seen.add(cd); decoys.push(cd); if(decoys.length>=3) break; } }
-    while(decoys.length<3){ const cd=String(Math.max(1,missing+randInt(-25,25))); if(!seen.has(cd)){ seen.add(cd); decoys.push(cd); } }
-    const choices=shuffleArr([correct, ...decoys.slice(0,3)]);
-    const labels=shuffleArr([`${a}°`,`${b}°`,`${c}°`,'?']);
-    return { prompt:`A four-sided shape has interior angles of ${a}°, ${b}° and ${c}°. What is the size of the fourth angle?`, answer:correct, inputType:'choice', choices,
-      explanation:`The angles in a four-sided shape add up to 360°. 360° − ${a}° − ${b}° − ${c}° = ${missing}°.`, svg:drawQuadAngles(labels) };
+  // hard: classify three angles at once (no guarantee of one-of-each — could repeat categories)
+  const cats=['acute','right','obtuse','reflex'];
+  const items=[];
+  for(let i=0;i<3;i++){
+    const cat=pick(cats);
+    let deg;
+    if(cat==='acute') deg=randInt(1,89);
+    else if(cat==='right') deg=90;
+    else if(cat==='obtuse') deg=randInt(91,179);
+    else deg=randInt(181,359);
+    items.push({deg, correct:cat});
   }
+  return { prompt:`Classify each angle: acute, right, obtuse or reflex?`, inputType:'classify', items,
+    answer: items.map(it=>it.correct).join(','),
+    explanation: items.map(it=>`${it.deg}° is ${it.correct}`).join('; ') };
 }
 function ordinal(n){ const s=['th','st','nd','rd']; const v=n%100; return n+(s[(v-20)%10]||s[v]||s[0]); }
 function roundTo(n, base){ return Math.round(n/base)*base; }
@@ -1311,6 +1300,10 @@ function gradeQuestion(q, given){
   if(q.checkType==='numset'){ const gi=new Set(parseNumList(given)), an=new Set(parseNumList(q.answer));
     if(gi.size!==an.size) return false; for(const v of an) if(!gi.has(v)) return false; return true; }
   if(q.inputType==='choice'){ return normalize(given)===normalize(q.answer); }
+  if(q.inputType==='classify'){
+    const gm = Array.isArray(given) ? given.join(',') : String(given);
+    return gm === q.answer;
+  }
   if(q.inputType==='fracHard'){
     const gm=String(given).match(/^\s*(-?\d+)\s*\/\s*(-?\d+)\s*$/);
     if(!gm) return false;
@@ -1510,7 +1503,7 @@ const S = {
   user:null, isTeacher:false, profile:null, teacherEmails:[],
   authMode:'login', authError:null, showSignup:false,
   weeks:[], results:[], profiles:{},
-  teacherTab:'weeks', editingDraftId:null,
+  teacherTab:'weeks', editingDraftId:null, showArchivedWeeks:false,
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   genForm:{ label:'', difficulty:'easy', strategy:'random' },
@@ -1807,14 +1800,63 @@ function renderTeacherWeeks(){
   };
   wrap.appendChild(form);
 
-  if(S.weeks.length===0){
+  const archivedCount = S.weeks.filter(w=>w.status==='archived').length;
+  const toggleBtn=el(`<button class="mmc-btn ghost" style="margin-bottom:14px;">${S.showArchivedWeeks? '◀ Back to active sets' : `📦 Archived Sets (${archivedCount})`}</button>`);
+  toggleBtn.onclick=()=>{ S.showArchivedWeeks=!S.showArchivedWeeks; render(); };
+  wrap.appendChild(toggleBtn);
+
+  if(S.showArchivedWeeks){
+    wrap.appendChild(renderArchivedWeeksList());
+    return wrap;
+  }
+
+  const activeWeeks = S.weeks.filter(w=>w.status!=='archived');
+  if(activeWeeks.length===0){
     wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">🧮</div>No weeks yet — generate your first set above.</div>'));
     return wrap;
   }
-  S.weeks.slice().sort((a,b)=> (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0)).forEach(week=> wrap.appendChild(renderWeekCard(week)));
+  activeWeeks.slice().sort((a,b)=> (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0)).forEach(week=> wrap.appendChild(renderWeekCard(week)));
+  return wrap;
+}
+function renderArchivedWeeksList(){
+  const wrap=el('<div></div>');
+  const archived = S.weeks.filter(w=>w.status==='archived').sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+  if(archived.length===0){
+    wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">📦</div>No archived sets — anything you archive from the active list shows up here, ready to reuse next year.</div>'));
+    return wrap;
+  }
+  archived.forEach(week=>{
+    const card=el(`
+      <div class="mmc-card">
+        <div class="mmc-row" style="justify-content:space-between;">
+          <div>
+            <h3>${esc(week.label)} <span style="color:var(--ink-soft);font-size:12px;font-weight:700;">📦 ARCHIVED</span></h3>
+            <div class="meta">${esc(week.difficulty)} · ${(week.questions||[]).length} questions</div>
+          </div>
+          <div class="mmc-row">
+            <button class="mmc-btn gold sm" data-act="restore">↩ Restore</button>
+            <button class="mmc-btn danger sm" data-act="delete">Delete permanently</button>
+          </div>
+        </div>
+      </div>
+    `);
+    card.querySelector('[data-act="restore"]').onclick=async ()=>{
+      try{ await updateDoc(doc(db,'weeks',week.id), {status:'draft', scheduledAt:null}); }
+      catch(e){ S.toast='Could not restore — check your connection.'; render(); }
+    };
+    card.querySelector('[data-act="delete"]').onclick=async ()=>{
+      if(!confirm(`Permanently delete "${week.label}"? This can't be undone.`)) return;
+      try{ await deleteDoc(doc(db,'weeks',week.id)); }catch(e){ S.toast='Could not delete — check your connection.'; render(); }
+    };
+    wrap.appendChild(card);
+  });
   return wrap;
 }
 
+async function publishWeek(week){
+  try{ await updateDoc(doc(db,'weeks',week.id), {status:'published', scheduledAt:null}); S.editingDraftId=null; render(); }
+  catch(e){ S.toast='Could not publish — check your connection.'; render(); }
+}
 function renderWeekCard(week){
   const isEditing = S.editingDraftId===week.id;
   const live = isWeekLive(week);
@@ -1834,22 +1876,28 @@ function renderWeekCard(week){
         <div class="mmc-row">
           ${week.status==='draft' ? `<button class="mmc-btn ghost sm" data-act="edit">${isEditing?'Close':'Edit'}</button>` : ''}
           ${week.status==='draft' && !live ? `<button class="mmc-btn gold sm" data-act="publish">Publish now</button>` : ''}
+          <button class="mmc-btn ghost sm" data-act="archive">📦 Archive</button>
           <button class="mmc-btn danger sm" data-act="delete">Delete</button>
         </div>
       </div>
     </div>
   `);
   card.querySelector('[data-act="delete"]').onclick=async ()=>{
-    if(!confirm(`Delete "${week.label}"? This can't be undone.`)) return;
+    if(!confirm(`Permanently delete "${week.label}"? This can't be undone — if you might want this again later, use Archive instead.`)) return;
     try{ await deleteDoc(doc(db,'weeks',week.id)); }catch(e){ S.toast='Could not delete — check your connection.'; render(); }
+  };
+  card.querySelector('[data-act="archive"]').onclick=async ()=>{
+    const msg = week.status==='published'
+      ? `Archive "${week.label}"? Students will no longer be able to access it. You can restore it any time from Archived Sets.`
+      : `Archive "${week.label}"? You can restore it any time from Archived Sets.`;
+    if(!confirm(msg)) return;
+    try{ await updateDoc(doc(db,'weeks',week.id), {status:'archived', scheduledAt:null}); if(isEditing) S.editingDraftId=null; }
+    catch(e){ S.toast='Could not archive — check your connection.'; render(); }
   };
   const editBtn=card.querySelector('[data-act="edit"]');
   if(editBtn) editBtn.onclick=()=>{ S.editingDraftId = isEditing? null : week.id; render(); };
   const pubBtn=card.querySelector('[data-act="publish"]');
-  if(pubBtn) pubBtn.onclick=async ()=>{
-    try{ await updateDoc(doc(db,'weeks',week.id), {status:'published', scheduledAt:null}); S.editingDraftId=null; }
-    catch(e){ S.toast='Could not publish — check your connection.'; render(); }
-  };
+  if(pubBtn) pubBtn.onclick=()=>publishWeek(week);
   if(week.status==='draft' && !live){
     const schedRow=el(`
       <div class="mmc-row" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--paper-line);">
@@ -1875,7 +1923,17 @@ function renderWeekCard(week){
     };
     card.appendChild(schedRow);
   }
-  if(isEditing) card.appendChild(renderQuestionEditor(week));
+  if(isEditing){
+    card.appendChild(renderQuestionEditor(week));
+    if(week.status==='draft' && !live){
+      const bottomPub=el('<div class="mmc-row" style="justify-content:flex-end;margin-top:14px;padding-top:14px;border-top:2px solid var(--paper-line);"></div>');
+      bottomPub.appendChild(el('<div class="meta" style="margin:0;flex:1;">Reviewed the whole set? Publish it right from here.</div>'));
+      const bottomPubBtn=el('<button class="mmc-btn gold">Publish now</button>');
+      bottomPubBtn.onclick=()=>publishWeek(week);
+      bottomPub.appendChild(bottomPubBtn);
+      card.appendChild(bottomPub);
+    }
+  }
   return card;
 }
 
@@ -1886,7 +1944,7 @@ function renderQuestionEditor(week){
     catch(e){ S.toast='Could not save changes — check your connection.'; render(); }
   }
   (week.questions||[]).forEach((q,i)=>{
-    const isStructured = !!(q.svg || q.inputType==='choice' || q.inputType==='coins' || q.inputType==='order' || q.inputType==='fracEasy' || q.inputType==='fracHard');
+    const isStructured = !!(q.svg || q.inputType==='choice' || q.inputType==='coins' || q.inputType==='order' || q.inputType==='fracEasy' || q.inputType==='fracHard' || q.inputType==='classify');
     const row=el(`
       <div class="mmc-qedit">
         <div class="idx">Q${i+1} — ${esc(q.title||'Question')}${q.strategyLabel?` (${esc(q.strategyLabel)})`:''}</div>
@@ -1908,6 +1966,9 @@ function renderQuestionEditor(week){
         ` : q.inputType==='fracHard' ? `
           <div class="label2">Fraction to simplify</div>
           <div class="meta" style="margin-bottom:8px;">${esc(q.givenNum)}/${esc(q.givenDen)} → ${esc(q.answer)} — use Regenerate for different numbers.</div>
+        ` : q.inputType==='classify' ? `
+          <div class="label2">Angles to classify</div>
+          <div class="meta" style="margin-bottom:8px;">${(q.items||[]).map(it=>`${esc(it.deg)}° = ${esc(it.correct)}`).join(', ')} — use Regenerate for different angles.</div>
         ` : `
           <div class="label2">Answer</div>
           <input type="text" data-f="answer" value="${esc(q.answer)}">
@@ -2435,6 +2496,8 @@ function initQuizState(week){
   S.activeWeekId=week.id; S.quiz={};
   (week.questions||[]).forEach(q=> S.quiz[q.id]= q.inputType==='order'
     ? {given:'', pool:shuffleArr(q.items||[]), placed:[], checked:false, correct:false}
+    : q.inputType==='classify'
+    ? {given:new Array((q.items||[]).length).fill(''), checked:false, correct:false}
     : {given: q.inputType==='coins' ? [] : '', checked:false, correct:false});
 }
 function progressMatchesWeek(progress, week){
@@ -3089,6 +3152,29 @@ function renderQuizTaking(week){
       const checkBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" ${st.checked||!st.given?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
       checkBtn.onclick=doCheck;
       qbox.appendChild(checkBtn);
+    } else if(q.inputType==='classify'){
+      const rows=el('<div></div>');
+      (q.items||[]).forEach((it,i)=>{
+        const row=el(`
+          <div class="mmc-row" style="justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--paper-line);">
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:700;min-width:70px;">${it.deg}°</div>
+            <div class="mmc-choices" style="margin-bottom:0;"></div>
+          </div>
+        `);
+        const choiceRow=row.querySelector('.mmc-choices');
+        ['acute','right','obtuse','reflex'].forEach(label=>{
+          const selected = st.given[i]===label;
+          const b=el(`<button type="button" class="mmc-choice-btn${selected?' selected':''}" ${st.checked?'disabled':''}>${label[0].toUpperCase()+label.slice(1)}</button>`);
+          b.onclick=()=>{ if(st.checked) return; st.given[i]=label; render(); };
+          choiceRow.appendChild(b);
+        });
+        rows.appendChild(row);
+      });
+      qbox.appendChild(rows);
+      const allAnswered = st.given.every(g=>g);
+      const classifyCheckBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" ${st.checked||!allAnswered?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
+      classifyCheckBtn.onclick=doCheck;
+      qbox.appendChild(classifyCheckBtn);
     } else if(q.inputType==='fracEasy'){
       const row=el(`
         <div class="mmc-frac-eq">
@@ -3182,7 +3268,9 @@ function renderQuizTaking(week){
     }
 
     if(st.checked){
-      const correctText = q.inputType==='coins' ? `Try a different combination adding up to ${fmtCents(q.targetCents)}.` : `The answer was ${esc(q.answer)}.`;
+      const correctText = q.inputType==='coins' ? `Try a different combination adding up to ${fmtCents(q.targetCents)}.`
+        : q.inputType==='classify' ? `The answers were: ${(q.items||[]).map(it=>`${it.deg}° = ${it.correct}`).join(', ')}.`
+        : `The answer was ${esc(q.answer)}.`;
       const fb=el(`<div class="mmc-feedback ${st.correct?'ok':'no'}">${st.correct? '✓ Correct!' : `✗ Not quite. ${correctText}`}${q.explanation? ' — '+esc(q.explanation):''}</div>`);
       qbox.appendChild(fb);
     }
