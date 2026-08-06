@@ -1399,6 +1399,177 @@ function computeBadgeInfo(attempts){
     daysSince, meetsExpertStats, meetsUpAndComerStats,
     decayedFromExpert: meetsExpertStats && daysSince>3 };
 }
+// ---------- Student Dashboard: skill analytics ----------
+// Builds a per-curriculum-skill (Q1-Q20 slot) profile from a student's weekly quiz history
+// plus any targeted Skill Practice sessions. This is intentionally NOT just raw accuracy —
+// it looks at recent performance separately from all-time performance, whether the trend is
+// improving or declining, and how consistent (vs. streaky/lucky) the pattern of right/wrong
+// answers has been, so a skill isn't flagged as "weak" purely because of one bad day, and
+// isn't called a "strength" purely because of one lucky guess.
+function computeSkillStats(results, weeks, skillPracticeRecords){
+  results = results || []; weeks = weeks || []; skillPracticeRecords = skillPracticeRecords || [];
+  const weekById = {};
+  weeks.forEach(w=>{ weekById[w.id]=w; });
+  const bySlot = {};
+  for(let s=1;s<=20;s++) bySlot[s]=[];
+
+  results.forEach(rec=>{
+    const week = weekById[rec.weekId];
+    if(!week) return;
+    const qidToSlot={};
+    (week.questions||[]).forEach(q=>{ qidToSlot[q.id]=q.slot; });
+    const ts = rec.submittedAt && rec.submittedAt.seconds ? rec.submittedAt.seconds : 0;
+    (rec.answers||[]).forEach(a=>{
+      const slot=qidToSlot[a.qId];
+      if(slot && bySlot[slot]) bySlot[slot].push({ correct: !!a.correct, ts });
+    });
+  });
+  skillPracticeRecords.forEach(rec=>{
+    const slot=rec.slot;
+    if(!slot || !bySlot[slot]) return;
+    const ts = rec.submittedAt && rec.submittedAt.seconds ? rec.submittedAt.seconds : 0;
+    (rec.answers||[]).forEach(a=>{ bySlot[slot].push({ correct: !!a.correct, ts }); });
+  });
+
+  const out=[];
+  for(let s=1;s<=20;s++){
+    const attempts = bySlot[s].slice().sort((a,b)=>a.ts-b.ts);
+    const total = attempts.length;
+    const correctCount = attempts.filter(a=>a.correct).length;
+    const overallAccuracy = total? correctCount/total : 0;
+
+    const recentSlice = attempts.slice(-5);
+    const recentAccuracy = recentSlice.length? recentSlice.filter(a=>a.correct).length/recentSlice.length : 0;
+
+    let trend='insufficient';
+    if(total>=4){
+      const mid=Math.floor(total/2);
+      const olderHalf=attempts.slice(0,mid), newerHalf=attempts.slice(mid);
+      const olderAcc = olderHalf.length? olderHalf.filter(a=>a.correct).length/olderHalf.length : 0;
+      const newerAcc = newerHalf.length? newerHalf.filter(a=>a.correct).length/newerHalf.length : 0;
+      const diff = newerAcc-olderAcc;
+      trend = diff>=0.15 ? 'improving' : (diff<=-0.15 ? 'declining' : 'stable');
+    }
+
+    let flips=0;
+    for(let i=1;i<attempts.length;i++){ if(attempts[i].correct!==attempts[i-1].correct) flips++; }
+    const consistency = attempts.length>1 ? 1-(flips/(attempts.length-1)) : 1;
+
+    const concernScore = (1-recentAccuracy)*0.5 + (1-overallAccuracy)*0.25 + (trend==='declining'?0.15:0) + (1-consistency)*0.10;
+
+    out.push({ slot:s, title: (SLOTS[s-1] ? SLOTS[s-1].title : `Skill ${s}`),
+      total, correctCount, overallAccuracy, recentAccuracy, trend, consistency, concernScore });
+  }
+  return out;
+}
+function pickStrengthsAndWeaknesses(skillStats){
+  const withData = skillStats.filter(s=>s.total>=2);
+  // Strength: solid accuracy both overall and lately. Trend isn't required here — with a
+  // handful of attempts, a single mid-sequence dip can register as "declining" from the
+  // older/newer-half split even when both overall and recent accuracy are comfortably high,
+  // and recentAccuracy already captures "still doing well lately" without that extra noise.
+  const strengths = withData.filter(s=>s.total>=3 && s.overallAccuracy>=0.8 && s.recentAccuracy>=0.7)
+    .sort((a,b)=> b.overallAccuracy-a.overallAccuracy || b.total-a.total).slice(0,4);
+  // A declining trend only counts toward "weakness" if recent performance isn't already solid —
+  // otherwise a noisy split-half trend read (common with small sample sizes) could flag a skill
+  // as both a strength AND a weakness at once, which makes no sense to show a student.
+  // Likewise, a skill on a clear upward trend is never called a weakness purely because the
+  // fixed 5-attempt recent-accuracy window still contains some older, pre-improvement misses —
+  // the trend itself is the stronger, more meaningful signal in that situation.
+  const weaknesses = withData.filter(s=>
+    (s.recentAccuracy<0.65 && s.trend!=='improving') || (s.trend==='declining' && s.recentAccuracy<0.8))
+    .sort((a,b)=> b.concernScore-a.concernScore).slice(0,4);
+  return {strengths, weaknesses};
+}
+function progressBadgeFor(skill){
+  if(skill.total<2) return {emoji:'⚪', label:'Not yet tried'};
+  if(skill.trend==='improving') return {emoji:'🟢', label:'Improving'};
+  if(skill.trend==='declining' || skill.recentAccuracy<0.5) return {emoji:'🔴', label:'Needs Attention'};
+  return {emoji:'🟡', label:'Stable'};
+}
+function renderStudentDashboard(){
+  const wrap=el('<div></div>');
+  const skillStats = computeSkillStats(S.results, S.weeks, S.skillPracticeRecords);
+  const {strengths, weaknesses} = pickStrengthsAndWeaknesses(skillStats);
+  const withData = skillStats.filter(s=>s.total>=1);
+
+  wrap.appendChild(el(`<h3 style="font-family:Fredoka,sans-serif;margin:4px 0 4px;">📊 My Maths Dashboard</h3>`));
+  wrap.appendChild(el(`<div class="meta" style="margin-bottom:16px;">Your personal coach — see what you're great at, what to work on, and exactly what to practise next.</div>`));
+
+  if(withData.length===0){
+    wrap.appendChild(el(`<div class="mmc-empty"><div class="mmc-empty-icon">🌱</div>Complete a few Weekly Quizzes and your personal dashboard will start filling up here!</div>`));
+    return wrap;
+  }
+
+  wrap.appendChild(el(`<h3 style="margin:18px 0 10px;">🌟 What I'm good at</h3>`));
+  if(strengths.length===0){
+    wrap.appendChild(el(`<div class="meta">Keep practising — your strengths will show up here as you build a track record!</div>`));
+  } else {
+    const row=el('<div class="mmc-row"></div>');
+    strengths.forEach(s=>{
+      row.appendChild(el(`
+        <div class="mmc-card" style="flex:1;min-width:160px;background:#E7F9EE;border-color:#2E9E4F;">
+          <div style="font-size:28px;">🏆</div>
+          <h3 style="margin:6px 0 2px;font-size:15px;">${esc(s.title)}</h3>
+          <div class="meta" style="color:#1F7A3C;font-weight:700;">${Math.round(s.overallAccuracy*100)}% accuracy</div>
+        </div>
+      `));
+    });
+    wrap.appendChild(row);
+  }
+
+  wrap.appendChild(el(`<h3 style="margin:22px 0 10px;">🎯 What I need to improve</h3>`));
+  if(weaknesses.length===0){
+    wrap.appendChild(el(`<div class="meta">You're doing solidly across the board right now — nice work!</div>`));
+  } else {
+    const row=el('<div class="mmc-row"></div>');
+    weaknesses.forEach(s=>{
+      row.appendChild(el(`
+        <div class="mmc-card" style="flex:1;min-width:160px;background:#FFF4E5;border-color:#E85C0A;">
+          <div style="font-size:28px;">💡</div>
+          <h3 style="margin:6px 0 2px;font-size:15px;">${esc(s.title)}</h3>
+          <div class="meta">A little more practice here will really help!</div>
+        </div>
+      `));
+    });
+    wrap.appendChild(row);
+  }
+
+  if(weaknesses.length>0){
+    wrap.appendChild(el(`<h3 style="margin:22px 0 10px;">📚 What I should practise next</h3>`));
+    weaknesses.forEach(s=>{
+      const card=el(`
+        <div class="mmc-card mmc-row" style="justify-content:space-between;align-items:center;">
+          <div><h3 style="margin:0;font-size:15px;">${esc(s.title)}</h3><div class="meta">Targeted practice — 6 fresh questions</div></div>
+          <button class="mmc-btn gold sm">Practice now ▶</button>
+        </div>
+      `);
+      card.querySelector('button').onclick=()=>startSkillPractice(s.slot);
+      wrap.appendChild(card);
+    });
+  }
+
+  wrap.appendChild(el(`<h3 style="margin:22px 0 10px;">📈 Progress by skill</h3>`));
+  const progressWrap=el('<div></div>');
+  withData.slice().sort((a,b)=>b.total-a.total).forEach(s=>{
+    const badge=progressBadgeFor(s);
+    const pct=Math.round(s.overallAccuracy*100);
+    const barColor = badge.emoji==='🔴'?'#E85C0A':badge.emoji==='🟢'?'#2E9E4F':badge.emoji==='🟡'?'#F5B700':'#ccc';
+    progressWrap.appendChild(el(`
+      <div style="margin-bottom:10px;">
+        <div class="mmc-row" style="justify-content:space-between;margin-bottom:3px;">
+          <div style="font-weight:700;font-size:13px;">${badge.emoji} ${esc(s.title)}</div>
+          <div class="meta" style="margin:0;">${badge.label} · ${pct}%</div>
+        </div>
+        <div style="background:var(--paper-line);border-radius:8px;height:8px;overflow:hidden;">
+          <div style="background:${barColor};height:100%;width:${pct}%;"></div>
+        </div>
+      </div>
+    `));
+  });
+  wrap.appendChild(progressWrap);
+  return wrap;
+}
 async function equipHorseOption(field, value){
   if(!S.profile) return;
   S.profile[field]=value; // optimistic local update
@@ -1550,10 +1721,11 @@ const S = {
   teacherTab:'weeks', editingDraftId:null, showArchivedWeeks:false,
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
+  skillPracticeRecords:[], skillSession:null,
   genForm:{ label:'', difficulty:'easy', strategy:'random' },
   activeWeekId:null, quiz:{}, toast:null,
   bulkCreating:false, bulkProgress:null, bulkResults:null, bulkNamesText:'', bulkPassword:'',
-  studentTab:'weekly', ttAttempts:[], tt:null,
+  studentTab:'dashboard', ttAttempts:[], tt:null,
   liveGames:[], liveParticipants:[], liveGenForm:{level:'easy'},
   myLive:null, // {gameId, joined, answering, currentQ, qIndex, timeLeft, score, attempted}
 };
@@ -1697,6 +1869,9 @@ function subscribeData(){
     unsubs.push(onSnapshot(query(collection(db,'ttAttempts'), where('uid','==',S.user.uid)), snap=>{
       S.ttAttempts=snap.docs.map(d=>({id:d.id,...d.data()})); render();
     }, (err)=>{ S.toast='Timetable data error: '+err.message; render(); }));
+    unsubs.push(onSnapshot(query(collection(db,'skillPractice'), where('uid','==',S.user.uid)), snap=>{
+      S.skillPracticeRecords=snap.docs.map(d=>({id:d.id,...d.data()})); render();
+    }, (err)=>{ S.toast='Skill practice data error: '+err.message; render(); }));
     unsubs.push(onSnapshot(query(collection(db,'liveGames'), where('teacherUid','==',(S.profile&&S.profile.teacherUid)||'__none__')), snap=>{
       S.liveGames=snap.docs.map(d=>({id:d.id,...d.data()})); ensureParticipantsSub(currentLiveRoom()?.id||null); render();
     }, (err)=>{ S.toast='Racing Ground error: '+err.message; render(); }));
@@ -2573,15 +2748,21 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
 // ================= STUDENT =================
 function renderStudent(){
   if(S.activeWeekId){ const week=S.weeks.find(w=>w.id===S.activeWeekId); if(week) return renderQuizTaking(week); S.activeWeekId=null; }
+  if(S.skillSession) return renderSkillPracticeSession();
   if(S.tt && S.tt.active) return renderTTChallenge();
   syncMyLiveSession();
   if(S.myLive && S.myLive.answering) return renderMyLiveSession();
   const wrap=el('<div></div>');
-  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-st="weekly">Weekly Quiz</button><button class="mmc-tab" data-st="timetable">Times Table Training Ground</button><button class="mmc-tab" data-st="live">🔴 Racing Ground</button><button class="mmc-tab" data-st="settings">⚙️ Settings</button></div>`);
+  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-st="dashboard">📊 My Dashboard</button><button class="mmc-tab" data-st="weekly">Weekly Quiz</button><button class="mmc-tab" data-st="timetable">Times Table Training Ground</button><button class="mmc-tab" data-st="live">🔴 Racing Ground</button><button class="mmc-tab" data-st="settings">⚙️ Settings</button></div>`);
   tabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.st===S.studentTab) b.classList.add('active');
     b.onclick=()=>{ S.studentTab=b.dataset.st; render(); }; });
   wrap.appendChild(tabs);
-  wrap.appendChild(S.studentTab==='weekly' ? renderWeeklyPassport() : S.studentTab==='timetable' ? renderTimetableTab() : S.studentTab==='live' ? renderStudentLiveGame() : renderSettingsTab());
+  wrap.appendChild(
+    S.studentTab==='dashboard' ? renderStudentDashboard() :
+    S.studentTab==='weekly' ? renderWeeklyPassport() :
+    S.studentTab==='timetable' ? renderTimetableTab() :
+    S.studentTab==='live' ? renderStudentLiveGame() : renderSettingsTab()
+  );
   return wrap;
 }
 
@@ -3212,6 +3393,228 @@ async function syncParticipantCustomization(gameId){
   }catch(e){ /* best effort — race still uses their join-time snapshot if this fails */ }
 }
 
+// ---------- Skill Practice sessions (launched from the Student Dashboard) ----------
+function startSkillPractice(slot){
+  const difficulty='medium';
+  const questions=[]; for(let i=0;i<6;i++) questions.push(buildQuestion(slot-1, difficulty));
+  const quiz={};
+  questions.forEach(q=> quiz[q.id]= q.inputType==='order'
+    ? {given:'', pool:shuffleArr(q.items||[]), placed:[], checked:false, correct:false}
+    : q.inputType==='classify'
+    ? {given:new Array((q.items||[]).length).fill(''), checked:false, correct:false}
+    : {given: q.inputType==='coins' ? [] : '', checked:false, correct:false});
+  S.skillSession={ slot, title: SLOTS[slot-1] ? SLOTS[slot-1].title : `Skill ${slot}`, difficulty, questions, quiz, index:0, finished:false };
+  render();
+}
+async function finishSkillPractice(){
+  const sess=S.skillSession;
+  const score=sess.questions.filter(q=>sess.quiz[q.id].correct).length;
+  const answers=sess.questions.map(q=>({ qId:q.id, correct:sess.quiz[q.id].correct }));
+  try{
+    await addDoc(collection(db,'skillPractice'), {
+      uid:S.user.uid, teacherUid:S.profile?S.profile.teacherUid:null, slot:sess.slot,
+      score, total:sess.questions.length, answers, submittedAt:serverTimestamp()
+    });
+  }catch(e){ S.toast='Could not save your practice session — check your connection.'; }
+  sess.finished=true; render();
+}
+function renderSkillPracticeSession(){
+  const sess=S.skillSession;
+  const wrap=el('<div></div>');
+  const back=el('<a href="#" style="color:var(--sky-deep);font-size:13px;">← back to dashboard</a>');
+  back.onclick=(e)=>{ e.preventDefault(); S.skillSession=null; render(); };
+  wrap.appendChild(back);
+  wrap.appendChild(el(`<h3 style="font-family:Fredoka,sans-serif;margin:10px 0 14px;">🎯 Practice: ${esc(sess.title)}</h3>`));
+
+  if(sess.finished){
+    const score=sess.questions.filter(q=>sess.quiz[q.id].correct).length;
+    const pct=Math.round((score/sess.questions.length)*100);
+    wrap.appendChild(el(`
+      <div class="mmc-card" style="text-align:center;">
+        <div style="font-size:40px;">${pct>=80?'🌟':pct>=50?'👍':'💪'}</div>
+        <h3>You scored ${score}/${sess.questions.length}</h3>
+        <div class="meta">${pct>=80? "Awesome work — that's really paying off!" : "Nice effort — every bit of practice helps this stick."}</div>
+      </div>
+    `));
+    const row=el('<div class="mmc-row" style="margin-top:10px;"></div>');
+    const again=el('<button class="mmc-btn gold">Practice again</button>');
+    again.onclick=()=>startSkillPractice(sess.slot);
+    const done=el('<button class="mmc-btn ghost">Back to dashboard</button>');
+    done.onclick=()=>{ S.skillSession=null; render(); };
+    row.appendChild(again); row.appendChild(done);
+    wrap.appendChild(row);
+    return wrap;
+  }
+
+  wrap.appendChild(el(`<div class="meta" style="margin-bottom:8px;">Question ${sess.index+1} of ${sess.questions.length}</div>`));
+  const q=sess.questions[sess.index];
+  const st=sess.quiz[q.id];
+  const qbox=renderQuestionBody(q, st, ()=>{}, '');
+  wrap.appendChild(qbox);
+
+  if(st.checked){
+    const isLast = sess.index>=sess.questions.length-1;
+    const nextBtn=el(`<button class="mmc-btn gold">${isLast?'Finish practice ✓':'Next question →'}</button>`);
+    nextBtn.onclick=()=>{ if(isLast){ finishSkillPractice(); } else { sess.index++; render(); } };
+    wrap.appendChild(nextBtn);
+  }
+  return wrap;
+}
+// Renders one question's input UI (all input types) + Check button + feedback-once-checked.
+// Shared by both the Weekly Quiz and the new Skill Practice sessions, so every question type
+// only has one place its interaction logic lives — onCheck lets the caller decide what happens
+// after grading (save weekly progress, advance a practice session, etc) without duplicating
+// any of the input-handling code itself.
+function renderQuestionBody(q, st, onCheck, headerHTML){
+  const qbox=el(`
+    <div class="mmc-quiz-q">
+      ${headerHTML}
+      ${q.svg ? `<div class="mmc-qsvg">${q.svg}</div>` : ''}
+      <div class="qtext">${esc(q.prompt)}</div>
+    </div>
+  `);
+  function doCheck(){ if(st.checked) return; st.checked=true; st.correct=gradeQuestion(q, st.given); render(); onCheck(); }
+
+  if(q.inputType==='choice'){
+    if(q.renderFractionChoices && q.givenNum!=null){
+      const givenRow=el(`<div class="mmc-frac-eq" style="margin-bottom:14px;">${fracHTML(q.givenNum, q.givenDen)}</div>`);
+      qbox.appendChild(givenRow);
+    }
+    const choiceRow=el('<div class="mmc-choices"></div>');
+    (q.choices||[]).forEach(c=>{
+      const label = q.renderFractionChoices ? fracChoiceHTML(c) : esc(c);
+      const b=el(`<button type="button" class="mmc-choice-btn ${st.given===c?'selected':''}" ${st.checked?'disabled':''}>${label}</button>`);
+      b.onclick=()=>{ if(st.checked) return; st.given=c; render(); };
+      choiceRow.appendChild(b);
+    });
+    qbox.appendChild(choiceRow);
+    const checkBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" ${st.checked||!st.given?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
+    checkBtn.onclick=doCheck;
+    qbox.appendChild(checkBtn);
+  } else if(q.inputType==='classify'){
+    const rows=el('<div></div>');
+    (q.items||[]).forEach((it,i)=>{
+      const row=el(`
+        <div class="mmc-row" style="justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--paper-line);">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:700;min-width:70px;">${it.deg}°</div>
+          <div class="mmc-choices" style="margin-bottom:0;"></div>
+        </div>
+      `);
+      const choiceRow=row.querySelector('.mmc-choices');
+      ['acute','right','obtuse','reflex'].forEach(label=>{
+        const selected = st.given[i]===label;
+        const b=el(`<button type="button" class="mmc-choice-btn${selected?' selected':''}" ${st.checked?'disabled':''}>${label[0].toUpperCase()+label.slice(1)}</button>`);
+        b.onclick=()=>{ if(st.checked) return; st.given[i]=label; render(); };
+        choiceRow.appendChild(b);
+      });
+      rows.appendChild(row);
+    });
+    qbox.appendChild(rows);
+    const allAnswered = st.given.every(g=>g);
+    const classifyCheckBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" ${st.checked||!allAnswered?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
+    classifyCheckBtn.onclick=doCheck;
+    qbox.appendChild(classifyCheckBtn);
+  } else if(q.inputType==='fracEasy'){
+    const row=el(`
+      <div class="mmc-frac-eq">
+        ${fracHTML(q.givenNum, q.givenDen)}
+        <span>=</span>
+        <span class="mmc-frac"><input type="text" id="mmc-frac-in" autocomplete="off" value="${esc(st.given)}" ${st.checked?'disabled':''}><span class="line"></span><span class="den">${esc(q.targetDen)}</span></span>
+      </div>
+    `);
+    const input=row.querySelector('#mmc-frac-in');
+    input.oninput=(e)=>{ st.given=e.target.value; };
+    input.addEventListener('keydown', e=>{ if(e.key==='Enter' && !st.checked) doCheck(); });
+    qbox.appendChild(row);
+    const checkBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" style="margin-top:10px;" ${st.checked?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
+    checkBtn.onclick=doCheck;
+    qbox.appendChild(checkBtn);
+  } else if(q.inputType==='fracHard'){
+    const parts=String(st.given||'').split('/');
+    const row=el(`
+      <div class="mmc-frac-eq">
+        ${fracHTML(q.givenNum, q.givenDen)}
+        <span>=</span>
+        <span class="mmc-frac">
+          <input type="text" id="mmc-frac-num" autocomplete="off" value="${esc(parts[0]||'')}" ${st.checked?'disabled':''}>
+          <span class="line"></span>
+          <input type="text" id="mmc-frac-den" autocomplete="off" value="${esc(parts[1]||'')}" ${st.checked?'disabled':''}>
+        </span>
+      </div>
+    `);
+    const numIn=row.querySelector('#mmc-frac-num'), denIn=row.querySelector('#mmc-frac-den');
+    const sync=()=>{ st.given=`${numIn.value.trim()}/${denIn.value.trim()}`; };
+    numIn.oninput=sync; denIn.oninput=sync;
+    [numIn,denIn].forEach(inp=>inp.addEventListener('keydown', e=>{ if(e.key==='Enter' && !st.checked){ sync(); doCheck(); } }));
+    qbox.appendChild(row);
+    const checkBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" style="margin-top:10px;" ${st.checked?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
+    checkBtn.onclick=()=>{ sync(); doCheck(); };
+    qbox.appendChild(checkBtn);
+  } else if(q.inputType==='coins'){
+    const coinRow=el('<div class="mmc-choices"></div>');
+    (q.coins||[]).forEach(c=>{
+      const sel=st.given.includes(c.id);
+      const b=el(`<button type="button" class="mmc-coin-chip ${sel?'selected':''}" ${st.checked?'disabled':''}>${esc(c.l)}</button>`);
+      b.onclick=()=>{ if(st.checked) return; st.given = sel ? st.given.filter(id=>id!==c.id) : [...st.given, c.id]; render(); };
+      coinRow.appendChild(b);
+    });
+    qbox.appendChild(coinRow);
+    const checkBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" ${st.checked||st.given.length===0?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
+    checkBtn.onclick=doCheck;
+    qbox.appendChild(checkBtn);
+  } else if(q.inputType==='order'){
+    const slotsRow=el('<div class="mmc-choices" style="min-height:44px;"></div>');
+    for(let s=0;s<(q.items||[]).length;s++){
+      const val=st.placed[s];
+      if(val===undefined){
+        slotsRow.appendChild(el(`<div class="mmc-order-slot"></div>`));
+      } else {
+        const b=el(`<button type="button" class="mmc-choice-btn selected" ${st.checked?'disabled':''}>${esc(val)}</button>`);
+        b.onclick=()=>{ if(st.checked) return; st.placed=st.placed.filter((_,idx)=>idx!==s); st.pool.push(val); render(); };
+        slotsRow.appendChild(b);
+      }
+    }
+    qbox.appendChild(el('<div class="meta" style="margin-bottom:4px;">Your order:</div>'));
+    qbox.appendChild(slotsRow);
+    qbox.appendChild(el('<div class="meta" style="margin:10px 0 4px;">Tap to add:</div>'));
+    const poolRow=el('<div class="mmc-choices"></div>');
+    st.pool.forEach(val=>{
+      const b=el(`<button type="button" class="mmc-choice-btn" ${st.checked?'disabled':''}>${esc(val)}</button>`);
+      b.onclick=()=>{ if(st.checked) return; st.pool=st.pool.filter(v=>v!==val); st.placed.push(val); render(); };
+      poolRow.appendChild(b);
+    });
+    qbox.appendChild(poolRow);
+    const btnRow=el('<div class="mmc-row" style="margin-top:8px;"></div>');
+    const resetBtn=el(`<button class="mmc-btn ghost sm" ${st.checked?'disabled':''}>Reset</button>`);
+    resetBtn.onclick=()=>{ if(st.checked) return; st.pool=shuffleArr(q.items||[]); st.placed=[]; render(); };
+    const allPlaced = st.placed.length===(q.items||[]).length;
+    const checkBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" ${st.checked||!allPlaced?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
+    checkBtn.onclick=()=>{ if(!allPlaced) return; st.given=st.placed.join(','); doCheck(); };
+    btnRow.appendChild(resetBtn); btnRow.appendChild(checkBtn);
+    qbox.appendChild(btnRow);
+  } else {
+    const row=el(`
+      <div class="answer-row">
+        <input type="text" value="${esc(st.given)}" ${st.checked?'disabled':''} placeholder="Your answer">
+        <button class="mmc-btn ${st.checked?'ghost':'gold'} sm" ${st.checked?'disabled':''}>${st.checked?'Checked':'Check'}</button>
+      </div>
+    `);
+    const input=row.querySelector('input'); const btn=row.querySelector('button');
+    input.oninput=(e)=>{ st.given=e.target.value; };
+    input.addEventListener('keydown', e=>{ if(e.key==='Enter' && !st.checked) doCheck(); });
+    btn.onclick=doCheck;
+    qbox.appendChild(row);
+  }
+
+  if(st.checked){
+    const correctText = q.inputType==='coins' ? `Try a different combination adding up to ${fmtCents(q.targetCents)}.`
+      : q.inputType==='classify' ? `The answers were: ${(q.items||[]).map(it=>`${it.deg}° = ${it.correct}`).join(', ')}.`
+      : `The answer was ${esc(q.answer)}.`;
+    const fb=el(`<div class="mmc-feedback ${st.correct?'ok':'no'}">${st.correct? '✓ Correct!' : `✗ Not quite. ${correctText}`}${q.explanation? ' — '+esc(q.explanation):''}</div>`);
+    qbox.appendChild(fb);
+  }
+  return qbox;
+}
 function renderQuizTaking(week){
   const wrap=el('<div></div>');
   const back=el('<a href="#" style="color:var(--sky-deep);font-size:13px;">← back to passport</a>');
@@ -3220,153 +3623,8 @@ function renderQuizTaking(week){
   wrap.appendChild(el(`<h3 style="font-family:Fredoka,sans-serif;margin:10px 0 14px;">${esc(week.label)}</h3>`));
   (week.questions||[]).forEach((q,i)=>{
     const st=S.quiz[q.id];
-    const qbox=el(`
-      <div class="mmc-quiz-q">
-        <div class="qnum">Question ${i+1} of ${week.questions.length} — ${esc(q.title||'')}${q.strategyLabel?` (${esc(q.strategyLabel)})`:''}</div>
-        ${q.svg ? `<div class="mmc-qsvg">${q.svg}</div>` : ''}
-        <div class="qtext">${esc(q.prompt)}</div>
-      </div>
-    `);
-    function doCheck(){ if(st.checked) return; st.checked=true; st.correct=gradeQuestion(q, st.given); render(); saveWeekProgress(week); }
-
-    if(q.inputType==='choice'){
-      if(q.renderFractionChoices && q.givenNum!=null){
-        const givenRow=el(`<div class="mmc-frac-eq" style="margin-bottom:14px;">${fracHTML(q.givenNum, q.givenDen)}</div>`);
-        qbox.appendChild(givenRow);
-      }
-      const choiceRow=el('<div class="mmc-choices"></div>');
-      (q.choices||[]).forEach(c=>{
-        const label = q.renderFractionChoices ? fracChoiceHTML(c) : esc(c);
-        const b=el(`<button type="button" class="mmc-choice-btn ${st.given===c?'selected':''}" ${st.checked?'disabled':''}>${label}</button>`);
-        b.onclick=()=>{ if(st.checked) return; st.given=c; render(); };
-        choiceRow.appendChild(b);
-      });
-      qbox.appendChild(choiceRow);
-      const checkBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" ${st.checked||!st.given?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
-      checkBtn.onclick=doCheck;
-      qbox.appendChild(checkBtn);
-    } else if(q.inputType==='classify'){
-      const rows=el('<div></div>');
-      (q.items||[]).forEach((it,i)=>{
-        const row=el(`
-          <div class="mmc-row" style="justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--paper-line);">
-            <div style="font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:700;min-width:70px;">${it.deg}°</div>
-            <div class="mmc-choices" style="margin-bottom:0;"></div>
-          </div>
-        `);
-        const choiceRow=row.querySelector('.mmc-choices');
-        ['acute','right','obtuse','reflex'].forEach(label=>{
-          const selected = st.given[i]===label;
-          const b=el(`<button type="button" class="mmc-choice-btn${selected?' selected':''}" ${st.checked?'disabled':''}>${label[0].toUpperCase()+label.slice(1)}</button>`);
-          b.onclick=()=>{ if(st.checked) return; st.given[i]=label; render(); };
-          choiceRow.appendChild(b);
-        });
-        rows.appendChild(row);
-      });
-      qbox.appendChild(rows);
-      const allAnswered = st.given.every(g=>g);
-      const classifyCheckBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" ${st.checked||!allAnswered?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
-      classifyCheckBtn.onclick=doCheck;
-      qbox.appendChild(classifyCheckBtn);
-    } else if(q.inputType==='fracEasy'){
-      const row=el(`
-        <div class="mmc-frac-eq">
-          ${fracHTML(q.givenNum, q.givenDen)}
-          <span>=</span>
-          <span class="mmc-frac"><input type="text" id="mmc-frac-in" autocomplete="off" value="${esc(st.given)}" ${st.checked?'disabled':''}><span class="line"></span><span class="den">${esc(q.targetDen)}</span></span>
-        </div>
-      `);
-      const input=row.querySelector('#mmc-frac-in');
-      input.oninput=(e)=>{ st.given=e.target.value; };
-      input.addEventListener('keydown', e=>{ if(e.key==='Enter' && !st.checked) doCheck(); });
-      qbox.appendChild(row);
-      const checkBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" style="margin-top:10px;" ${st.checked?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
-      checkBtn.onclick=doCheck;
-      qbox.appendChild(checkBtn);
-    } else if(q.inputType==='fracHard'){
-      const parts=String(st.given||'').split('/');
-      const row=el(`
-        <div class="mmc-frac-eq">
-          ${fracHTML(q.givenNum, q.givenDen)}
-          <span>=</span>
-          <span class="mmc-frac">
-            <input type="text" id="mmc-frac-num" autocomplete="off" value="${esc(parts[0]||'')}" ${st.checked?'disabled':''}>
-            <span class="line"></span>
-            <input type="text" id="mmc-frac-den" autocomplete="off" value="${esc(parts[1]||'')}" ${st.checked?'disabled':''}>
-          </span>
-        </div>
-      `);
-      const numIn=row.querySelector('#mmc-frac-num'), denIn=row.querySelector('#mmc-frac-den');
-      const sync=()=>{ st.given=`${numIn.value.trim()}/${denIn.value.trim()}`; };
-      numIn.oninput=sync; denIn.oninput=sync;
-      [numIn,denIn].forEach(inp=>inp.addEventListener('keydown', e=>{ if(e.key==='Enter' && !st.checked){ sync(); doCheck(); } }));
-      qbox.appendChild(row);
-      const checkBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" style="margin-top:10px;" ${st.checked?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
-      checkBtn.onclick=()=>{ sync(); doCheck(); };
-      qbox.appendChild(checkBtn);
-    } else if(q.inputType==='coins'){
-      const coinRow=el('<div class="mmc-choices"></div>');
-      (q.coins||[]).forEach(c=>{
-        const sel=st.given.includes(c.id);
-        const b=el(`<button type="button" class="mmc-coin-chip ${sel?'selected':''}" ${st.checked?'disabled':''}>${esc(c.l)}</button>`);
-        b.onclick=()=>{ if(st.checked) return; st.given = sel ? st.given.filter(id=>id!==c.id) : [...st.given, c.id]; render(); };
-        coinRow.appendChild(b);
-      });
-      qbox.appendChild(coinRow);
-      const checkBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" ${st.checked||st.given.length===0?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
-      checkBtn.onclick=doCheck;
-      qbox.appendChild(checkBtn);
-    } else if(q.inputType==='order'){
-      const slotsRow=el('<div class="mmc-choices" style="min-height:44px;"></div>');
-      for(let s=0;s<(q.items||[]).length;s++){
-        const val=st.placed[s];
-        if(val===undefined){
-          slotsRow.appendChild(el(`<div class="mmc-order-slot"></div>`));
-        } else {
-          const b=el(`<button type="button" class="mmc-choice-btn selected" ${st.checked?'disabled':''}>${esc(val)}</button>`);
-          b.onclick=()=>{ if(st.checked) return; st.placed=st.placed.filter((_,idx)=>idx!==s); st.pool.push(val); render(); };
-          slotsRow.appendChild(b);
-        }
-      }
-      qbox.appendChild(el('<div class="meta" style="margin-bottom:4px;">Your order:</div>'));
-      qbox.appendChild(slotsRow);
-      qbox.appendChild(el('<div class="meta" style="margin:10px 0 4px;">Tap to add:</div>'));
-      const poolRow=el('<div class="mmc-choices"></div>');
-      st.pool.forEach(val=>{
-        const b=el(`<button type="button" class="mmc-choice-btn" ${st.checked?'disabled':''}>${esc(val)}</button>`);
-        b.onclick=()=>{ if(st.checked) return; st.pool=st.pool.filter(v=>v!==val); st.placed.push(val); render(); };
-        poolRow.appendChild(b);
-      });
-      qbox.appendChild(poolRow);
-      const btnRow=el('<div class="mmc-row" style="margin-top:8px;"></div>');
-      const resetBtn=el(`<button class="mmc-btn ghost sm" ${st.checked?'disabled':''}>Reset</button>`);
-      resetBtn.onclick=()=>{ if(st.checked) return; st.pool=shuffleArr(q.items||[]); st.placed=[]; render(); };
-      const allPlaced = st.placed.length===(q.items||[]).length;
-      const checkBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" ${st.checked||!allPlaced?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
-      checkBtn.onclick=()=>{ if(!allPlaced) return; st.given=st.placed.join(','); doCheck(); };
-      btnRow.appendChild(resetBtn); btnRow.appendChild(checkBtn);
-      qbox.appendChild(btnRow);
-    } else {
-      const row=el(`
-        <div class="answer-row">
-          <input type="text" value="${esc(st.given)}" ${st.checked?'disabled':''} placeholder="Your answer">
-          <button class="mmc-btn ${st.checked?'ghost':'gold'} sm" ${st.checked?'disabled':''}>${st.checked?'Checked':'Check'}</button>
-        </div>
-      `);
-      const input=row.querySelector('input'); const btn=row.querySelector('button');
-      input.oninput=(e)=>{ st.given=e.target.value; };
-      input.addEventListener('keydown', e=>{ if(e.key==='Enter' && !st.checked) doCheck(); });
-      btn.onclick=doCheck;
-      qbox.appendChild(row);
-    }
-
-    if(st.checked){
-      const correctText = q.inputType==='coins' ? `Try a different combination adding up to ${fmtCents(q.targetCents)}.`
-        : q.inputType==='classify' ? `The answers were: ${(q.items||[]).map(it=>`${it.deg}° = ${it.correct}`).join(', ')}.`
-        : `The answer was ${esc(q.answer)}.`;
-      const fb=el(`<div class="mmc-feedback ${st.correct?'ok':'no'}">${st.correct? '✓ Correct!' : `✗ Not quite. ${correctText}`}${q.explanation? ' — '+esc(q.explanation):''}</div>`);
-      qbox.appendChild(fb);
-    }
+    const header=`<div class="qnum">Question ${i+1} of ${week.questions.length} — ${esc(q.title||'')}${q.strategyLabel?` (${esc(q.strategyLabel)})`:''}</div>`;
+    const qbox=renderQuestionBody(q, st, ()=>saveWeekProgress(week), header);
     wrap.appendChild(qbox);
   });
   const allChecked=(week.questions||[]).every(q=>S.quiz[q.id].checked);
