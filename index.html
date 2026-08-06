@@ -1491,7 +1491,7 @@ const S = {
   weeks:[], results:[], profiles:{},
   teacherTab:'weeks', editingDraftId:null,
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null,
-  weekProgress:[], lobbyReadyForRoom:null,
+  weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false,
   genForm:{ label:'', difficulty:'easy', strategy:'random' },
   activeWeekId:null, quiz:{}, toast:null,
   bulkCreating:false, bulkProgress:null, bulkResults:null, bulkNamesText:'', bulkPassword:'',
@@ -2459,29 +2459,40 @@ function renderStatusBanner(){
   const info = computeBadgeInfo(S.ttAttempts);
   const tier = info.tier;
   const bg = { rookie:'var(--bg)', upandcomer:'var(--yellow)', expert:'var(--slime)' }[tier.key];
+  const wrap=el('<div></div>');
   const banner=el(`
-    <div class="mmc-card" style="text-align:center;background:${bg};margin-bottom:18px;">
-      <div style="font-size:40px;line-height:1;">${tier.emoji}</div>
-      <h3 style="font-size:21px;margin:8px 0 3px;">${esc(tier.label)}</h3>
-      <div class="meta" style="margin-bottom:0;">${info.total} practice attempt${info.total===1?'':'s'} · ${info.avgAccuracy}% accuracy</div>
+    <div class="mmc-card" style="text-align:center;background:${bg};padding:30px 20px 24px;">
+      <div style="font-size:58px;line-height:1;">${tier.emoji}</div>
+      <h3 style="font-size:30px;margin:12px 0 4px;">${esc(tier.label)}</h3>
+      <div class="meta" style="margin-bottom:16px;font-size:14px;">${info.total} practice attempt${info.total===1?'':'s'} · ${info.avgAccuracy}% accuracy</div>
+      <button class="mmc-btn ghost" id="mmc-status-upgrade-toggle">📈 ${S.showStatusUpgrade?'Hide status guide':'Status Upgrade'}</button>
     </div>
   `);
-  return banner;
+  banner.querySelector('#mmc-status-upgrade-toggle').onclick=()=>{ S.showStatusUpgrade=!S.showStatusUpgrade; render(); };
+  wrap.appendChild(banner);
+  if(S.showStatusUpgrade) wrap.appendChild(renderStatusUpgradePanel(tier.key));
+  wrap.appendChild(el('<div style="height:18px;"></div>'));
+  return wrap;
 }
-function renderTierReferenceTable(){
-  const wrap=el('<div></div>');
-  wrap.appendChild(el('<h3 style="font-family:Fredoka,sans-serif;margin:18px 0 8px;">How status works</h3>'));
-  const tableWrap=el('<div class="mmc-ledger-wrap"></div>');
-  const table=el(`<table class="mmc-ledger">
-    <thead><tr><th>Status</th><th>To reach it</th><th>To keep it</th><th>Perks</th></tr></thead>
-    <tbody>
-      <tr><td>🐴 Rookie</td><td>Everyone starts here</td><td>—</td><td>Classic horse look</td></tr>
-      <tr><td>🌟 Up and Comer</td><td>15+ attempts, 50%+ average accuracy</td><td>Practice at least once every 14 days</td><td>2 extra horse colours, 1 hat, preset page colour themes</td></tr>
-      <tr><td>🏆 Expert</td><td>30+ attempts, including 10+ at Hard level with 60%+ accuracy on those</td><td>Practice at least once every 3 days</td><td>Every colour, every hat, a custom nickname, and full free choice of page colours</td></tr>
-    </tbody>
-  </table>`);
-  tableWrap.appendChild(table);
-  wrap.appendChild(tableWrap);
+function renderStatusUpgradePanel(currentTierKey){
+  const wrap=el('<div class="mmc-card" style="margin-top:14px;"></div>');
+  wrap.appendChild(el('<h3 style="margin-bottom:10px;">📈 How to level up</h3>'));
+  const tiers=[
+    { key:'rookie', emoji:'🐴', label:'Rookie', reach:'Everyone starts here.', keep:'—', perks:'Classic horse look only.' },
+    { key:'upandcomer', emoji:'🌟', label:'Up and Comer', reach:'15+ practice attempts with 50%+ average accuracy.', keep:'Practice at least once every 14 days.', perks:'2 extra horse colours, 1 hat, and preset page colour themes for the whole site.' },
+    { key:'expert', emoji:'🏆', label:'Expert', reach:'30+ practice attempts, including 10+ at Hard level with 60%+ accuracy on those Hard attempts.', keep:'Practice at least once every 3 days.', perks:'Every horse colour, every hat, a custom race nickname, and full free choice of any page colours.' },
+  ];
+  tiers.forEach(t=>{
+    const isCurrent = t.key===currentTierKey;
+    wrap.appendChild(el(`
+      <div style="border-top:2px solid var(--paper-line);padding:12px 0;${isCurrent?'background:var(--bg);margin:0 -20px;padding-left:20px;padding-right:20px;':''}">
+        <div style="font-size:16px;font-weight:800;margin-bottom:5px;">${t.emoji} ${esc(t.label)}${isCurrent?' — you are here':''}</div>
+        <div class="meta" style="margin-bottom:3px;"><strong>To reach:</strong> ${esc(t.reach)}</div>
+        <div class="meta" style="margin-bottom:3px;"><strong>To keep:</strong> ${esc(t.keep)}</div>
+        <div class="meta" style="margin-bottom:0;"><strong>Perks:</strong> ${esc(t.perks)}</div>
+      </div>
+    `));
+  });
   return wrap;
 }
 function renderTimetableTab(){
@@ -2530,7 +2541,6 @@ function renderTimetableTab(){
     tableWrap.appendChild(table);
     wrap.appendChild(tableWrap);
   }
-  wrap.appendChild(renderTierReferenceTable());
   return wrap;
 }
 
