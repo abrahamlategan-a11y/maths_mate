@@ -2118,6 +2118,12 @@ function renderStudent(){
   return wrap;
 }
 
+function initQuizState(week){
+  S.activeWeekId=week.id; S.quiz={};
+  (week.questions||[]).forEach(q=> S.quiz[q.id]= q.inputType==='order'
+    ? {given:'', pool:shuffleArr(q.items||[]), placed:[], checked:false, correct:false}
+    : {given: q.inputType==='coins' ? [] : '', checked:false, correct:false});
+}
 function renderWeeklyPassport(){
   const wrap=el('<div></div>');
   if(S.weeks.length===0){
@@ -2134,13 +2140,18 @@ function renderWeeklyPassport(){
       </div>
     `);
     const right=card.querySelector('div:last-child');
-    if(rec){ right.innerHTML=stampHTML(rec.score, rec.total); }
-    else {
+    if(rec){
+      right.style.cssText='display:flex;flex-direction:column;align-items:flex-end;gap:8px;';
+      right.innerHTML=stampHTML(rec.score, rec.total);
+      const retakeBtn=el('<button class="mmc-btn ghost sm">↻ Retake</button>');
+      retakeBtn.onclick=()=>{
+        if(!confirm(`Retaking will replace your current score of ${rec.score}/${rec.total} for "${week.label}". Continue?`)) return;
+        initQuizState(week); render();
+      };
+      right.appendChild(retakeBtn);
+    } else {
       const startBtn=el('<button class="mmc-btn gold">Start ▶</button>');
-      startBtn.onclick=()=>{ S.activeWeekId=week.id; S.quiz={};
-        (week.questions||[]).forEach(q=> S.quiz[q.id]= q.inputType==='order'
-          ? {given:'', pool:shuffleArr(q.items||[]), placed:[], checked:false, correct:false}
-          : {given: q.inputType==='coins' ? [] : '', checked:false, correct:false}); render(); };
+      startBtn.onclick=()=>{ initQuizState(week); render(); };
       right.appendChild(startBtn);
     }
     wrap.appendChild(card);
