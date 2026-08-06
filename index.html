@@ -1441,6 +1441,15 @@ function renderThemeCustomizeCard(){
   card.appendChild(row);
   return card;
 }
+function renderSettingsTab(){
+  const wrap=el('<div></div>');
+  wrap.appendChild(el('<h3 style="font-family:Fredoka,sans-serif;margin:4px 0 4px;">⚙️ Settings</h3>'));
+  const info = computeBadgeInfo(S.ttAttempts);
+  wrap.appendChild(el(`<div class="meta" style="margin-bottom:16px;">Your current status: ${info.tier.emoji} ${esc(info.tier.label)} — practice in the Training Ground to unlock more.</div>`));
+  wrap.appendChild(renderHorseCustomizeCard());
+  wrap.appendChild(renderThemeCustomizeCard());
+  return wrap;
+}
 
 // ---------- Timetable Challenge ----------
 const TT_RANGES = { easy:[1,10], medium:[1,12], hard:[4,15] };
@@ -2314,11 +2323,11 @@ function renderStudent(){
   syncMyLiveSession();
   if(S.myLive && S.myLive.answering) return renderMyLiveSession();
   const wrap=el('<div></div>');
-  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-st="weekly">Weekly Quiz</button><button class="mmc-tab" data-st="timetable">Timetable Challenge</button><button class="mmc-tab" data-st="live">🔴 Live Game</button></div>`);
+  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-st="weekly">Weekly Quiz</button><button class="mmc-tab" data-st="timetable">Times Table Training Ground</button><button class="mmc-tab" data-st="live">🔴 Live Game</button><button class="mmc-tab" data-st="settings">⚙️ Settings</button></div>`);
   tabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.st===S.studentTab) b.classList.add('active');
     b.onclick=()=>{ S.studentTab=b.dataset.st; render(); }; });
   wrap.appendChild(tabs);
-  wrap.appendChild(S.studentTab==='weekly' ? renderWeeklyPassport() : S.studentTab==='timetable' ? renderTimetableTab() : renderStudentLiveGame());
+  wrap.appendChild(S.studentTab==='weekly' ? renderWeeklyPassport() : S.studentTab==='timetable' ? renderTimetableTab() : S.studentTab==='live' ? renderStudentLiveGame() : renderSettingsTab());
   return wrap;
 }
 
@@ -2513,7 +2522,7 @@ function renderTimetableTab(){
     card.querySelector('button').onclick=()=>startTTChallenge(lv.k);
     cardsRow.appendChild(card);
   });
-  wrap.appendChild(el('<h3 style="font-family:Fredoka,sans-serif;margin:4px 0 12px;">Timetable Challenge</h3>'));
+  wrap.appendChild(el('<h3 style="font-family:Fredoka,sans-serif;margin:4px 0 12px;">Times Table Training Ground</h3>'));
   wrap.appendChild(el('<div class="meta" style="margin-bottom:10px;">5 minutes on the clock — answer as many as you can! Regular, accurate practice builds your race status.</div>'));
   wrap.appendChild(cardsRow);
 
@@ -2525,9 +2534,6 @@ function renderTimetableTab(){
       </div>
     `));
   }
-
-  wrap.appendChild(renderHorseCustomizeCard());
-  wrap.appendChild(renderThemeCustomizeCard());
 
   if(S.ttAttempts.length){
     wrap.appendChild(el('<h3 style="font-family:Fredoka,sans-serif;margin:18px 0 8px;">Your attempt history</h3>'));
