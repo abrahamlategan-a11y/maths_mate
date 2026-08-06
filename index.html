@@ -206,6 +206,43 @@ function drawRectShape(w,h){
   const rect=`<rect x="${pad*cell}" y="${pad*cell}" width="${w*cell}" height="${h*cell}" fill="#4C7A96" fill-opacity="0.45" stroke="#395E76" stroke-width="2"/>`;
   return svgWrap(lines+rect, gridW*cell, gridH*cell);
 }
+function lShapePoints(s, cell, offsetX, offsetY){
+  return [
+    [offsetX, offsetY],
+    [offsetX+(s.W-s.nw)*cell, offsetY],
+    [offsetX+(s.W-s.nw)*cell, offsetY+s.nh*cell],
+    [offsetX+s.W*cell, offsetY+s.nh*cell],
+    [offsetX+s.W*cell, offsetY+s.H*cell],
+    [offsetX, offsetY+s.H*cell],
+  ];
+}
+function gridLines(W,H,cell,offsetX,offsetY){
+  let l='';
+  for(let x=0;x<=W;x++) l+=`<line x1="${offsetX+x*cell}" y1="${offsetY}" x2="${offsetX+x*cell}" y2="${offsetY+H*cell}" stroke="#E4DCC8"/>`;
+  for(let y=0;y<=H;y++) l+=`<line x1="${offsetX}" y1="${offsetY+y*cell}" x2="${offsetX+W*cell}" y2="${offsetY+y*cell}" stroke="#E4DCC8"/>`;
+  return l;
+}
+function drawLShape(s){
+  const cell=24, pad=1;
+  const ox=pad*cell, oy=pad*cell;
+  const lines=gridLines(s.W,s.H,cell,ox,oy);
+  const poly=lShapePoints(s,cell,ox,oy).map(p=>p.join(',')).join(' ');
+  const shape=`<polygon points="${poly}" fill="#4C7A96" fill-opacity="0.45" stroke="#395E76" stroke-width="2"/>`;
+  return svgWrap(lines+shape, (s.W+pad*2)*cell, (s.H+pad*2)*cell);
+}
+function drawShapePair(s1,s2){
+  const cell=20, gap=30, topPad=22;
+  const w1=s1.W*cell, w2=s2.W*cell, maxH=Math.max(s1.H,s2.H)*cell;
+  const offset2=w1+gap;
+  let inner='';
+  inner+=gridLines(s1.W,s1.H,cell,0,0);
+  inner+=`<polygon points="${lShapePoints(s1,cell,0,0).map(p=>p.join(',')).join(' ')}" fill="#4C7A96" fill-opacity="0.45" stroke="#395E76" stroke-width="2"/>`;
+  inner+=`<text x="${w1/2}" y="-6" font-size="14" text-anchor="middle" fill="#2B2620" font-family="IBM Plex Mono, monospace" font-weight="600">A</text>`;
+  inner+=gridLines(s2.W,s2.H,cell,offset2,0);
+  inner+=`<polygon points="${lShapePoints(s2,cell,offset2,0).map(p=>p.join(',')).join(' ')}" fill="#FF7A1A" fill-opacity="0.4" stroke="#E85C0A" stroke-width="2"/>`;
+  inner+=`<text x="${offset2+w2/2}" y="-6" font-size="14" text-anchor="middle" fill="#2B2620" font-family="IBM Plex Mono, monospace" font-weight="600">B</text>`;
+  return svgWrap(`<g transform="translate(4,${topPad})">${inner}</g>`, w1+gap+w2+8, maxH+topPad+8);
+}
 function drawClock(hour,minute){
   const cx=100, cy=100, r=90;
   const minuteAngle = minute*6, hourAngle=(hour%12)*30 + minute*0.5;
@@ -452,11 +489,61 @@ function genCoins(diff){
     `Total cost: ${chosenItems.map(it=>fmtCents(it.price)).join(' + ')} = ${fmtCents(total)}. Change = ${fmtCents(payment)} − ${fmtCents(total)} = ${fmtCents(change)}.`,
     true);
 }
+function genLShapeDims(lo,hi){
+  const W=randInt(lo,hi), H=randInt(lo,hi);
+  const nw=randInt(1,Math.max(1,Math.floor(W/2)));
+  const nh=randInt(1,Math.max(1,Math.floor(H/2)));
+  return {W,H,nw,nh};
+}
+function lShapeArea(s){ return s.W*s.H - s.nw*s.nh; }
+function fmtAP(area, perim, unit){ return `Area = ${area} ${unit}², Perimeter = ${perim} ${unit}`; }
+function buildAPChoices(area, perim, unit){
+  const correct=fmtAP(area,perim,unit);
+  const seen=new Set([correct]); const decoys=[];
+  const candidates=[
+    fmtAP(perim, area, unit),
+    fmtAP(area, Math.max(1,Math.round(perim/2)), unit),
+    fmtAP(Math.max(1,Math.round(area/2)), perim, unit),
+    fmtAP(area+randInt(2,10), perim, unit),
+    fmtAP(area, perim+randInt(2,8), unit),
+  ];
+  for(const c of shuffleArr(candidates)){ if(!seen.has(c)){ seen.add(c); decoys.push(c); if(decoys.length>=3) break; } }
+  while(decoys.length<3){
+    const c=fmtAP(Math.max(1,area+randInt(-8,8)), Math.max(1,perim+randInt(-6,6)), unit);
+    if(!seen.has(c)){ seen.add(c); decoys.push(c); }
+  }
+  return { correct, choices: shuffleArr([correct, ...decoys.slice(0,3)]) };
+}
+const REAL_WORLD_RECT_CONTEXTS=[
+  {obj:'a book cover', unit:'cm'}, {obj:'a laptop screen', unit:'cm'}, {obj:'a phone screen', unit:'cm'},
+  {obj:'a picture frame', unit:'cm'}, {obj:'a whiteboard', unit:'cm'}, {obj:'a placemat', unit:'cm'},
+  {obj:'a sports field', unit:'m'}, {obj:'a tennis court', unit:'m'}, {obj:'a swimming pool', unit:'m'},
+  {obj:'a garden bed', unit:'m'}, {obj:'a rug', unit:'m'}, {obj:'a classroom floor', unit:'m'},
+];
 function genArea(diff){
-  const range= diff==='easy'?[2,6]: diff==='medium'?[3,9]:[4,12];
-  const w=randInt(range[0],range[1]), h=randInt(range[0],range[1]);
-  return { prompt:`Find the area of this shape (each square = 1 cm²).`, answer:String(w*h),
-    explanation:`Area = width × height = ${w} × ${h} = ${w*h} cm².`, svg:drawRectShape(w,h) };
+  if(diff==='easy'){
+    const w=randInt(2,9), h=randInt(2,9), unit='cm';
+    const area=w*h, perim=2*(w+h);
+    const {correct,choices}=buildAPChoices(area,perim,unit);
+    return { prompt:`Find the area and perimeter of this shape (each square = 1 ${unit}).`, answer:correct, inputType:'choice', choices,
+      explanation:`Area = ${w} × ${h} = ${area} ${unit}². Perimeter = 2 × (${w} + ${h}) = ${perim} ${unit}.`, svg:drawRectShape(w,h) };
+  }
+  if(diff==='medium'){
+    const s=genLShapeDims(4,8); const area=lShapeArea(s), perim=2*(s.W+s.H), unit='cm';
+    const {correct,choices}=buildAPChoices(area,perim,unit);
+    return { prompt:`Find the area and perimeter of this shape (each square = 1 ${unit}).`, answer:correct, inputType:'choice', choices,
+      explanation:`Area: ${s.W}×${s.H} − ${s.nw}×${s.nh} (the missing corner) = ${area} ${unit}². Perimeter: cutting a corner doesn't change the outer distance, so it's still 2 × (${s.W} + ${s.H}) = ${perim} ${unit}.`,
+      svg:drawLShape(s) };
+  }
+  const ctx=pick(REAL_WORLD_RECT_CONTEXTS);
+  const [lo,hi]=ctx.unit==='m'?[3,40]:[10,90];
+  let length=randInt(lo,hi), width=randInt(lo,hi);
+  if(width>length){ [length,width]=[width,length]; }
+  const area=length*width, perim=2*(length+width);
+  const {correct,choices}=buildAPChoices(area,perim,ctx.unit);
+  const sentence=`${ctx.obj.charAt(0).toUpperCase()+ctx.obj.slice(1)} measures ${length} ${ctx.unit} by ${width} ${ctx.unit}. What are its area and perimeter?`;
+  return { prompt:sentence, answer:correct, inputType:'choice', choices,
+    explanation:`Area = ${length} × ${width} = ${area} ${ctx.unit}². Perimeter = 2 × (${length} + ${width}) = ${perim} ${ctx.unit}.` };
 }
 function genClock(diff){
   const hour=randInt(1,12);
