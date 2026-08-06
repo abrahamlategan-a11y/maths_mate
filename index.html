@@ -126,9 +126,11 @@
   .mmc-race-horse { position:absolute; top:-9px; display:flex; align-items:center; gap:4px;
     transition:left 0.7s cubic-bezier(.34,1.4,.64,1); animation:mmcTrot 0.5s infinite alternate; z-index:1; }
   .mmc-race-horse.me { z-index:2; }
-  .mmc-race-horse.me .mmc-race-emoji { filter:drop-shadow(0 0 5px var(--purple)); }
+  /* "me" glow is applied inline alongside the colour filter, combined in JS — see renderRaceTrack */
   .mmc-race-horse.me .mmc-race-name { background:var(--purple); color:#fff; border-color:var(--purple-deep); }
   .mmc-race-emoji { font-size:22px; display:inline-block; transform:scaleX(-1); }
+  .mmc-race-horse-wrap { position:relative; display:inline-block; }
+  .mmc-race-hat { position:absolute; top:-13px; left:50%; transform:translateX(-50%) scaleX(-1); font-size:14px; z-index:1; }
   .mmc-race-name { font-family:'Baloo 2',sans-serif; font-size:10.5px; font-weight:700; background:#fff; border:1.5px solid var(--ink); border-radius:8px; padding:1px 6px; white-space:nowrap; }
   .mmc-race-finish { position:absolute; right:10px; top:4px; bottom:4px; width:9px; border-radius:3px;
     background:repeating-linear-gradient(45deg,#17181C 0 6px, #fff 6px 12px); border:1.5px solid var(--ink); }
@@ -176,7 +178,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 import {
   getFirestore, collection, doc, addDoc, setDoc, updateDoc, deleteDoc,
-  getDoc, getDocs, onSnapshot, query, where, serverTimestamp
+  getDoc, getDocs, onSnapshot, query, where, serverTimestamp, increment
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 
 // ===== PASTE YOUR FIREBASE CONFIG HERE (see SETUP-INSTRUCTIONS.md) =====
@@ -1318,6 +1320,56 @@ function gradeQuestion(q, given){
   return checkAnswer(given, q.answer);
 }
 
+// ---------- Horse racing levels & unlockable customization ----------
+const HORSE_COLOR_FILTERS = {
+  default: 'none',
+  black: 'brightness(0.35) saturate(1.3)',
+  white: 'brightness(2) saturate(0.25)',
+  purple: 'hue-rotate(220deg) saturate(1.6)',
+  gold: 'hue-rotate(35deg) saturate(2.2) brightness(1.25)',
+};
+const HORSE_HAT_EMOJI = { none:'', cap:'🧢', crown:'👑', party:'🎉', wizard:'🧙' };
+const BADGE_TIERS = {
+  rookie: { key:'rookie', label:'Rookie', emoji:'🐴', colors:['default'], hats:['none'], nickname:false },
+  upandcomer: { key:'upandcomer', label:'Up and Comer', emoji:'🌟', colors:['default','black','white'], hats:['none','cap'], nickname:false },
+  expert: { key:'expert', label:'Expert', emoji:'🏆', colors:['default','black','white','purple','gold'], hats:['none','cap','crown','party','wizard'], nickname:true },
+};
+// Badge is computed live from actual practice history — not a stored counter — so it's
+// always an honest reflection of recent effort, and naturally decays if practice stops.
+function computeBadgeInfo(attempts){
+  attempts = attempts || [];
+  const total = attempts.length;
+  const totalCorrect = attempts.reduce((s,a)=>s+(a.score||0),0);
+  const totalAttempted = attempts.reduce((s,a)=>s+(a.attempted||0),0);
+  const avgAccuracy = totalAttempted ? Math.round((totalCorrect/totalAttempted)*100) : 0;
+  const hardAttempts = attempts.filter(a=>a.level==='hard');
+  const hardCorrect = hardAttempts.reduce((s,a)=>s+(a.score||0),0);
+  const hardAttempted = hardAttempts.reduce((s,a)=>s+(a.attempted||0),0);
+  const hardAccuracy = hardAttempted ? Math.round((hardCorrect/hardAttempted)*100) : 0;
+
+  const meetsExpertStats = total>=30 && hardAttempts.length>=10 && hardAccuracy>=60;
+  const meetsUpAndComerStats = total>=15 && avgAccuracy>=50;
+
+  const mostRecent = attempts.slice().sort((a,b)=>(b.submittedAt?.seconds||0)-(a.submittedAt?.seconds||0))[0];
+  const daysSince = (mostRecent && mostRecent.submittedAt && mostRecent.submittedAt.seconds)
+    ? (Date.now()/1000 - mostRecent.submittedAt.seconds)/86400 : Infinity;
+
+  let tierKey='rookie';
+  if(meetsExpertStats && daysSince<=3) tierKey='expert';
+  else if((meetsExpertStats || meetsUpAndComerStats) && daysSince<=14) tierKey='upandcomer';
+
+  return { tier:BADGE_TIERS[tierKey], total, avgAccuracy, hardCount:hardAttempts.length, hardAccuracy,
+    daysSince, meetsExpertStats, meetsUpAndComerStats,
+    decayedFromExpert: meetsExpertStats && daysSince>3 };
+}
+async function equipHorseOption(field, value){
+  if(!S.profile) return;
+  S.profile[field]=value; // optimistic local update
+  try{ await updateDoc(doc(db,'profiles',S.user.uid), { [field]: value }); }
+  catch(e){ S.toast='Could not save that — check your connection.'; }
+  render();
+}
+
 // ---------- Timetable Challenge ----------
 const TT_RANGES = { easy:[1,10], medium:[1,12], hard:[4,15] };
 function genTTQuestion(level, idx){
@@ -1367,7 +1419,7 @@ const S = {
   weeks:[], results:[], profiles:{},
   teacherTab:'weeks', editingDraftId:null,
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null,
-  weekProgress:[],
+  weekProgress:[], lobbyReadyForRoom:null,
   genForm:{ label:'', difficulty:'easy', strategy:'random' },
   activeWeekId:null, quiz:{}, toast:null,
   bulkCreating:false, bulkProgress:null, bulkResults:null, bulkNamesText:'', bulkPassword:'',
@@ -2272,6 +2324,64 @@ function bestTTScore(level){
   if(attempts.length===0) return null;
   return attempts.reduce((best,a)=> a.score>best.score? a : best, attempts[0]);
 }
+const COLOR_LABELS = { default:'Classic Brown', black:'Midnight Black', white:'Snow White', purple:'Royal Purple', gold:'Golden' };
+const HAT_LABELS = { none:'No hat', cap:'Cap', crown:'Crown', party:'Party Hat', wizard:'Wizard Hat' };
+function renderHorseCustomizeCard(){
+  const info = computeBadgeInfo(S.ttAttempts);
+  const tier = info.tier;
+  const card=el(`
+    <div class="mmc-card">
+      <h3>${tier.emoji} ${esc(tier.label)}</h3>
+      <div class="meta">${info.total} practice attempt${info.total===1?'':'s'} · ${info.avgAccuracy}% overall accuracy · ${info.hardCount} at Hard level (${info.hardAccuracy}% accuracy)</div>
+    </div>
+  `);
+  if(tier.key==='expert'){
+    const daysLeft = Math.max(0, 3-info.daysSince);
+    card.appendChild(el(`<div class="meta" style="color:${daysLeft<1.5?'var(--incorrect)':'var(--ink-soft)'};font-weight:700;">Practice at least once every 3 days to keep Expert status.</div>`));
+  } else if(tier.key==='upandcomer'){
+    if(info.decayedFromExpert){
+      card.appendChild(el('<div class="meta" style="color:var(--incorrect);font-weight:700;">You dropped from Expert — practice within 3 days to earn it back!</div>'));
+    } else {
+      card.appendChild(el('<div class="meta">Practice at least once every 14 days to keep Up and Comer status. Reach 30 attempts with 10+ at Hard level (60%+ accuracy) for Expert.</div>'));
+    }
+  } else {
+    card.appendChild(el('<div class="meta">Practice regularly to become an Up and Comer (15+ attempts, 50%+ accuracy) and unlock horse colours &amp; a hat.</div>'));
+  }
+  card.appendChild(el('<div style="height:6px;"></div>'));
+
+  const equippedColor = (S.profile && S.profile.horseColor) || 'default';
+  card.appendChild(el('<div class="label2" style="margin-bottom:6px;">Horse colour</div>'));
+  const colorRow=el('<div class="mmc-choices" style="margin-bottom:14px;"></div>');
+  Object.keys(COLOR_LABELS).forEach(c=>{
+    const isUnlocked=tier.colors.includes(c);
+    const btn=el(`<button type="button" class="mmc-choice-btn${equippedColor===c?' selected':''}" ${isUnlocked?'':'disabled'} data-c="${c}" title="${isUnlocked?'':'Unlock by reaching a higher status'}">${esc(COLOR_LABELS[c])}${isUnlocked?'':' 🔒'}</button>`);
+    colorRow.appendChild(btn);
+  });
+  colorRow.querySelectorAll('button:not(:disabled)').forEach(b=>{ b.onclick=()=>equipHorseOption('horseColor', b.dataset.c); });
+  card.appendChild(colorRow);
+
+  const equippedHat = (S.profile && S.profile.horseHat) || 'none';
+  card.appendChild(el('<div class="label2" style="margin-bottom:6px;">Hat</div>'));
+  const hatRow=el('<div class="mmc-choices" style="margin-bottom:14px;"></div>');
+  Object.keys(HAT_LABELS).forEach(h=>{
+    const isUnlocked=tier.hats.includes(h);
+    const emoji=HORSE_HAT_EMOJI[h]||'';
+    const btn=el(`<button type="button" class="mmc-choice-btn${equippedHat===h?' selected':''}" ${isUnlocked?'':'disabled'} data-h="${h}" title="${isUnlocked?'':'Unlock by reaching a higher status'}">${esc(HAT_LABELS[h])} ${emoji}${isUnlocked?'':' 🔒'}</button>`);
+    hatRow.appendChild(btn);
+  });
+  hatRow.querySelectorAll('button:not(:disabled)').forEach(b=>{ b.onclick=()=>equipHorseOption('horseHat', b.dataset.h); });
+  card.appendChild(hatRow);
+
+  card.appendChild(el('<div class="label2" style="margin-bottom:6px;">Race nickname</div>'));
+  if(tier.nickname){
+    const row=el(`<div class="mmc-row"><input type="text" id="mmc-nickname" maxlength="14" placeholder="Shown above your horse" value="${esc((S.profile&&S.profile.nickname)||'')}" style="max-width:220px;"><button class="mmc-btn ghost sm">Save</button></div>`);
+    row.querySelector('button').onclick=()=>equipHorseOption('nickname', row.querySelector('input').value.trim().slice(0,14));
+    card.appendChild(row);
+  } else {
+    card.appendChild(el('<div class="meta">🔒 Reach Expert status to set a custom nickname.</div>'));
+  }
+  return card;
+}
 function renderTimetableTab(){
   const wrap=el('<div></div>');
   const levels=[{k:'easy',label:'Easy',desc:'1–10 times tables'},{k:'medium',label:'Medium',desc:'1–12, multiply & divide'},{k:'hard',label:'Hard',desc:'4–15, multiply & divide'}];
@@ -2290,7 +2400,7 @@ function renderTimetableTab(){
     cardsRow.appendChild(card);
   });
   wrap.appendChild(el('<h3 style="font-family:Fredoka,sans-serif;margin:4px 0 12px;">Timetable Challenge</h3>'));
-  wrap.appendChild(el('<div class="meta" style="margin-bottom:10px;">5 minutes on the clock — answer as many as you can!</div>'));
+  wrap.appendChild(el('<div class="meta" style="margin-bottom:10px;">5 minutes on the clock — answer as many as you can! Regular, accurate practice builds your race status.</div>'));
   wrap.appendChild(cardsRow);
 
   if(S.tt && S.tt.finished && S.tt.lastResult){
@@ -2301,6 +2411,8 @@ function renderTimetableTab(){
       </div>
     `));
   }
+
+  wrap.appendChild(renderHorseCustomizeCard());
 
   if(S.ttAttempts.length){
     wrap.appendChild(el('<h3 style="font-family:Fredoka,sans-serif;margin:18px 0 8px;">Your attempt history</h3>'));
@@ -2420,11 +2532,19 @@ function renderRaceTrack(myUid, capNearFinish){
     let pos=Math.max(0,Math.min(100,p.position||0));
     if(capNearFinish) pos=Math.min(pos,96); // the line is only actually crossed once time runs out
     const isMe = myUid && p.id===myUid;
-    const label = p.username || p.name;
+    const label = p.nickname || p.username || p.name;
+    const colorFilter = HORSE_COLOR_FILTERS[p.horseColor] || 'none';
+    const meGlow = isMe ? ' drop-shadow(0 0 5px var(--purple))' : '';
+    const combinedFilter = ((colorFilter==='none'?'':colorFilter) + meGlow).trim() || 'none';
+    const hatEmoji = HORSE_HAT_EMOJI[p.horseHat] || '';
     const lane=el(`<div class="mmc-race-lane" style="top:${topPad+i*laneH}px;"><div class="mmc-race-track-line"></div></div>`);
     const horse=el(`
       <div class="mmc-race-horse${isMe?' me':''}" style="left:calc(${pos}% - 18px);">
-        <span class="mmc-race-emoji">🐎</span><span class="mmc-race-name">${esc(label)}${isMe?' (you)':''}</span>
+        <span class="mmc-race-horse-wrap">
+          ${hatEmoji? `<span class="mmc-race-hat">${hatEmoji}</span>` : ''}
+          <span class="mmc-race-emoji" style="filter:${combinedFilter};">🐎</span>
+        </span>
+        <span class="mmc-race-name">${esc(label)}${isMe?' (you)':''}</span>
       </div>
     `);
     lane.appendChild(horse);
@@ -2652,12 +2772,20 @@ function renderStudentLiveGame(){
       card.querySelector('#mmc-live-join').onclick=()=>joinLiveGame(room.id);
       wrap.appendChild(card);
     } else {
-      wrap.appendChild(el(`
-        <div class="mmc-card">
-          <h3>You're in! ✓</h3>
-          <div class="meta">Waiting for your teacher to start… ${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} ready.</div>
-        </div>
-      `));
+      if(S.lobbyReadyForRoom === room.id){
+        wrap.appendChild(el(`
+          <div class="mmc-card">
+            <h3>You're in! ✓</h3>
+            <div class="meta">Waiting for your teacher to start… ${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} ready.</div>
+          </div>
+        `));
+      } else {
+        wrap.appendChild(el(`<div class="mmc-card"><h3>You're in! ✓</h3><div class="meta">Customize your horse before the race starts.</div></div>`));
+        wrap.appendChild(renderHorseCustomizeCard());
+        const readyBtn=el('<button class="mmc-btn gold" style="width:100%;font-size:16px;padding:12px;">I\'m Ready! 🏁</button>');
+        readyBtn.onclick=async ()=>{ await syncParticipantCustomization(room.id); S.lobbyReadyForRoom=room.id; render(); };
+        wrap.appendChild(readyBtn);
+      }
     }
     return wrap;
   }
@@ -2689,9 +2817,22 @@ async function joinLiveGame(gameId){
     await setDoc(doc(db,'liveGames',gameId,'participants',S.user.uid), {
       uid:S.user.uid, name:S.profile? S.profile.displayName : S.user.email,
       username: S.profile && S.profile.username ? S.profile.username : null,
+      nickname: S.profile && S.profile.nickname ? S.profile.nickname : null,
+      horseColor: S.profile && S.profile.horseColor ? S.profile.horseColor : 'default',
+      horseHat: S.profile && S.profile.horseHat ? S.profile.horseHat : 'none',
       score:0, attempted:0, position:0, joinedAt:serverTimestamp()
     });
   }catch(e){ S.toast='Could not join — check your connection.'; render(); }
+}
+async function syncParticipantCustomization(gameId){
+  if(!S.user || !S.profile) return;
+  try{
+    await updateDoc(doc(db,'liveGames',gameId,'participants',S.user.uid), {
+      horseColor: S.profile.horseColor || 'default',
+      horseHat: S.profile.horseHat || 'none',
+      nickname: S.profile.nickname || null,
+    });
+  }catch(e){ /* best effort — race still uses their join-time snapshot if this fails */ }
 }
 
 function renderQuizTaking(week){
