@@ -118,23 +118,21 @@
   .mmc-coin-chip.selected { background:var(--yellow); }
   .mmc-coin-chip:disabled { opacity:.7; }
   .mmc-coin-total { font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--ink-soft); margin-bottom:8px; font-weight:700; }
-  .mmc-race-scene { overflow-x:auto; overflow-y:hidden; margin-bottom:16px; padding:6px 0 26px; perspective:700px; }
-  .mmc-race-track { position:relative; min-width:340px; background:repeating-linear-gradient(180deg,#F5F2E8 0 42px, #ECE6D6 42px 44px);
-    border:2.5px solid var(--ink); border-radius:14px; box-shadow:4px 4px 0 var(--ink);
-    transform:rotateX(48deg); transform-origin:center bottom; transform-style:preserve-3d; }
+  .mmc-race-scene { overflow-x:auto; margin-bottom:16px; }
+  .mmc-race-track { position:relative; min-width:320px; background:repeating-linear-gradient(180deg,#F5F2E8 0 40px, #ECE6D6 40px 42px);
+    border:2.5px solid var(--ink); border-radius:14px; box-shadow:4px 4px 0 var(--ink); }
   .mmc-race-lane { position:absolute; left:8px; right:14px; height:2px; }
-  .mmc-race-track-line { position:absolute; left:0; right:0; top:22px; height:2px; background:var(--paper-line); }
-  .mmc-race-horse { position:absolute; top:-11px; z-index:1; transition:left 0.7s cubic-bezier(.34,1.4,.64,1); }
+  .mmc-race-track-line { position:absolute; left:0; right:0; top:20px; height:2px; background:var(--paper-line); }
+  .mmc-race-horse { position:absolute; top:-9px; display:flex; align-items:center; gap:4px;
+    transition:left 0.7s cubic-bezier(.34,1.4,.64,1); animation:mmcTrot 0.5s infinite alternate; z-index:1; }
   .mmc-race-horse.me { z-index:2; }
-  .mmc-race-horse-inner { display:flex; align-items:center; gap:4px; transform:rotateX(-48deg); transform-origin:center bottom;
-    animation:mmcTrot 0.5s infinite alternate; filter:drop-shadow(0 3px 2px rgba(0,0,0,0.2)); }
   .mmc-race-horse.me .mmc-race-emoji { filter:drop-shadow(0 0 5px var(--purple)); }
   .mmc-race-horse.me .mmc-race-name { background:var(--purple); color:#fff; border-color:var(--purple-deep); }
-  .mmc-race-emoji { font-size:24px; }
+  .mmc-race-emoji { font-size:22px; display:inline-block; transform:scaleX(-1); }
   .mmc-race-name { font-family:'Baloo 2',sans-serif; font-size:10.5px; font-weight:700; background:#fff; border:1.5px solid var(--ink); border-radius:8px; padding:1px 6px; white-space:nowrap; }
   .mmc-race-finish { position:absolute; right:10px; top:4px; bottom:4px; width:9px; border-radius:3px;
     background:repeating-linear-gradient(45deg,#17181C 0 6px, #fff 6px 12px); border:1.5px solid var(--ink); }
-  @keyframes mmcTrot { from{ transform:rotateX(-48deg) translateY(0); } to{ transform:rotateX(-48deg) translateY(-3px); } }
+  @keyframes mmcTrot { from{ transform:translateY(0); } to{ transform:translateY(-3px); } }
   .mmc-frac-eq { display:inline-flex; align-items:center; gap:10px; font-size:22px; font-weight:700; flex-wrap:wrap; justify-content:center; }
   .mmc-frac { display:inline-flex; flex-direction:column; align-items:center; vertical-align:middle; font-family:'IBM Plex Mono',monospace; font-weight:700; }
   .mmc-frac .num, .mmc-frac .den { padding:2px 8px; line-height:1.25; }
@@ -2422,12 +2420,11 @@ function renderRaceTrack(myUid, capNearFinish){
     let pos=Math.max(0,Math.min(100,p.position||0));
     if(capNearFinish) pos=Math.min(pos,96); // the line is only actually crossed once time runs out
     const isMe = myUid && p.id===myUid;
+    const label = p.username || p.name;
     const lane=el(`<div class="mmc-race-lane" style="top:${topPad+i*laneH}px;"><div class="mmc-race-track-line"></div></div>`);
     const horse=el(`
       <div class="mmc-race-horse${isMe?' me':''}" style="left:calc(${pos}% - 18px);">
-        <div class="mmc-race-horse-inner">
-          <span class="mmc-race-emoji">🐎</span><span class="mmc-race-name">${esc(p.name)}${isMe?' (you)':''}</span>
-        </div>
+        <span class="mmc-race-emoji">🐎</span><span class="mmc-race-name">${esc(label)}${isMe?' (you)':''}</span>
       </div>
     `);
     lane.appendChild(horse);
@@ -2690,7 +2687,9 @@ function renderStudentLiveGame(){
 async function joinLiveGame(gameId){
   try{
     await setDoc(doc(db,'liveGames',gameId,'participants',S.user.uid), {
-      uid:S.user.uid, name:S.profile? S.profile.displayName : S.user.email, score:0, attempted:0, position:0, joinedAt:serverTimestamp()
+      uid:S.user.uid, name:S.profile? S.profile.displayName : S.user.email,
+      username: S.profile && S.profile.username ? S.profile.username : null,
+      score:0, attempted:0, position:0, joinedAt:serverTimestamp()
     });
   }catch(e){ S.toast='Could not join — check your connection.'; render(); }
 }
