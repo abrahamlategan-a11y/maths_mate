@@ -1313,6 +1313,7 @@ const S = {
   authMode:'login', authError:null, showSignup:false,
   weeks:[], results:[], profiles:{},
   teacherTab:'weeks', editingDraftId:null,
+  gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null,
   genForm:{ label:'', difficulty:'easy', strategy:'random' },
   activeWeekId:null, quiz:{}, toast:null,
   bulkCreating:false, bulkProgress:null, bulkResults:null, bulkNamesText:'', bulkPassword:'',
@@ -1642,6 +1643,108 @@ function renderQuestionEditor(week){
 
 function renderLedger(){
   const wrap=el('<div></div>');
+  const subtabs=el(`<div class="mmc-tabs" style="margin-bottom:14px;">
+    <button class="mmc-tab" data-gv="summary">Summary</button>
+    <button class="mmc-tab" data-gv="byweek">By Week</button>
+    <button class="mmc-tab" data-gv="byquestion">By Question</button>
+  </div>`);
+  const view=S.gradebookView||'summary';
+  subtabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.gv===view) b.classList.add('active');
+    b.onclick=()=>{ S.gradebookView=b.dataset.gv; S.gradebookDetail=null; render(); }; });
+  wrap.appendChild(subtabs);
+  wrap.appendChild(view==='summary' ? renderLedgerSummary() : view==='byweek' ? renderLedgerByWeek() : renderLedgerByQuestion());
+  return wrap;
+}
+
+function formatGivenAnswer(ans, q){
+  if(!ans) return '(no answer recorded)';
+  const given=ans.given;
+  if(q.inputType==='coins'){
+    if(!Array.isArray(given)) return String(given==null?'':given);
+    const labels=(q.coins||[]).filter(c=>given.includes(c.id)).map(c=>c.l);
+    return labels.length? labels.join(' + ') : '(no coins selected)';
+  }
+  if(q.inputType==='order'){
+    return given? String(given).split(',').join(' → ') : '(not completed)';
+  }
+  return given==null || given==='' ? '(left blank)' : String(given);
+}
+function formatCorrectAnswer(q){
+  if(q.inputType==='coins') return `${fmtCents(q.targetCents)}${q.minCoins!=null?` in exactly ${q.minCoins} piece${q.minCoins===1?'':'s'}`:''}`;
+  if(q.inputType==='order') return (q.answer||'').split(',').join(' → ');
+  return q.answer;
+}
+function renderGradebookDetail(){
+  const d=S.gradebookDetail;
+  if(!d) return null;
+  if(d.type==='week'){
+    const week=S.weeks.find(w=>w.id===d.weekId);
+    const q=week && (week.questions||[]).find(x=>x.id===d.qId);
+    if(!week || !q) return null;
+    const rec=S.results.find(r=>r.uid===d.uid && r.weekId===d.weekId);
+    const ans=rec && (rec.answers||[]).find(a=>a.qId===d.qId);
+    const studentName=(S.profiles[d.uid]&&S.profiles[d.uid].displayName)||d.uid;
+    const card=el(`
+      <div class="mmc-card" style="border-color:var(--purple);">
+        <div class="mmc-row" style="justify-content:space-between;align-items:flex-start;">
+          <h3>Q${q.slot} — ${esc(q.title||'')} · ${esc(studentName)}</h3>
+          <button class="mmc-btn ghost sm" id="mmc-gb-close">✕ Close</button>
+        </div>
+      </div>
+    `);
+    if(q.svg) card.querySelector('h3').insertAdjacentHTML('afterend', `<div class="mmc-qsvg">${q.svg}</div>`);
+    card.appendChild(el(`<div class="qtext" style="margin:8px 0 12px;">${esc(q.prompt)}</div>`));
+    const answerRow=el(`
+      <div class="mmc-row" style="gap:24px;">
+        <div><div class="label2">Student's answer</div><div style="font-weight:700;color:${ans&&ans.correct?'var(--correct)':'var(--incorrect)'};">${esc(formatGivenAnswer(ans,q))}</div></div>
+        <div><div class="label2">Correct answer</div><div style="font-weight:700;">${esc(formatCorrectAnswer(q))}</div></div>
+      </div>
+    `);
+    card.appendChild(answerRow);
+    if(q.explanation) card.appendChild(el(`<div class="meta" style="margin-top:10px;">${esc(q.explanation)}</div>`));
+    card.querySelector('#mmc-gb-close').onclick=()=>{ S.gradebookDetail=null; render(); };
+    return card;
+  }
+  if(d.type==='question'){
+    const studentName=(S.profiles[d.uid]&&S.profiles[d.uid].displayName)||d.uid;
+    const card=el(`
+      <div class="mmc-card" style="border-color:var(--purple);">
+        <div class="mmc-row" style="justify-content:space-between;">
+          <h3>Q${d.slot} history · ${esc(studentName)}</h3>
+          <button class="mmc-btn ghost sm" id="mmc-gb-close">✕ Close</button>
+        </div>
+      </div>
+    `);
+    card.querySelector('#mmc-gb-close').onclick=()=>{ S.gradebookDetail=null; render(); };
+    const pubWeeks=S.weeks.filter(w=>w.status==='published').sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
+    let any=false;
+    pubWeeks.forEach(w=>{
+      const q=(w.questions||[]).find(x=>x.slot===d.slot);
+      if(!q) return;
+      const rec=S.results.find(r=>r.uid===d.uid && r.weekId===w.id);
+      if(!rec) return;
+      const ans=(rec.answers||[]).find(a=>a.qId===q.id);
+      if(!ans) return;
+      any=true;
+      card.appendChild(el(`
+        <div style="border-top:1px solid var(--paper-line);padding:10px 0;">
+          <div class="meta" style="font-weight:700;">${esc(w.label)}</div>
+          <div style="margin:4px 0;">${esc(q.prompt)}</div>
+          <div class="mmc-row" style="gap:16px;">
+            <div style="color:${ans.correct?'var(--correct)':'var(--incorrect)'};font-weight:700;">Answered: ${esc(formatGivenAnswer(ans,q))}</div>
+            <div class="meta">Correct: ${esc(formatCorrectAnswer(q))}</div>
+          </div>
+        </div>
+      `));
+    });
+    if(!any) card.appendChild(el('<div class="meta">No attempts yet.</div>'));
+    return card;
+  }
+  return null;
+}
+
+function renderLedgerSummary(){
+  const wrap=el('<div></div>');
   const pubWeeks = S.weeks.filter(w=>w.status==='published').sort((a,b)=> (a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
   const studentUids = Object.keys(S.profiles).filter(uid=>{
     const email=(S.profiles[uid].email||'').toLowerCase();
@@ -1684,6 +1787,116 @@ function renderLedger(){
   wrap.appendChild(tableWrap);
   return wrap;
 }
+
+function renderLedgerByWeek(){
+  const wrap=el('<div></div>');
+  const pubWeeks = S.weeks.filter(w=>w.status==='published').sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+  if(pubWeeks.length===0){ wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">📒</div>No published weeks yet.</div>')); return wrap; }
+  if(!S.gradebookWeekId || !pubWeeks.some(w=>w.id===S.gradebookWeekId)) S.gradebookWeekId=pubWeeks[0].id;
+
+  const selectRow=el(`<div class="mmc-field" style="max-width:280px;margin-bottom:14px;"><label>Week</label>
+    <select id="mmc-gb-week">${pubWeeks.map(w=>`<option value="${w.id}" ${w.id===S.gradebookWeekId?'selected':''}>${esc(w.label)}</option>`).join('')}</select></div>`);
+  selectRow.querySelector('select').onchange=(e)=>{ S.gradebookWeekId=e.target.value; S.gradebookDetail=null; render(); };
+  wrap.appendChild(selectRow);
+
+  wrap.appendChild(el('<div class="meta" style="margin-bottom:10px;">Click any ✓ or ✗ to see the question and the student\'s answer.</div>'));
+  const detail=renderGradebookDetail();
+  if(detail && S.gradebookDetail && S.gradebookDetail.type==='week') wrap.appendChild(detail);
+
+  const week = pubWeeks.find(w=>w.id===S.gradebookWeekId);
+  const qidToSlot={}; (week.questions||[]).forEach(q=>{ qidToSlot[q.id]=q.slot; });
+  const studentUids = Object.keys(S.profiles).sort((a,b)=>(S.profiles[a].displayName||'').localeCompare(S.profiles[b].displayName||''));
+  if(studentUids.length===0){ wrap.appendChild(el('<div class="mmc-empty">No students yet.</div>')); return wrap; }
+
+  const tableWrap=el('<div class="mmc-ledger-wrap"></div>');
+  const table=el('<table class="mmc-ledger"></table>');
+  const thead=el('<thead><tr></tr></thead>');
+  const trh=thead.querySelector('tr');
+  trh.appendChild(el('<th>Student</th>'));
+  for(let s=1;s<=20;s++) trh.appendChild(el(`<th title="${esc(SLOTS[s-1].title)}">Q${s}</th>`));
+  trh.appendChild(el('<th>Overall</th>'));
+  table.appendChild(thead);
+  const tbody=el('<tbody></tbody>');
+  studentUids.forEach(uid=>{
+    const rec=S.results.find(r=>r.uid===uid && r.weekId===week.id);
+    const tr=el('<tr></tr>');
+    tr.appendChild(el(`<td>${esc(S.profiles[uid].displayName||uid)}</td>`));
+    if(!rec){
+      for(let s=1;s<=20;s++) tr.appendChild(el('<td style="color:var(--ink-soft);">—</td>'));
+      tr.appendChild(el('<td style="color:var(--ink-soft);">—</td>'));
+    } else {
+      const bySlot={}; (rec.answers||[]).forEach(a=>{ const slot=qidToSlot[a.qId]; if(slot) bySlot[slot]={correct:a.correct, qId:a.qId}; });
+      for(let s=1;s<=20;s++){
+        const info=bySlot[s];
+        if(!info){ tr.appendChild(el('<td style="color:var(--ink-soft);">—</td>')); continue; }
+        const td=el('<td></td>');
+        const btn=el(`<button type="button" style="background:none;border:none;cursor:pointer;font-weight:800;font-size:16px;color:${info.correct?'var(--correct)':'var(--incorrect)'};">${info.correct?'✓':'✗'}</button>`);
+        btn.onclick=()=>{ S.gradebookDetail={type:'week', uid, weekId:week.id, qId:info.qId}; render(); };
+        td.appendChild(btn);
+        tr.appendChild(td);
+      }
+      const pct = rec.total? Math.round((rec.score/rec.total)*100) : 0;
+      const cls = pct>=70?'good':(pct>=50?'mid':'low');
+      tr.appendChild(el(`<td class="mmc-cellscore ${cls}">${pct}%</td>`));
+    }
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+  wrap.appendChild(tableWrap);
+  return wrap;
+}
+
+function renderLedgerByQuestion(){
+  const wrap=el('<div></div>');
+  wrap.appendChild(el('<div class="meta" style="margin-bottom:12px;">Accuracy per question, across every published week each student has completed. 🟩 80%+ · 🟧 50–79% · 🟥 under 50% · — not attempted yet. Click a cell to see the question history.</div>'));
+  const detail=renderGradebookDetail();
+  if(detail && S.gradebookDetail && S.gradebookDetail.type==='question') wrap.appendChild(detail);
+
+  const pubWeeks = S.weeks.filter(w=>w.status==='published');
+  const qidToSlotByWeek={};
+  pubWeeks.forEach(w=>{ const m={}; (w.questions||[]).forEach(q=>{ m[q.id]=q.slot; }); qidToSlotByWeek[w.id]=m; });
+
+  const studentUids = Object.keys(S.profiles).sort((a,b)=>(S.profiles[a].displayName||'').localeCompare(S.profiles[b].displayName||''));
+  if(studentUids.length===0){ wrap.appendChild(el('<div class="mmc-empty">No students yet.</div>')); return wrap; }
+
+  const tableWrap=el('<div class="mmc-ledger-wrap"></div>');
+  const table=el('<table class="mmc-ledger"></table>');
+  const thead=el('<thead><tr></tr></thead>');
+  const trh=thead.querySelector('tr');
+  trh.appendChild(el('<th>Student</th>'));
+  for(let s=1;s<=20;s++) trh.appendChild(el(`<th title="${esc(SLOTS[s-1].title)}">Q${s}</th>`));
+  table.appendChild(thead);
+  const tbody=el('<tbody></tbody>');
+  studentUids.forEach(uid=>{
+    const tr=el('<tr></tr>');
+    tr.appendChild(el(`<td>${esc(S.profiles[uid].displayName||uid)}</td>`));
+    const myResults = S.results.filter(r=>r.uid===uid);
+    for(let s=1;s<=20;s++){
+      let correctCount=0, total=0;
+      myResults.forEach(rec=>{
+        const map=qidToSlotByWeek[rec.weekId]; if(!map) return;
+        (rec.answers||[]).forEach(a=>{ if(map[a.qId]===s){ total++; if(a.correct) correctCount++; } });
+      });
+      if(total===0){ tr.appendChild(el('<td style="color:var(--ink-soft);">—</td>')); }
+      else {
+        const pct=Math.round((correctCount/total)*100);
+        const emoji = pct>=80?'🟩':(pct>=50?'🟧':'🟥');
+        const td=el('<td></td>');
+        const btn=el(`<button type="button" title="${correctCount}/${total} correct" style="background:none;border:none;cursor:pointer;font-weight:700;">${emoji} ${pct}%</button>`);
+        btn.onclick=()=>{ S.gradebookDetail={type:'question', uid, slot:s}; render(); };
+        td.appendChild(btn);
+        tr.appendChild(td);
+      }
+    }
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+  wrap.appendChild(tableWrap);
+  return wrap;
+}
+
 
 function exportCSV(pubWeeks, studentUids){
   const header=['Student name','Email', ...pubWeeks.map(w=>w.label), 'Average %'];
