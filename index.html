@@ -1370,6 +1370,78 @@ async function equipHorseOption(field, value){
   render();
 }
 
+// ---------- Page theme (Up and Comer: preset palettes · Expert: any colour) ----------
+const PRESET_PALETTES = [
+  { key:'classic', label:'Classic', primary:'#FF7A1A', secondary:'#B7E600', accent:'#8B5CF6' },
+  { key:'ocean', label:'Ocean', primary:'#0EA5E9', secondary:'#06B6D4', accent:'#6366F1' },
+  { key:'sunset', label:'Sunset', primary:'#F43F5E', secondary:'#FB923C', accent:'#DB2777' },
+  { key:'forest', label:'Forest', primary:'#22C55E', secondary:'#84CC16', accent:'#0D9488' },
+  { key:'candy', label:'Candy', primary:'#EC4899', secondary:'#A78BFA', accent:'#F472B6' },
+];
+function darkenHex(hex, amt){
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if(!m) return hex;
+  const n = parseInt(m[1],16);
+  let r=(n>>16)&255, g=(n>>8)&255, b=n&255;
+  r=Math.max(0,Math.round(r*(1-amt))); g=Math.max(0,Math.round(g*(1-amt))); b=Math.max(0,Math.round(b*(1-amt)));
+  return '#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+function applyTheme(){
+  const root=document.getElementById('mmc');
+  if(!root) return;
+  const p=S.profile;
+  if(!p || !p.themePrimary){
+    ['--orange','--orange-deep','--slime','--slime-deep','--purple','--purple-deep'].forEach(v=>root.style.removeProperty(v));
+    return;
+  }
+  if(p.themePrimary){ root.style.setProperty('--orange', p.themePrimary); root.style.setProperty('--orange-deep', darkenHex(p.themePrimary,0.22)); }
+  if(p.themeSecondary){ root.style.setProperty('--slime', p.themeSecondary); root.style.setProperty('--slime-deep', darkenHex(p.themeSecondary,0.22)); }
+  if(p.themeAccent){ root.style.setProperty('--purple', p.themeAccent); root.style.setProperty('--purple-deep', darkenHex(p.themeAccent,0.22)); }
+}
+async function applyThemeChoice(primary, secondary, accent){
+  if(!S.profile) return;
+  S.profile.themePrimary=primary; S.profile.themeSecondary=secondary; S.profile.themeAccent=accent;
+  try{ await updateDoc(doc(db,'profiles',S.user.uid), { themePrimary:primary, themeSecondary:secondary, themeAccent:accent }); }
+  catch(e){ S.toast='Could not save that — check your connection.'; }
+  render();
+}
+function renderThemeCustomizeCard(){
+  const tier = computeBadgeInfo(S.ttAttempts).tier;
+  const card=el(`<div class="mmc-card"><h3>🎨 Page Colours</h3></div>`);
+  if(tier.key==='rookie'){
+    card.appendChild(el('<div class="meta">🔒 Reach Up and Comer status to unlock preset colour themes for your whole page — Experts get free reign to pick any colours at all.</div>'));
+    return card;
+  }
+  if(tier.key==='upandcomer'){
+    card.appendChild(el('<div class="meta">Pick a preset colour scheme for your whole page:</div>'));
+    const row=el('<div class="mmc-choices"></div>');
+    PRESET_PALETTES.forEach(pal=>{
+      const isEquipped = S.profile && S.profile.themePrimary===pal.primary && S.profile.themeSecondary===pal.secondary && S.profile.themeAccent===pal.accent;
+      const swatch = `<span style="display:inline-flex;gap:2px;margin-right:5px;">${[pal.primary,pal.secondary,pal.accent].map(c=>`<span style="width:11px;height:11px;border-radius:50%;background:${c};display:inline-block;border:1px solid var(--ink);"></span>`).join('')}</span>`;
+      const btn=el(`<button type="button" class="mmc-choice-btn${isEquipped?' selected':''}" style="display:inline-flex;align-items:center;">${swatch}${esc(pal.label)}</button>`);
+      btn.onclick=()=>applyThemeChoice(pal.primary,pal.secondary,pal.accent);
+      row.appendChild(btn);
+    });
+    card.appendChild(row);
+    return card;
+  }
+  // expert: full free-choice colour pickers
+  card.appendChild(el('<div class="meta">Choose any colours you like for your page:</div>'));
+  const primary=(S.profile&&S.profile.themePrimary)||'#FF7A1A', secondary=(S.profile&&S.profile.themeSecondary)||'#B7E600', accent=(S.profile&&S.profile.themeAccent)||'#8B5CF6';
+  const row=el(`<div class="mmc-row">
+    <label style="display:flex;flex-direction:column;font-size:11px;font-weight:800;color:var(--ink-soft);gap:3px;">Primary<input type="color" id="mmc-theme-primary" value="${primary}"></label>
+    <label style="display:flex;flex-direction:column;font-size:11px;font-weight:800;color:var(--ink-soft);gap:3px;">Secondary<input type="color" id="mmc-theme-secondary" value="${secondary}"></label>
+    <label style="display:flex;flex-direction:column;font-size:11px;font-weight:800;color:var(--ink-soft);gap:3px;">Accent<input type="color" id="mmc-theme-accent" value="${accent}"></label>
+    <button class="mmc-btn gold sm" id="mmc-theme-apply">Apply</button>
+    <button class="mmc-btn ghost sm" id="mmc-theme-reset">Reset to Classic</button>
+  </div>`);
+  row.querySelector('#mmc-theme-apply').onclick=()=>applyThemeChoice(
+    row.querySelector('#mmc-theme-primary').value, row.querySelector('#mmc-theme-secondary').value, row.querySelector('#mmc-theme-accent').value);
+  row.querySelector('#mmc-theme-reset').onclick=()=>applyThemeChoice(null,null,null);
+  card.appendChild(row);
+  return card;
+}
+
 // ---------- Timetable Challenge ----------
 const TT_RANGES = { easy:[1,10], medium:[1,12], hard:[4,15] };
 function genTTQuestion(level, idx){
@@ -1550,6 +1622,7 @@ function scheduleToastClear(){
 }
 function render(){
   const root=document.getElementById('mmc');
+  applyTheme();
   root.innerHTML='';
   root.appendChild(renderHead());
   const body=el('<div class="mmc-body"></div>');
@@ -2382,8 +2455,38 @@ function renderHorseCustomizeCard(){
   }
   return card;
 }
+function renderStatusBanner(){
+  const info = computeBadgeInfo(S.ttAttempts);
+  const tier = info.tier;
+  const bg = { rookie:'var(--bg)', upandcomer:'var(--yellow)', expert:'var(--slime)' }[tier.key];
+  const banner=el(`
+    <div class="mmc-card" style="text-align:center;background:${bg};margin-bottom:18px;">
+      <div style="font-size:40px;line-height:1;">${tier.emoji}</div>
+      <h3 style="font-size:21px;margin:8px 0 3px;">${esc(tier.label)}</h3>
+      <div class="meta" style="margin-bottom:0;">${info.total} practice attempt${info.total===1?'':'s'} · ${info.avgAccuracy}% accuracy</div>
+    </div>
+  `);
+  return banner;
+}
+function renderTierReferenceTable(){
+  const wrap=el('<div></div>');
+  wrap.appendChild(el('<h3 style="font-family:Fredoka,sans-serif;margin:18px 0 8px;">How status works</h3>'));
+  const tableWrap=el('<div class="mmc-ledger-wrap"></div>');
+  const table=el(`<table class="mmc-ledger">
+    <thead><tr><th>Status</th><th>To reach it</th><th>To keep it</th><th>Perks</th></tr></thead>
+    <tbody>
+      <tr><td>🐴 Rookie</td><td>Everyone starts here</td><td>—</td><td>Classic horse look</td></tr>
+      <tr><td>🌟 Up and Comer</td><td>15+ attempts, 50%+ average accuracy</td><td>Practice at least once every 14 days</td><td>2 extra horse colours, 1 hat, preset page colour themes</td></tr>
+      <tr><td>🏆 Expert</td><td>30+ attempts, including 10+ at Hard level with 60%+ accuracy on those</td><td>Practice at least once every 3 days</td><td>Every colour, every hat, a custom nickname, and full free choice of page colours</td></tr>
+    </tbody>
+  </table>`);
+  tableWrap.appendChild(table);
+  wrap.appendChild(tableWrap);
+  return wrap;
+}
 function renderTimetableTab(){
   const wrap=el('<div></div>');
+  wrap.appendChild(renderStatusBanner());
   const levels=[{k:'easy',label:'Easy',desc:'1–10 times tables'},{k:'medium',label:'Medium',desc:'1–12, multiply & divide'},{k:'hard',label:'Hard',desc:'4–15, multiply & divide'}];
   const cardsRow=el('<div class="mmc-row"></div>');
   levels.forEach(lv=>{
@@ -2413,6 +2516,7 @@ function renderTimetableTab(){
   }
 
   wrap.appendChild(renderHorseCustomizeCard());
+  wrap.appendChild(renderThemeCustomizeCard());
 
   if(S.ttAttempts.length){
     wrap.appendChild(el('<h3 style="font-family:Fredoka,sans-serif;margin:18px 0 8px;">Your attempt history</h3>'));
@@ -2426,6 +2530,7 @@ function renderTimetableTab(){
     tableWrap.appendChild(table);
     wrap.appendChild(tableWrap);
   }
+  wrap.appendChild(renderTierReferenceTable());
   return wrap;
 }
 
