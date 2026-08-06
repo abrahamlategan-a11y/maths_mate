@@ -390,17 +390,31 @@ function genOrderDecimals(diff){
   return { prompt:`Tap the decimals in ascending order (smallest first).`, items:arr.map(String), answer:sorted.join(','),
     explanation:`Ascending order: ${sorted.join(', ')}`, inputType:'order', checkType:'numlist' };
 }
-const DENOMS=[{v:5,l:'5c'},{v:10,l:'10c'},{v:20,l:'20c'},{v:50,l:'50c'},{v:100,l:'$1'},{v:200,l:'$2'}];
+const DENOMS=[{v:5,l:'5c'},{v:10,l:'10c'},{v:20,l:'20c'},{v:50,l:'50c'},{v:100,l:'$1'},{v:200,l:'$2'},{v:500,l:'$5'},{v:1000,l:'$10'},{v:2000,l:'$20'}];
 function fmtCents(c){ return c>=100 ? '$'+(c/100).toFixed(2) : c+'c'; }
-function buildCoinsQuestion(target, promptText, explanationText){
+function buildCoinsQuestion(target, promptText, explanationText, requireMinimal){
   let remaining=target; const solution=[];
   for(let i=DENOMS.length-1;i>=0;i--){ while(remaining>=DENOMS[i].v){ solution.push(DENOMS[i]); remaining-=DENOMS[i].v; } }
   const decoyCount = solution.length>=8 ? randInt(1,2) : randInt(2,4);
   const decoys=[]; for(let i=0;i<decoyCount;i++) decoys.push(pick(DENOMS));
   const coins=[...solution,...decoys].map((c,i)=>({v:c.v,l:c.l,id:'c'+i}));
   for(let i=coins.length-1;i>0;i--){ const j=randInt(0,i); [coins[i],coins[j]]=[coins[j],coins[i]]; }
-  return { prompt:promptText, inputType:'coins', targetCents:target, coins, explanation:explanationText };
+  const q={ prompt:promptText, inputType:'coins', targetCents:target, coins, explanation:explanationText };
+  if(requireMinimal) q.minCoins=solution.length;
+  return q;
 }
+function joinWithAnd(parts){
+  if(parts.length===1) return parts[0];
+  if(parts.length===2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0,-1).join(', ')} and ${parts[parts.length-1]}`;
+}
+const PURCHASE_ITEMS=[
+  {name:'an ice cream', range:[150,350]}, {name:'a bag of chips', range:[250,450]},
+  {name:'an apple', range:[40,90]}, {name:'a juice box', range:[150,300]},
+  {name:'a chocolate bar', range:[200,400]}, {name:'a muffin', range:[300,500]},
+  {name:'a bottle of water', range:[150,300]}, {name:'a comic book', range:[400,800]},
+  {name:'a sticker pack', range:[100,250]}, {name:'a yoyo', range:[300,600]},
+];
 function genCoins(diff){
   if(diff!=='hard'){
     const range = diff==='easy'?[100,300]:[200,600];
@@ -408,13 +422,19 @@ function genCoins(diff){
     return buildCoinsQuestion(target, `Select coins that add up to exactly ${fmtCents(target)}.`,
       `Any combination of the coins shown that adds up to ${fmtCents(target)} is correct.`);
   }
-  const price=Math.round(randInt(105,895)/5)*5;
-  const paymentOptions=[100,200,500,1000].filter(p=>p>price);
-  const payment = paymentOptions.length? pick(paymentOptions) : price+randInt(20,200);
-  const change = payment-price;
+  const itemCount=pick([2,3]);
+  const chosenItems=shuffleArr(PURCHASE_ITEMS).slice(0,itemCount).map(it=>({
+    name:it.name, price:Math.round(randInt(it.range[0],it.range[1])/5)*5
+  }));
+  const total=chosenItems.reduce((s,it)=>s+it.price,0);
+  const payOptions=[500,1000,2000].filter(p=>p>total);
+  const payment = payOptions.length? pick(payOptions) : total + Math.round(randInt(100,500)/5)*5;
+  const change=payment-total;
+  const itemList=joinWithAnd(chosenItems.map(it=>`${it.name} for ${fmtCents(it.price)}`));
   return buildCoinsQuestion(change,
-    `You buy something for ${fmtCents(price)} and pay with ${fmtCents(payment)}. Click the coins to make the change.`,
-    `Change = ${fmtCents(payment)} − ${fmtCents(price)} = ${fmtCents(change)}. Any combination of the coins shown that adds up to ${fmtCents(change)} is correct.`);
+    `I bought ${itemList}, and paid with a ${fmtCents(payment)} note. Click the smallest number of notes and/or coins I will receive as change.`,
+    `Total cost: ${chosenItems.map(it=>fmtCents(it.price)).join(' + ')} = ${fmtCents(total)}. Change = ${fmtCents(payment)} − ${fmtCents(total)} = ${fmtCents(change)}.`,
+    true);
 }
 function genArea(diff){
   const range= diff==='easy'?[2,6]: diff==='medium'?[3,9]:[4,12];
@@ -528,7 +548,7 @@ function buildQuestion(slotIdx, diff){
     answer:q.answer!=null?String(q.answer):null, explanation:q.explanation||'',
     inputType:q.inputType||'text', choices:q.choices||null, svg:q.svg||null,
     checkType:q.checkType||null, targetCents:q.targetCents!=null?q.targetCents:null, coins:q.coins||null,
-    items:q.items||null };
+    items:q.items||null, minCoins:q.minCoins!=null?q.minCoins:null };
 }
 function generateWeekQuestions(diff){ return SLOTS.map((s,i)=>buildQuestion(i,diff)); }
 
@@ -552,7 +572,9 @@ function gradeQuestion(q, given){
   if(q.inputType==='coins'){
     const sel = Array.isArray(given) ? given : [];
     const sum = (q.coins||[]).filter(c=>sel.includes(c.id)).reduce((s,c)=>s+c.v,0);
-    return sel.length>0 && sum===q.targetCents;
+    if(sel.length===0 || sum!==q.targetCents) return false;
+    if(q.minCoins!=null) return sel.length===q.minCoins;
+    return true;
   }
   if(q.checkType==='time'){ const g=normTime(given), a=normTime(q.answer); return g!==null && g===a; }
   if(q.checkType==='numlist'){ const gi=parseNumList(given), an=parseNumList(q.answer);
@@ -877,7 +899,7 @@ function renderQuestionEditor(week){
           <select data-f="answer">${(q.choices||[]).map(c=>`<option value="${esc(c)}" ${c===q.answer?'selected':''}>${esc(c)}</option>`).join('')}</select>
         ` : q.inputType==='coins' ? `
           <div class="label2">Target amount</div>
-          <div class="meta" style="margin-bottom:8px;">${esc(fmtCents(q.targetCents))} · ${(q.coins||[]).length} coins shown on the page — use Regenerate for a different amount.</div>
+          <div class="meta" style="margin-bottom:8px;">${esc(fmtCents(q.targetCents))} · ${(q.coins||[]).length} coins shown${q.minCoins!=null?` · must use exactly ${q.minCoins} piece${q.minCoins===1?'':'s'}`:''} — use Regenerate for a different amount.</div>
         ` : q.inputType==='order' ? `
           <div class="label2">Correct order</div>
           <div class="meta" style="margin-bottom:8px;">${esc((q.answer||'').split(',').join(' → '))} — use Regenerate for different numbers.</div>
@@ -1595,8 +1617,6 @@ function renderQuizTaking(week){
       checkBtn.onclick=doCheck;
       qbox.appendChild(checkBtn);
     } else if(q.inputType==='coins'){
-      const total=(q.coins||[]).filter(c=>st.given.includes(c.id)).reduce((s,c)=>s+c.v,0);
-      qbox.appendChild(el(`<div class="mmc-coin-total">Selected: ${fmtCents(total)}</div>`));
       const coinRow=el('<div class="mmc-choices"></div>');
       (q.coins||[]).forEach(c=>{
         const sel=st.given.includes(c.id);
