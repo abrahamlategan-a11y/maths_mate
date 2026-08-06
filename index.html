@@ -1487,21 +1487,26 @@ function progressBadgeFor(skill){
   if(skill.trend==='declining' || skill.recentAccuracy<0.5) return {emoji:'🔴', label:'Needs Attention'};
   return {emoji:'🟡', label:'Stable'};
 }
-function renderStudentDashboard(){
+function renderStudentDashboard(opts){
+  opts = opts || {};
+  const results = opts.results || S.results;
+  const weeks = opts.weeks || S.weeks;
+  const skillPracticeRecords = opts.skillPracticeRecords || S.skillPracticeRecords;
+  const forTeacher = !!opts.forTeacher;
   const wrap=el('<div></div>');
-  const skillStats = computeSkillStats(S.results, S.weeks, S.skillPracticeRecords);
+  const skillStats = computeSkillStats(results, weeks, skillPracticeRecords);
   const {strengths, weaknesses} = pickStrengthsAndWeaknesses(skillStats);
   const withData = skillStats.filter(s=>s.total>=1);
 
-  wrap.appendChild(el(`<h3 style="font-family:Fredoka,sans-serif;margin:4px 0 4px;">📊 My Maths Dashboard</h3>`));
-  wrap.appendChild(el(`<div class="meta" style="margin-bottom:16px;">Your personal coach — see what you're great at, what to work on, and exactly what to practise next.</div>`));
+  wrap.appendChild(el(`<h3 style="font-family:Fredoka,sans-serif;margin:4px 0 4px;">${forTeacher? esc(opts.studentName)+"'s Dashboard" : 'My Maths Dashboard'}</h3>`));
+  wrap.appendChild(el(`<div class="meta" style="margin-bottom:16px;">${forTeacher? 'A read-only view of their strengths, growth areas, and practice history.' : "Your personal coach — see what you're great at, what to work on, and exactly what to practise next."}</div>`));
 
   if(withData.length===0){
-    wrap.appendChild(el(`<div class="mmc-empty"><div class="mmc-empty-icon">🌱</div>Complete a few Weekly Quizzes and your personal dashboard will start filling up here!</div>`));
+    wrap.appendChild(el(`<div class="mmc-empty"><div class="mmc-empty-icon">🌱</div>${forTeacher? 'No data yet for this student — once they complete a few quizzes, their dashboard will fill up here.' : 'Complete a few Weekly Quizzes and your personal dashboard will start filling up here!'}</div>`));
     return wrap;
   }
 
-  wrap.appendChild(el(`<h3 style="margin:18px 0 10px;">🌟 What I'm good at</h3>`));
+  wrap.appendChild(el(`<h3 style="margin:18px 0 10px;">🌟 What ${forTeacher?'they are':"I'm"} good at</h3>`));
   if(strengths.length===0){
     wrap.appendChild(el(`<div class="meta">Keep practising — your strengths will show up here as you build a track record!</div>`));
   } else {
@@ -1518,7 +1523,7 @@ function renderStudentDashboard(){
     wrap.appendChild(row);
   }
 
-  wrap.appendChild(el(`<h3 style="margin:22px 0 10px;">🎯 What I need to improve</h3>`));
+  wrap.appendChild(el(`<h3 style="margin:22px 0 10px;">🎯 What ${forTeacher?'they need':'I need'} to improve</h3>`));
   if(weaknesses.length===0){
     wrap.appendChild(el(`<div class="meta">You're doing solidly across the board right now — nice work!</div>`));
   } else {
@@ -1536,15 +1541,15 @@ function renderStudentDashboard(){
   }
 
   if(weaknesses.length>0){
-    wrap.appendChild(el(`<h3 style="margin:22px 0 10px;">📚 What I should practise next</h3>`));
+    wrap.appendChild(el(`<h3 style="margin:22px 0 10px;">📚 What ${forTeacher?'they':'I'} should practise next</h3>`));
     weaknesses.forEach(s=>{
       const card=el(`
         <div class="mmc-card mmc-row" style="justify-content:space-between;align-items:center;">
           <div><h3 style="margin:0;font-size:15px;">${esc(s.title)}</h3><div class="meta">Targeted practice — 6 fresh questions</div></div>
-          <button class="mmc-btn gold sm">Practice now ▶</button>
+          ${forTeacher ? '' : '<button class="mmc-btn gold sm">Practice now ▶</button>'}
         </div>
       `);
-      card.querySelector('button').onclick=()=>startSkillPractice(s.slot);
+      if(!forTeacher){ card.querySelector('button').onclick=()=>startSkillPractice(s.slot); }
       wrap.appendChild(card);
     });
   }
@@ -1721,7 +1726,7 @@ const S = {
   teacherTab:'weeks', editingDraftId:null, showArchivedWeeks:false,
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
-  skillPracticeRecords:[], skillSession:null,
+  skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
   genForm:{ label:'', difficulty:'easy', strategy:'random' },
   activeWeekId:null, quiz:{}, toast:null,
   bulkCreating:false, bulkProgress:null, bulkResults:null, bulkNamesText:'', bulkPassword:'',
@@ -1848,6 +1853,7 @@ function subscribeData(){
     unsubs.push(onSnapshot(query(collection(db,'results'), where('teacherUid','==',S.user.uid)), snap=>{ S.results=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, (err)=>{ S.toast='Results error: '+err.message; render(); }));
     unsubs.push(onSnapshot(query(collection(db,'profiles'), where('teacherUid','==',S.user.uid)), snap=>{ S.profiles={}; snap.docs.forEach(d=>S.profiles[d.id]=d.data()); render(); }, (err)=>{ S.toast='Profiles error: '+err.message; render(); }));
     unsubs.push(onSnapshot(query(collection(db,'ttAttempts'), where('teacherUid','==',S.user.uid)), snap=>{ S.ttAttempts=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, (err)=>{ S.toast='Timetable data error: '+err.message; render(); }));
+    unsubs.push(onSnapshot(query(collection(db,'skillPractice'), where('teacherUid','==',S.user.uid)), snap=>{ S.allSkillPracticeRecords=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, (err)=>{ S.toast='Skill practice data error: '+err.message; render(); }));
     unsubs.push(onSnapshot(query(collection(db,'liveGames'), where('teacherUid','==',S.user.uid)), snap=>{
       S.liveGames=snap.docs.map(d=>({id:d.id,...d.data()})); ensureParticipantsSub(currentLiveRoom()?.id||null); ensureTeacherLiveTimer(); render();
     }, (err)=>{ S.toast='Racing Ground error: '+err.message; render(); }));
@@ -2005,8 +2011,25 @@ function renderAuth(){
 
 // ================= TEACHER =================
 function renderTeacher(){
+  if(S.viewingStudentDashboardUid){
+    const uid=S.viewingStudentDashboardUid;
+    const wrap=el('<div></div>');
+    const back=el('<a href="#" style="color:var(--sky-deep);font-size:13px;">← back to Students</a>');
+    back.onclick=(e)=>{ e.preventDefault(); S.viewingStudentDashboardUid=null; render(); };
+    wrap.appendChild(back);
+    const dashWrap=el('<div style="margin-top:10px;"></div>');
+    dashWrap.appendChild(renderStudentDashboard({
+      forTeacher:true,
+      studentName: (S.profiles[uid]&&S.profiles[uid].displayName) || uid,
+      results: S.results.filter(r=>r.uid===uid),
+      weeks: S.weeks,
+      skillPracticeRecords: S.allSkillPracticeRecords.filter(r=>r.uid===uid),
+    }));
+    wrap.appendChild(dashWrap);
+    return wrap;
+  }
   const wrap=el('<div></div>');
-  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-t="weeks">Skills Practice</button><button class="mmc-tab" data-t="ledger">Gradebook</button><button class="mmc-tab" data-t="students">Students</button><button class="mmc-tab" data-t="timetable">Times Tables</button><button class="mmc-tab" data-t="live">🔴 Racing Ground</button></div>`);
+  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-t="weeks">Skills Practice</button><button class="mmc-tab" data-t="ledger">Gradebook</button><button class="mmc-tab" data-t="students">Students</button><button class="mmc-tab" data-t="timetable">Times Tables</button><button class="mmc-tab" data-t="live">🐎 Racing Ground</button></div>`);
   tabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.t===S.teacherTab) b.classList.add('active');
     b.onclick=()=>{ S.teacherTab=b.dataset.t; render(); }; });
   wrap.appendChild(tabs);
@@ -2737,7 +2760,12 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
     const list=el('<div class="mmc-card"><h3>Existing student logins</h3><div class="meta">Passwords can\'t be shown again — if one\'s lost, re-run that name through the form above to issue a fresh login.</div></div>');
     const ul=el('<div></div>');
     existing.sort((a,b)=>(a[1].displayName||'').localeCompare(b[1].displayName||'')).forEach(([uid,p])=>{
-      ul.appendChild(el(`<div class="mmc-row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--paper-line);"><div>${esc(p.displayName)}</div><code class="mmc-code">${esc(p.username)}</code></div>`));
+      const row=el(`<div class="mmc-row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--paper-line);">
+        <div>${esc(p.displayName)}</div>
+        <div class="mmc-row" style="gap:8px;"><code class="mmc-code">${esc(p.username)}</code><button class="mmc-btn ghost sm" data-act="dash">📊 Dashboard</button></div>
+      </div>`);
+      row.querySelector('[data-act="dash"]').onclick=()=>{ S.viewingStudentDashboardUid=uid; render(); };
+      ul.appendChild(row);
     });
     list.appendChild(ul);
     wrap.appendChild(list);
@@ -2753,7 +2781,7 @@ function renderStudent(){
   syncMyLiveSession();
   if(S.myLive && S.myLive.answering) return renderMyLiveSession();
   const wrap=el('<div></div>');
-  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-st="dashboard">📊 My Dashboard</button><button class="mmc-tab" data-st="weekly">Weekly Quiz</button><button class="mmc-tab" data-st="timetable">Times Table Training Ground</button><button class="mmc-tab" data-st="live">🔴 Racing Ground</button><button class="mmc-tab" data-st="settings">⚙️ Settings</button></div>`);
+  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-st="dashboard">My Dashboard</button><button class="mmc-tab" data-st="weekly">Skills Practice</button><button class="mmc-tab" data-st="timetable">Times Table Training Ground</button><button class="mmc-tab" data-st="live">🐎 Racing Ground</button><button class="mmc-tab" data-st="settings">⚙️ Settings</button></div>`);
   tabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.st===S.studentTab) b.classList.add('active');
     b.onclick=()=>{ S.studentTab=b.dataset.st; render(); }; });
   wrap.appendChild(tabs);
@@ -3165,7 +3193,7 @@ function renderTeacherLiveGame(){
         <div class="mmc-field" style="max-width:220px;"><label>Level</label>
           <select id="mmc-live-level">${['easy','medium','hard'].map(l=>`<option value="${l}" ${S.liveGenForm.level===l?'selected':''}>${l[0].toUpperCase()+l.slice(1)}</option>`).join('')}</select>
         </div>
-        <button class="mmc-btn gold" id="mmc-live-create">🔴 Create Room</button>
+        <button class="mmc-btn gold" id="mmc-live-create">🐎 Create Room</button>
       </div>
     `);
     form.querySelector('#mmc-live-create').onclick=async ()=>{
@@ -3180,7 +3208,7 @@ function renderTeacherLiveGame(){
   if(room.status==='lobby'){
     const card=el(`
       <div class="mmc-card">
-        <h3>🔴 Room open — ${esc(room.level)} level</h3>
+        <h3>🐎 Room open — ${esc(room.level)} level</h3>
         <div class="meta">Students see a Join button now. Start whenever you're ready — everyone's timer begins at the same moment.</div>
         <div class="meta" style="font-weight:800;color:var(--ink);">${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} waiting · Room: <code class="mmc-code">${esc(room.id.slice(0,6))}</code></div>
         <div class="mmc-row" style="margin-top:8px;">
@@ -3314,7 +3342,7 @@ function renderStudentLiveGame(){
   const wrap=el('<div></div>');
   const room=currentLiveRoom();
   if(!room){
-    wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">🔴</div>No race right now — ask your teacher to start one!</div>'));
+    wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">🐎</div>No race right now — ask your teacher to start one!</div>'));
     return wrap;
   }
   const joined = S.liveParticipants.some(p=>p.id===S.user.uid);
@@ -3322,7 +3350,7 @@ function renderStudentLiveGame(){
     if(!joined){
       const card=el(`
         <div class="mmc-card">
-          <h3>🔴 ${esc(room.level)} race starting soon!</h3>
+          <h3>🐎 ${esc(room.level)} race starting soon!</h3>
           <div class="meta">${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} waiting · Room: <code class="mmc-code">${esc(room.id.slice(0,6))}</code></div>
           <button class="mmc-btn gold" id="mmc-live-join">Join ▶</button>
         </div>
@@ -3349,7 +3377,7 @@ function renderStudentLiveGame(){
   }
   if(room.status==='active'){
     if(!joined){
-      wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">🔴</div>This game already started — catch the next one!</div>'));
+      wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">🐎</div>This game already started — catch the next one!</div>'));
       wrap.appendChild(renderLiveLeaderboardCard('Live leaderboard', room, false));
       return wrap;
     }
