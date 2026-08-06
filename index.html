@@ -117,6 +117,21 @@
   .mmc-coin-chip.selected { background:var(--yellow); }
   .mmc-coin-chip:disabled { opacity:.7; }
   .mmc-coin-total { font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--ink-soft); margin-bottom:8px; font-weight:700; }
+  .mmc-race-wrap { overflow-x:auto; margin-bottom:16px; }
+  .mmc-race-track { position:relative; min-width:320px; background:repeating-linear-gradient(180deg,#F5F2E8 0 40px, #ECE6D6 40px 42px);
+    border:2.5px solid var(--ink); border-radius:14px; box-shadow:4px 4px 0 var(--ink); }
+  .mmc-race-lane { position:absolute; left:8px; right:14px; height:2px; }
+  .mmc-race-track-line { position:absolute; left:0; right:0; top:20px; height:2px; background:var(--paper-line); }
+  .mmc-race-horse { position:absolute; top:-9px; display:flex; align-items:center; gap:4px;
+    transition:left 0.7s cubic-bezier(.34,1.4,.64,1); animation:mmcTrot 0.5s infinite alternate; z-index:1; }
+  .mmc-race-horse.me { z-index:2; }
+  .mmc-race-horse.me .mmc-race-emoji { filter:drop-shadow(0 0 5px var(--purple)); }
+  .mmc-race-horse.me .mmc-race-name { background:var(--purple); color:#fff; border-color:var(--purple-deep); }
+  .mmc-race-emoji { font-size:22px; }
+  .mmc-race-name { font-family:'Baloo 2',sans-serif; font-size:10.5px; font-weight:700; background:#fff; border:1.5px solid var(--ink); border-radius:8px; padding:1px 6px; white-space:nowrap; }
+  .mmc-race-finish { position:absolute; right:10px; top:4px; bottom:4px; width:9px; border-radius:3px;
+    background:repeating-linear-gradient(45deg,#17181C 0 6px, #fff 6px 12px); border:1.5px solid var(--ink); }
+  @keyframes mmcTrot { from{ transform:translateY(0); } to{ transform:translateY(-3px); } }
   .mmc-frac-eq { display:inline-flex; align-items:center; gap:10px; font-size:22px; font-weight:700; flex-wrap:wrap; justify-content:center; }
   .mmc-frac { display:inline-flex; flex-direction:column; align-items:center; vertical-align:middle; font-family:'IBM Plex Mono',monospace; font-weight:700; }
   .mmc-frac .num, .mmc-frac .den { padding:2px 8px; line-height:1.25; }
@@ -1285,12 +1300,25 @@ function genTTQuestion(level, idx){
   const isDivision = level!=='easy' && idx%2===1;
   if(!isDivision){
     const a=randInt(lo,hi), b=randInt(lo,hi);
-    return { prompt:`${a} × ${b}`, answer:a*b };
+    return { prompt:`${a} × ${b}`, answer:a*b, isDivision:false, level };
   }
   const divisor=randInt(lo,hi), quotient=randInt(lo,hi); const dividend=divisor*quotient;
-  return { prompt:`${dividend} ÷ ${divisor}`, answer:quotient };
+  return { prompt:`${dividend} ÷ ${divisor}`, answer:quotient, isDivision:true, level };
 }
 function formatMMSS(s){ const m=Math.floor(Math.max(0,s)/60), sec=Math.max(0,s)%60; return `${m}:${String(sec).padStart(2,'0')}`; }
+function raceBoostAmount(level, isDivision, elapsedSec){
+  const base = { easy:6, medium:8, hard:10 }[level] + (isDivision?2:0);
+  const speedFactor = Math.max(0.3, 1 - elapsedSec/12);
+  return base * speedFactor;
+}
+function raceRubberBandMultiplier(myPos, allPositions){
+  if(allPositions.length<2) return 1;
+  const maxPos=Math.max(...allPositions), minPos=Math.min(...allPositions);
+  const spread=maxPos-minPos;
+  if(spread<5) return 1;
+  const behindRatio=(maxPos-myPos)/spread; // 0 = leader, 1 = last place
+  return 0.7 + behindRatio*0.8; // leader gets 0.7x, last place gets up to 1.5x
+}
 
 const STUDENT_DOMAIN = 'students.maths-mate.local';
 const PASSWORD_WORDS = ['donkey','tiger','comet','maple','pepper','biscuit','rocket','puddle','cactus','wizard','dragon','cookie','thunder','sparkle','pickle','walrus','falcon','marble','goblin','turnip','otter','panda','muffin','breeze','coral','jungle','meadow','ripple','sunset','violet'];
@@ -2302,6 +2330,28 @@ function renderLiveLeaderboardCard(title, room, isFinal){
   });
   return card;
 }
+function renderRaceTrack(myUid){
+  const participants=S.liveParticipants.slice().sort((a,b)=>(a.joinedAt?.seconds||0)-(b.joinedAt?.seconds||0));
+  const wrap=el('<div class="mmc-race-wrap"></div>');
+  if(participants.length===0){ wrap.appendChild(el('<div class="meta">No players yet.</div>')); return wrap; }
+  const laneH=42, topPad=10;
+  const track=el(`<div class="mmc-race-track" style="height:${participants.length*laneH+topPad*2}px;"></div>`);
+  track.appendChild(el('<div class="mmc-race-finish"></div>'));
+  participants.forEach((p,i)=>{
+    const pos=Math.max(0,Math.min(100,p.position||0));
+    const isMe = myUid && p.id===myUid;
+    const lane=el(`<div class="mmc-race-lane" style="top:${topPad+i*laneH}px;"><div class="mmc-race-track-line"></div></div>`);
+    const horse=el(`
+      <div class="mmc-race-horse${isMe?' me':''}" style="left:calc(${pos}% - 16px);">
+        <span class="mmc-race-emoji">🐎</span><span class="mmc-race-name">${esc(p.name)}${isMe?' (you)':''}</span>
+      </div>
+    `);
+    lane.appendChild(horse);
+    track.appendChild(lane);
+  });
+  wrap.appendChild(track);
+  return wrap;
+}
 
 // ---------- Live Game (teacher) ----------
 let teacherLiveTimerHandle=null, teacherLiveTimerRoomId=null;
@@ -2334,7 +2384,10 @@ function renderTeacherLiveGame(){
   const room=currentLiveRoom();
 
   if(!room || room.status==='ended'){
-    if(room && room.status==='ended') wrap.appendChild(renderLiveLeaderboardCard('Final leaderboard', room, true));
+    if(room && room.status==='ended'){
+      wrap.appendChild(renderRaceTrack(null));
+      wrap.appendChild(renderLiveLeaderboardCard('Final leaderboard', room, true));
+    }
     const form=el(`
       <div class="mmc-card">
         <h3>Start a Live Game</h3>
@@ -2399,6 +2452,7 @@ function renderTeacherLiveGame(){
       try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended'}); }catch(e){ S.toast='Could not end — check your connection.'; render(); }
     };
     wrap.appendChild(head);
+    wrap.appendChild(renderRaceTrack(null));
     wrap.appendChild(renderLiveLeaderboardCard('Live leaderboard', room, false));
     startLiveTeacherTimer(room);
     return wrap;
@@ -2420,7 +2474,8 @@ function syncMyLiveSession(){
     if(!joined) return;
     if(S.myLive && S.myLive.gameId===room.id) return;
     if(S.myLive && S.myLive.timerHandle) clearInterval(S.myLive.timerHandle);
-    S.myLive = { gameId:room.id, level:room.level, answering:true, qIndex:0, currentQ:genTTQuestion(room.level,0), score:0, attempted:0, timerHandle:null };
+    S.myLive = { gameId:room.id, level:room.level, answering:true, qIndex:0, currentQ:genTTQuestion(room.level,0),
+      score:0, attempted:0, position:0, questionStartedAt:Date.now(), timerHandle:null };
     startMyLiveTimer();
   }
 }
@@ -2438,9 +2493,18 @@ async function submitMyLiveAnswer(given){
   if(!S.myLive || !S.myLive.answering) return;
   const correct = normalize(given)===normalize(String(S.myLive.currentQ.answer));
   S.myLive.attempted++; if(correct) S.myLive.score++;
-  S.myLive.qIndex++; S.myLive.currentQ=genTTQuestion(S.myLive.level, S.myLive.qIndex);
+  const elapsedSec = (Date.now()-S.myLive.questionStartedAt)/1000;
+  const allPositions = S.liveParticipants.map(p=>p.position||0);
+  const rubberBand = raceRubberBandMultiplier(S.myLive.position, allPositions.length? allPositions : [S.myLive.position]);
+  if(correct){
+    const boost = raceBoostAmount(S.myLive.currentQ.level, S.myLive.currentQ.isDivision, elapsedSec) * rubberBand;
+    S.myLive.position = Math.min(100, S.myLive.position + boost);
+  } else {
+    S.myLive.position = Math.max(0, S.myLive.position - 4);
+  }
+  S.myLive.qIndex++; S.myLive.currentQ=genTTQuestion(S.myLive.level, S.myLive.qIndex); S.myLive.questionStartedAt=Date.now();
   render();
-  try{ await updateDoc(doc(db,'liveGames',S.myLive.gameId,'participants',S.user.uid), {score:S.myLive.score, attempted:S.myLive.attempted}); }
+  try{ await updateDoc(doc(db,'liveGames',S.myLive.gameId,'participants',S.user.uid), {score:S.myLive.score, attempted:S.myLive.attempted, position:S.myLive.position}); }
   catch(e){ S.toast='Score sync error: '+e.message; render(); }
 }
 function renderMyLiveSession(){
@@ -2469,6 +2533,7 @@ function renderMyLiveSession(){
   qbox.querySelector('#mmc-live-submit').onclick=go;
   input.addEventListener('keydown', e=>{ if(e.key==='Enter') go(); });
   wrap.appendChild(qbox);
+  wrap.appendChild(renderRaceTrack(S.user.uid));
   wrap.appendChild(renderLiveLeaderboardCard('Live leaderboard', room||{}, false));
   return wrap;
 }
@@ -2518,6 +2583,7 @@ function renderStudentLiveGame(){
   if(room.status==='ended'){
     const mine = S.liveParticipants.find(p=>p.id===S.user.uid);
     wrap.appendChild(el(`<div class="mmc-card"><h3>Game over!</h3><div class="meta">${mine? `You scored ${mine.score} correct.` : 'Final results are in.'}</div></div>`));
+    wrap.appendChild(renderRaceTrack(S.user.uid));
     wrap.appendChild(renderLiveLeaderboardCard('Final leaderboard', room, true));
     return wrap;
   }
@@ -2526,7 +2592,7 @@ function renderStudentLiveGame(){
 async function joinLiveGame(gameId){
   try{
     await setDoc(doc(db,'liveGames',gameId,'participants',S.user.uid), {
-      uid:S.user.uid, name:S.profile? S.profile.displayName : S.user.email, score:0, attempted:0, joinedAt:serverTimestamp()
+      uid:S.user.uid, name:S.profile? S.profile.displayName : S.user.email, score:0, attempted:0, position:0, joinedAt:serverTimestamp()
     });
   }catch(e){ S.toast='Could not join — check your connection.'; render(); }
 }
