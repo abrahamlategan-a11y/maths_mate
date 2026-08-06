@@ -34,8 +34,8 @@
   #mmc input, #mmc select, #mmc textarea { font-family: inherit; }
 
   .mmc-head {
-    background: linear-gradient(115deg, var(--orange) 0%, var(--slime) 100%);
-    color: var(--ink); padding: 30px 28px 24px; position: relative; overflow: hidden;
+    background: linear-gradient(120deg, var(--purple-deep) 0%, var(--purple) 40%, var(--slime) 100%);
+    color: var(--ink); padding: 34px 28px 26px; position: relative; overflow: hidden;
     border-bottom: 4px solid var(--ink);
   }
   .mmc-head::before {
@@ -46,15 +46,56 @@
     content:""; position:absolute; bottom:-30px; left:-20px; width:100px; height:100px;
     background: var(--yellow); opacity:.3; border-radius: 40% 60% 55% 45% / 55% 45% 60% 40%;
   }
-  .mmc-title {
-    font-family:'Baloo 2',sans-serif; font-weight:800; font-size:clamp(24px,4.2vw,32px);
-    margin:0 0 4px; position:relative; letter-spacing:.2px;
-    text-shadow: 2px 2px 0 rgba(255,255,255,0.35);
+  .mmc-head-deco { position:absolute; inset:0; overflow:hidden; pointer-events:none; z-index:0; }
+  .mmc-head-deco span { position:absolute; color:#fff; opacity:.16; font-weight:800; font-family:'Baloo 2',sans-serif; }
+  .mmc-signout-pill {
+    position:absolute; top:20px; right:20px; z-index:2; background:#fff; border:none; border-radius:999px;
+    padding:9px 18px; font-family:'Baloo 2',sans-serif; font-weight:700; font-size:13px; color:var(--ink);
+    box-shadow:0 2px 8px rgba(0,0,0,0.18); display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+    transition:transform .12s ease;
   }
-  .mmc-sub { font-size:14px; color:#17181C; opacity:.75; margin:0; position:relative; font-weight:600; }
-  .mmc-userrow { display:flex; justify-content:space-between; align-items:center; margin-top:18px; font-size:13px; color:var(--ink); position:relative; font-weight:700; }
-  .mmc-userrow button { background:var(--paper); border:2.5px solid var(--ink); color:var(--ink); border-radius:10px; padding:7px 14px; font-family:'Baloo 2',sans-serif; font-weight:700; font-size:12.5px; box-shadow:2px 2px 0 var(--ink); transition:transform .12s ease; }
-  .mmc-userrow button:hover { transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--ink); }
+  .mmc-signout-pill:hover { transform:translateY(-1px); }
+  .mmc-title {
+    font-family:'Baloo 2',sans-serif; font-weight:800; font-size:clamp(30px,6vw,50px);
+    margin:6px 0 2px; position:relative; z-index:1; letter-spacing:.2px; line-height:1;
+  }
+  .mmc-title-plain { color:#fff; text-shadow:2px 3px 0 rgba(0,0,0,0.15); }
+  .mmc-title-rainbow {
+    background: linear-gradient(90deg, var(--slime) 0%, var(--yellow) 35%, #4FB6E8 65%, var(--purple) 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent; text-shadow:none;
+  }
+  .mmc-sparkle { position:relative; z-index:1; font-size:20px; display:inline-block; margin-left:4px; }
+  .mmc-tagline {
+    position:relative; z-index:1; color:#fff; font-family:'Baloo 2',sans-serif; font-weight:700;
+    font-size:clamp(15px,2.4vw,20px); margin:2px 0 8px;
+  }
+  .mmc-tagline .dot { color:var(--slime); }
+  .mmc-tagline .dot.d2 { color:var(--yellow); }
+  .mmc-tagline .dot.d3 { color:#fff; }
+  .mmc-sub { font-size:14px; color:#fff; opacity:.85; margin:0; position:relative; z-index:1; font-weight:600; }
+  .mmc-head-bottom { position:relative; z-index:1; display:flex; gap:12px; flex-wrap:wrap; margin-top:18px; align-items:stretch; }
+  .mmc-welcome-card {
+    background:rgba(0,0,0,0.28); border-radius:16px; padding:12px 18px; display:flex; align-items:center;
+    gap:12px; flex:1; min-width:220px;
+  }
+  .mmc-avatar {
+    width:42px; height:42px; border-radius:50%; background:rgba(255,255,255,0.25); display:flex;
+    align-items:center; justify-content:center; font-family:'Baloo 2',sans-serif; font-weight:800;
+    color:#fff; font-size:15px; flex-shrink:0;
+  }
+  .mmc-welcome-name { color:#fff; font-weight:700; font-size:14px; }
+  .mmc-welcome-role { color:rgba(255,255,255,0.75); font-size:12px; font-weight:600; }
+  .mmc-welcome-role b { color:#fff; }
+  .mmc-stat-card {
+    background:rgba(255,255,255,0.18); border-radius:16px; padding:10px 16px; display:flex;
+    align-items:center; gap:10px; min-width:130px;
+  }
+  .mmc-stat-icon {
+    width:34px; height:34px; border-radius:10px; display:flex; align-items:center; justify-content:center;
+    font-size:16px; flex-shrink:0;
+  }
+  .mmc-stat-label { color:rgba(255,255,255,0.85); font-size:11px; font-weight:700; }
+  .mmc-stat-num { color:#fff; font-family:'Baloo 2',sans-serif; font-weight:800; font-size:20px; }
 
   .mmc-body { padding:26px 28px 32px; background:
     radial-gradient(var(--paper-line) 1px, transparent 1.5px) 0 0/16px 16px,
@@ -1697,11 +1738,46 @@ function render(){
 }
 
 function renderHead(){
+  const name = S.profile? S.profile.displayName : (S.user? S.user.email : '');
+  const initials = (name||'').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase();
+  const teacherStats = (S.user && S.isTeacher) ? {
+    students: Object.keys(S.profiles||{}).length,
+    sets: (S.weeks||[]).filter(w=>w.status!=='archived').length,
+    completions: (S.results||[]).length,
+    avgPct: (S.results||[]).length ? Math.round((S.results.reduce((s,r)=>s+(r.total? r.score/r.total : 0),0)/S.results.length)*100) : null,
+  } : null;
   const head=el(`
     <div class="mmc-head">
-      <div class="mmc-title">Maths Mate</div>
+      <div class="mmc-head-deco" aria-hidden="true">
+        <span style="top:12%;left:5%;font-size:36px;">+</span>
+        <span style="top:62%;left:3%;font-size:20px;">3/4</span>
+        <span style="top:8%;left:60%;font-size:28px;">=</span>
+        <span style="top:56%;left:68%;font-size:24px;">×</span>
+        <span style="top:18%;left:87%;font-size:22px;">2</span>
+        <span style="top:70%;left:90%;font-size:20px;">√9</span>
+        <span style="top:40%;left:28%;font-size:18px;">−</span>
+      </div>
+      ${S.user ? `<button id="mmc-signout" class="mmc-signout-pill">↪ Sign out</button>` : ''}
+      <div class="mmc-title"><span class="mmc-title-plain">Maths</span> <span class="mmc-title-rainbow">Mate</span><span class="mmc-sparkle">✨</span></div>
+      <div class="mmc-tagline">Learn<span class="dot d1">.</span> Play<span class="dot d2">.</span> Improve<span class="dot d3">.</span></div>
       <p class="mmc-sub">A fresh set of problems every week, instant feedback, and a passport that fills up as you go.</p>
-      ${S.user ? `<div class="mmc-userrow"><span>Signed in as ${esc(S.profile? S.profile.displayName : S.user.email)} ${S.isTeacher?'· teacher':''}</span><button id="mmc-signout">Sign out</button></div>` : ''}
+      ${S.user ? `
+        <div class="mmc-head-bottom">
+          <div class="mmc-welcome-card">
+            <div class="mmc-avatar">${esc(initials||'?')}</div>
+            <div>
+              <div class="mmc-welcome-name">Welcome back, ${esc(name)}! 👋</div>
+              <div class="mmc-welcome-role">Signed in as <b>${S.isTeacher?'Teacher':'Student'}</b></div>
+            </div>
+          </div>
+          ${teacherStats ? `
+            <div class="mmc-stat-card"><div class="mmc-stat-icon" style="background:#3B82F6;">👥</div><div><div class="mmc-stat-label">Students</div><div class="mmc-stat-num">${teacherStats.students}</div></div></div>
+            <div class="mmc-stat-card"><div class="mmc-stat-icon" style="background:#8B5CF6;">📘</div><div><div class="mmc-stat-label">Revision Sets</div><div class="mmc-stat-num">${teacherStats.sets}</div></div></div>
+            <div class="mmc-stat-card"><div class="mmc-stat-icon" style="background:#22C55E;">🏆</div><div><div class="mmc-stat-label">Completions</div><div class="mmc-stat-num">${teacherStats.completions}</div></div></div>
+            <div class="mmc-stat-card"><div class="mmc-stat-icon" style="background:#F59E0B;">⭐</div><div><div class="mmc-stat-label">Avg. Score</div><div class="mmc-stat-num">${teacherStats.avgPct==null?'—':teacherStats.avgPct+'%'}</div></div></div>
+          ` : ''}
+        </div>
+      ` : ''}
     </div>
   `);
   const so=head.querySelector('#mmc-signout');
