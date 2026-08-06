@@ -244,6 +244,22 @@ function drawCompositeAngle(a1,a2){
     <path d="M ${bx1} ${by1} A ${arcR2} ${arcR2} 0 ${large2} 0 ${bx2} ${by2}" fill="none" stroke="#8B5CF6" stroke-width="2.5"/>
     <circle cx="${cx}" cy="${cy}" r="3" fill="#2B2620"/>`, 240,190);
 }
+function drawTriangleAngles(labels){
+  const pts=[[120,20],[20,170],[220,170]];
+  const poly=pts.map(p=>p.join(',')).join(' ');
+  const labelPos=[[120,48],[58,148],[182,148]];
+  let labelsSvg='';
+  labels.forEach((l,i)=>{ labelsSvg+=`<text x="${labelPos[i][0]}" y="${labelPos[i][1]}" font-size="17" font-family="IBM Plex Mono, monospace" font-weight="600" fill="#2B2620" text-anchor="middle">${l}</text>`; });
+  return svgWrap(`<polygon points="${poly}" fill="none" stroke="#2B2620" stroke-width="3"/>${labelsSvg}`, 240,190);
+}
+function drawQuadAngles(labels){
+  const pts=[[40,30],[200,30],[220,170],[20,170]];
+  const poly=pts.map(p=>p.join(',')).join(' ');
+  const labelPos=[[58,58],[182,58],[192,148],[48,148]];
+  let labelsSvg='';
+  labels.forEach((l,i)=>{ labelsSvg+=`<text x="${labelPos[i][0]}" y="${labelPos[i][1]}" font-size="17" font-family="IBM Plex Mono, monospace" font-weight="600" fill="#2B2620" text-anchor="middle">${l}</text>`; });
+  return svgWrap(`<polygon points="${poly}" fill="none" stroke="#2B2620" stroke-width="3"/>${labelsSvg}`, 240,190);
+}
 function drawLayers(layers,rows,cols){
   const cell=18, gap=10; let inner=''; let y=8;
   for(let L=0;L<layers;L++){
@@ -501,15 +517,32 @@ function genAngle(diff){
     return { prompt:`What type of angle is shown?`, answer:bucket, inputType:'choice', choices:['acute','right','obtuse','straight','reflex'],
       explanation:`This angle measures about ${deg}°, which makes it a ${bucket} angle.`, svg:drawAngle(deg) };
   }
-  const a1=randInt(20,80), a2=randInt(20,80); const total=a1+a2;
-  const correct=String(total);
-  const seen=new Set([correct]); const decoys=[];
-  const candidates=[String(a1), String(a2), String(Math.abs(a1-a2)), String(total+10), String(total-10)].filter(c=>c!==correct && Number(c)>0);
-  for(const c of shuffleArr(candidates)){ if(!seen.has(c)){ seen.add(c); decoys.push(c); if(decoys.length>=3) break; } }
-  while(decoys.length<3){ const c=String(Math.max(1,total+randInt(-30,30))); if(!seen.has(c)){ seen.add(c); decoys.push(c); } }
-  const choices=shuffleArr([correct, ...decoys.slice(0,3)]);
-  return { prompt:`Two angles meet at a point: one is ${a1}° and the other is ${a2}°. What is the total angle?`, answer:correct, inputType:'choice', choices,
-    explanation:`${a1}° + ${a2}° = ${total}°.`, svg:drawCompositeAngle(a1,a2) };
+  // hard: interior angles of a triangle or a four-sided shape — find the missing angle
+  if(pick([true,false])){
+    let a,b,missing;
+    do{ a=randInt(20,120); b=randInt(20,120); missing=180-a-b; } while(missing<10 || missing>150);
+    const correct=String(missing);
+    const seen=new Set([correct]); const decoys=[];
+    const candidates=[String(180-a), String(180-b), String(a+b), String(missing+10), String(missing-10)].filter(c=>c!==correct && Number(c)>0 && Number(c)<180);
+    for(const c of shuffleArr(candidates)){ if(!seen.has(c)){ seen.add(c); decoys.push(c); if(decoys.length>=3) break; } }
+    while(decoys.length<3){ const c=String(Math.max(1,missing+randInt(-20,20))); if(!seen.has(c)){ seen.add(c); decoys.push(c); } }
+    const choices=shuffleArr([correct, ...decoys.slice(0,3)]);
+    const labels=shuffleArr([`${a}°`,`${b}°`,'?']);
+    return { prompt:`A triangle has interior angles of ${a}° and ${b}°. What is the size of the third angle?`, answer:correct, inputType:'choice', choices,
+      explanation:`The angles in a triangle add up to 180°. 180° − ${a}° − ${b}° = ${missing}°.`, svg:drawTriangleAngles(labels) };
+  } else {
+    let a,b,c,missing;
+    do{ a=randInt(50,130); b=randInt(50,130); c=randInt(50,130); missing=360-a-b-c; } while(missing<20 || missing>170);
+    const correct=String(missing);
+    const seen=new Set([correct]); const decoys=[];
+    const candidates=[String(360-a-b), String(360-a-c), String(a+b+c), String(missing+15), String(missing-15)].filter(x=>x!==correct && Number(x)>0 && Number(x)<360);
+    for(const cd of shuffleArr(candidates)){ if(!seen.has(cd)){ seen.add(cd); decoys.push(cd); if(decoys.length>=3) break; } }
+    while(decoys.length<3){ const cd=String(Math.max(1,missing+randInt(-25,25))); if(!seen.has(cd)){ seen.add(cd); decoys.push(cd); } }
+    const choices=shuffleArr([correct, ...decoys.slice(0,3)]);
+    const labels=shuffleArr([`${a}°`,`${b}°`,`${c}°`,'?']);
+    return { prompt:`A four-sided shape has interior angles of ${a}°, ${b}° and ${c}°. What is the size of the fourth angle?`, answer:correct, inputType:'choice', choices,
+      explanation:`The angles in a four-sided shape add up to 360°. 360° − ${a}° − ${b}° − ${c}° = ${missing}°.`, svg:drawQuadAngles(labels) };
+  }
 }
 function genVolume(diff){
   const layers= diff==='easy'?randInt(2,3): diff==='medium'?randInt(2,4):randInt(3,5);
@@ -1309,6 +1342,13 @@ async function finishTTChallenge(){
   }catch(e){ S.toast='Could not save this attempt — check your connection.'; }
   render();
 }
+function abortTTChallenge(){
+  if(!S.tt) return;
+  if(!confirm("Quit this challenge? Your progress won't be saved.")) return;
+  if(S.tt.timerHandle) clearInterval(S.tt.timerHandle);
+  S.tt=null;
+  render();
+}
 function renderTTChallenge(){
   const wrap=el('<div></div>');
   const t=S.tt;
@@ -1318,8 +1358,10 @@ function renderTTChallenge(){
         <div><h3 style="text-transform:capitalize;">${esc(t.level)} challenge</h3><div class="meta">Score: ${t.score} / ${t.attempted}</div></div>
         <div id="mmc-tt-timer" style="font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:700;color:var(--sky-deep);">${formatMMSS(t.timeLeft)}</div>
       </div>
+      <button class="mmc-btn danger sm" id="mmc-tt-quit" style="margin-top:8px;">✕ Quit</button>
     </div>
   `);
+  head.querySelector('#mmc-tt-quit').onclick=abortTTChallenge;
   wrap.appendChild(head);
   const qbox=el(`
     <div class="mmc-card" style="text-align:center;">
