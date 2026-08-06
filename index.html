@@ -544,13 +544,528 @@ function genAngle(diff){
       explanation:`The angles in a four-sided shape add up to 360°. 360° − ${a}° − ${b}° − ${c}° = ${missing}°.`, svg:drawQuadAngles(labels) };
   }
 }
-function genVolume(diff){
-  const layers= diff==='easy'?randInt(2,3): diff==='medium'?randInt(2,4):randInt(3,5);
-  const rows= diff==='easy'?randInt(2,3): randInt(2,4);
-  const cols= diff==='easy'?randInt(2,3): randInt(2,4);
-  return { prompt:`There are ${layers} layers of cubes, each layer is ${rows} rows of ${cols} cubes. What is the total volume, in cubes?`,
-    answer:String(layers*rows*cols), explanation:`Volume = layers × rows × cols = ${layers} × ${rows} × ${cols} = ${layers*rows*cols} cubes.`,
-    svg:drawLayers(layers,rows,cols) };
+function ordinal(n){ const s=['th','st','nd','rd']; const v=n%100; return n+(s[(v-20)%10]||s[v]||s[0]); }
+function roundTo(n, base){ return Math.round(n/base)*base; }
+const WP_NAMES = ['Amara','Leo','Priya','Noah','Zara','Ben','Mia','Kofi','Isla','Sam','Ruby','Theo'];
+const COLORS = ['red','blue','green','yellow','orange','purple','pink','brown'];
+const PETS = ['dog','cat','fish'];
+
+// 1. Draw a picture or diagram
+// 1. Draw a picture or diagram
+function wpDraw(diff){
+  if(diff==='easy'){
+    return pick([
+      ()=>{ const plates=randInt(2,6), each=randInt(2,8), items=plates*each;
+        return { prompt:`${items} cupcakes are shared equally among ${plates} plates. How many cupcakes are on each plate?`, answer:String(each),
+          explanation:`${items} ÷ ${plates} = ${each} cupcakes per plate.` }; },
+      ()=>{ const boxes=randInt(2,6), each=randInt(2,8), items=boxes*each;
+        return { prompt:`${items} pencils are packed equally into ${boxes} boxes. How many pencils are in each box?`, answer:String(each),
+          explanation:`${items} ÷ ${boxes} = ${each} pencils per box.` }; },
+    ])();
+  }
+  if(diff==='medium'){
+    return pick([
+      ()=>{ const l=randInt(4,20), w=randInt(3,15); const p=2*(l+w);
+        return { prompt:`A rectangular garden is ${l} metres long and ${w} metres wide. What is its perimeter?`, answer:String(p),
+          explanation:`Perimeter = 2 × (${l} + ${w}) = ${p} metres.` }; },
+      ()=>{ const l=randInt(4,20), w=randInt(3,15); const p=2*(l+w);
+        return { prompt:`A rectangular sports field is ${l} metres long and ${w} metres wide. What is the distance around the outside?`, answer:String(p),
+          explanation:`Perimeter = 2 × (${l} + ${w}) = ${p} metres.` }; },
+    ])();
+  }
+  return pick([
+    ()=>{ const [c1,c2,c3,c4]=shuffleArr(COLORS).slice(0,4);
+      return { prompt:`Four houses stand in a row. The ${c2} house is immediately left of the ${c3} house. The ${c1} house is first. What colour is the last house if the remaining colour is ${c4}?`,
+        answer:c4, explanation:`${c1}=1st, ${c2}=2nd, ${c3}=3rd, so the last house must be the remaining colour: ${c4}.` }; },
+    ()=>{ const [c1,c2,c3,c4]=shuffleArr(COLORS).slice(0,4);
+      return { prompt:`In a row of four lockers, the ${c2} locker is immediately to the left of the ${c3} locker. The ${c1} locker is at the very start of the row. What colour is the last locker, given the remaining colour is ${c4}?`,
+        answer:c4, explanation:`${c1}=1st, ${c2}=2nd, ${c3}=3rd, so the last locker must be the remaining colour: ${c4}.` }; },
+  ])();
+}
+// 2. Guess, check and improve
+function wpGuessCheck(diff){
+  if(diff==='easy'){
+    return pick([
+      ()=>{ const n1=randInt(3,15), n=randInt(4,25), n2=n1+n;
+        return { prompt:`I am thinking of a number. When I add ${n1}, the answer is ${n2}. What is my number?`, answer:String(n2-n1),
+          explanation:`${n2} − ${n1} = ${n2-n1}.` }; },
+      ()=>{ const n1=randInt(3,15), n=randInt(4,25), n2=n1+n;
+        return { prompt:`Add ${n1} to a mystery number and you get ${n2}. What is the mystery number?`, answer:String(n2-n1),
+          explanation:`${n2} − ${n1} = ${n2-n1}.` }; },
+    ])();
+  }
+  if(diff==='medium'){
+    return pick([
+      ()=>{ const smaller=randInt(3,20), d=randInt(2,16), larger=smaller+d, s=smaller+larger;
+        return { prompt:`Two numbers add to ${s}. One number is ${d} greater than the other. What is the larger number?`, answer:String(larger),
+          explanation:`(${s} + ${d}) ÷ 2 = ${larger}.` }; },
+      ()=>{ const smaller=randInt(3,20), d=randInt(2,16), larger=smaller+d, s=smaller+larger;
+        const [n1,n2]=shuffleArr(WP_NAMES).slice(0,2);
+        return { prompt:`${n1} and ${n2} have ${s} lollies between them. ${n1} has ${d} more than ${n2}. How many lollies does ${n1} have?`, answer:String(larger),
+          explanation:`(${s} + ${d}) ÷ 2 = ${larger}.` }; },
+    ])();
+  }
+  return pick([
+    ()=>{ const adultPrice=randInt(6,12), childPrice=randInt(2,adultPrice-1), totalTickets=randInt(12,30);
+      const adultCount=randInt(1,totalTickets-1), childCount=totalTickets-adultCount;
+      const totalMoney=adultCount*adultPrice+childCount*childPrice;
+      return { prompt:`Adult tickets cost $${adultPrice} and child tickets cost $${childPrice}. ${totalTickets} tickets were sold for $${totalMoney} altogether. How many adult tickets were sold?`,
+        answer:String(adultCount), explanation:`${adultCount} adult × $${adultPrice} + ${childCount} child × $${childPrice} = $${totalMoney}.` }; },
+    ()=>{ const penPrice=randInt(2,6), rulerPrice=randInt(1,penPrice-1<1?1:penPrice-1), totalItems=randInt(10,25);
+      const penCount=randInt(1,totalItems-1), rulerCount=totalItems-penCount;
+      const totalMoney=penCount*penPrice+rulerCount*rulerPrice;
+      return { prompt:`Pens cost $${penPrice} and rulers cost $${rulerPrice}. A class bought ${totalItems} items for a total of $${totalMoney}. How many pens were bought?`,
+        answer:String(penCount), explanation:`${penCount} pens × $${penPrice} + ${rulerCount} rulers × $${rulerPrice} = $${totalMoney}.` }; },
+  ])();
+}
+// 3. Make a table or organised list
+function wpTable(diff){
+  if(diff==='easy'){
+    return pick([
+      ()=>{ const shirts=randInt(2,5), shorts=randInt(2,5);
+        return { prompt:`Ella has ${shirts} shirts and ${shorts} pairs of shorts. How many different outfits can she make?`, answer:String(shirts*shorts),
+          explanation:`${shirts} × ${shorts} = ${shirts*shorts} outfits.` }; },
+      ()=>{ const flavours=randInt(2,5), toppings=randInt(2,5);
+        return { prompt:`An ice-cream shop has ${flavours} flavours and ${toppings} toppings. How many different single-scoop-with-one-topping combinations are possible?`, answer:String(flavours*toppings),
+          explanation:`${flavours} × ${toppings} = ${flavours*toppings} combinations.` }; },
+    ])();
+  }
+  if(diff==='medium'){
+    return pick([
+      ()=>{ const animals=randInt(6,15), rabbits=randInt(1,animals-1), chickens=animals-rabbits, legs=rabbits*4+chickens*2;
+        return { prompt:`A farmer has chickens and rabbits. There are ${animals} animals and ${legs} legs altogether. How many rabbits are there?`,
+          answer:String(rabbits), explanation:`${rabbits} rabbits (4 legs) + ${chickens} chickens (2 legs) = ${legs} legs.` }; },
+      ()=>{ const vehicles=randInt(6,15), cars=randInt(1,vehicles-1), bikes=vehicles-cars, wheels=cars*4+bikes*2;
+        return { prompt:`A parking lot has cars and motorbikes. There are ${vehicles} vehicles and ${wheels} wheels altogether. How many cars are there?`,
+          answer:String(cars), explanation:`${cars} cars (4 wheels) + ${bikes} motorbikes (2 wheels) = ${wheels} wheels.` }; },
+    ])();
+  }
+  return pick([
+    ()=>{ const muffinPrice=randInt(2,5), drinkPrice=randInt(1,4), muffinsBought=randInt(1,5), drinksBought=randInt(1,6);
+      const total=muffinsBought*muffinPrice+drinksBought*drinkPrice;
+      return { prompt:`Muffins cost $${muffinPrice} and drinks cost $${drinkPrice}. Mia buys ${muffinsBought} muffins and spends $${total} altogether. How many drinks does she buy?`,
+        answer:String(drinksBought), explanation:`$${total} − ${muffinsBought}×$${muffinPrice} = $${drinksBought*drinkPrice}, ÷ $${drinkPrice} = ${drinksBought} drinks.` }; },
+    ()=>{ const eraserPrice=randInt(1,4), notebookPrice=randInt(2,6), erasersBought=randInt(1,6), notebooksBought=randInt(1,5);
+      const total=erasersBought*eraserPrice+notebooksBought*notebookPrice;
+      return { prompt:`Erasers cost $${eraserPrice} and notebooks cost $${notebookPrice}. Priya buys ${erasersBought} erasers and spends $${total} altogether including notebooks. How many notebooks does she buy?`,
+        answer:String(notebooksBought), explanation:`$${total} − ${erasersBought}×$${eraserPrice} = $${notebooksBought*notebookPrice}, ÷ $${notebookPrice} = ${notebooksBought} notebooks.` }; },
+  ])();
+}
+// 4. Look for a pattern
+function wpPattern(diff){
+  if(diff==='easy'){
+    return pick([
+      ()=>{ const step=randInt(2,6), start=step; const terms=[0,1,2,3].map(i=>start+i*step); const answer=start+4*step;
+        return { prompt:`Continue the pattern: ${terms.join(', ')}, ___`, answer:String(answer), explanation:`Each term increases by ${step}, so the next term is ${answer}.` }; },
+      ()=>{ const step=randInt(2,6), start=step; const terms=[0,1,2,3].map(i=>start+i*step); const answer=start+4*step;
+        const name=pick(WP_NAMES);
+        return { prompt:`Each week ${name} saves these amounts: ${terms.join(', ')}. If the pattern continues, how much will ${name} save the next week?`, answer:String(answer),
+          explanation:`Each term increases by ${step}, so the next amount is ${answer}.` }; },
+    ])();
+  }
+  if(diff==='medium'){
+    return pick([
+      ()=>{ const ratio=pick([2,3]), start=randInt(2,5); const terms=[0,1,2,3].map(i=>start*Math.pow(ratio,i)); const answer=start*Math.pow(ratio,4);
+        return { prompt:`Continue the pattern: ${terms.join(', ')}, ___`, answer:String(answer), explanation:`Each term is × ${ratio} the one before, so the next term is ${answer}.` }; },
+      ()=>{ const ratio=pick([2,3]), start=randInt(2,5); const terms=[0,1,2,3].map(i=>start*Math.pow(ratio,i)); const answer=start*Math.pow(ratio,4);
+        return { prompt:`A rumour is shared and the number of people who know it multiplies by ${ratio} each hour: ${terms.join(', ')}. How many people will know by the next hour?`, answer:String(answer),
+          explanation:`Each term is × ${ratio} the one before, so the next amount is ${answer}.` }; },
+    ])();
+  }
+  return pick([
+    ()=>{ const first=randInt(3,6), inc=randInt(2,5), shapeNum=randInt(6,12); const answer=first+inc*(shapeNum-1);
+      return { prompt:`The first shape uses ${first} matchsticks. Each new shape uses ${inc} more matchsticks. How many matchsticks does the ${ordinal(shapeNum)} shape use?`,
+        answer:String(answer), explanation:`${first} + ${inc} × ${shapeNum-1} = ${answer} matchsticks.` }; },
+    ()=>{ const first=randInt(4,8), inc=randInt(2,5), designNum=randInt(6,12); const answer=first+inc*(designNum-1);
+      return { prompt:`The first patio design uses ${first} tiles. Each new design uses ${inc} more tiles than the last. How many tiles does the ${ordinal(designNum)} design use?`,
+        answer:String(answer), explanation:`${first} + ${inc} × ${designNum-1} = ${answer} tiles.` }; },
+  ])();
+}
+// 5. Work backwards
+function wpBackwards(diff){
+  if(diff==='easy'){
+    return pick([
+      ()=>{ const gave=randInt(2,15), left=randInt(2,20);
+        return { prompt:`Sam gave away ${gave} stickers and had ${left} left. How many stickers did he start with?`, answer:String(gave+left),
+          explanation:`${gave} + ${left} = ${gave+left}.` }; },
+      ()=>{ const gave=randInt(2,15), left=randInt(2,20); const name=pick(WP_NAMES);
+        return { prompt:`${name} traded away ${gave} cards and had ${left} left. How many cards did ${name} start with?`, answer:String(gave+left),
+          explanation:`${gave} + ${left} = ${gave+left}.` }; },
+    ])();
+  }
+  if(diff==='medium'){
+    return pick([
+      ()=>{ const start=randInt(2,30), added=randInt(1,15), result=start*2+added;
+        return { prompt:`A number was doubled and then ${added} was added. The answer was ${result}. What was the starting number?`, answer:String(start),
+          explanation:`(${result} − ${added}) ÷ 2 = ${start}.` }; },
+      ()=>{ const start=randInt(2,20), added=randInt(1,15), result=start*3+added;
+        return { prompt:`A number was tripled and then ${added} was added. The answer was ${result}. What was the starting number?`, answer:String(start),
+          explanation:`(${result} − ${added}) ÷ 3 = ${start}.` }; },
+    ])();
+  }
+  return pick([
+    ()=>{ const left=randInt(4,30), spent=randInt(4,30), start=2*(left+spent);
+      return { prompt:`Lily spent half her money. She then spent $${spent} and had $${left} left. How much money did she start with?`, answer:String(start),
+        explanation:`(${left} + ${spent}) × 2 = $${start}.` }; },
+    ()=>{ const k=randInt(3,20); const left=randInt(1,2*k-1), spent=2*k-left, start=3*k;
+      return { prompt:`Jack spent a third of his money. He then spent $${spent} more and had $${left} left. How much money did he start with?`, answer:String(start),
+        explanation:`If a third was spent, two-thirds ($${2*k}) remained before the extra $${spent} was spent, so the total was $${start}.` }; },
+  ])();
+}
+// 6. Act it out or use materials
+function wpActOut(diff){
+  if(diff==='easy'){
+    return pick([
+      ()=>{ const students=randInt(3,8), each=randInt(2,6);
+        return { prompt:`${students} students each need ${each} counters. How many counters are needed altogether?`, answer:String(students*each),
+          explanation:`${students} × ${each} = ${students*each} counters.` }; },
+      ()=>{ const guests=randInt(3,8), each=randInt(2,6);
+        return { prompt:`${guests} party guests each get ${each} party favours. How many party favours are needed altogether?`, answer:String(guests*each),
+          explanation:`${guests} × ${each} = ${guests*each} party favours.` }; },
+    ])();
+  }
+  if(diff==='medium'){
+    return pick([
+      ()=>{ const groups=randInt(3,8), each=randInt(2,9), total=groups*each;
+        return { prompt:`${total} cubes are shared equally among ${groups} students. How many cubes does each student receive?`, answer:String(each),
+          explanation:`${total} ÷ ${groups} = ${each} cubes each.` }; },
+      ()=>{ const groups=randInt(3,8), each=randInt(2,9), total=groups*each;
+        return { prompt:`${total} stickers are shared equally among ${groups} friends. How many stickers does each friend receive?`, answer:String(each),
+          explanation:`${total} ÷ ${groups} = ${each} stickers each.` }; },
+    ])();
+  }
+  return pick([
+    ()=>{ const rows=randInt(3,8), each=randInt(3,10), total=rows*each;
+      return { prompt:`${total} counters are arranged into ${rows} equal rows. How many counters are in each row?`, answer:String(each),
+        explanation:`${total} ÷ ${rows} = ${each} counters per row.` }; },
+    ()=>{ const rows=randInt(3,8), each=randInt(3,10), total=rows*each;
+      return { prompt:`${total} chairs are arranged into ${rows} equal rows for an assembly. How many chairs are in each row?`, answer:String(each),
+        explanation:`${total} ÷ ${rows} = ${each} chairs per row.` }; },
+  ])();
+}
+// 7. Write a number sentence or equation
+function wpEquation(diff){
+  if(diff==='easy'){
+    return pick([
+      ()=>{ const start=randInt(10,25), fly=randInt(2,start-1);
+        return { prompt:`There are ${start} birds in a tree. ${fly} fly away. How many birds remain?`, answer:String(start-fly),
+          explanation:`${start} − ${fly} = ${start-fly}.` }; },
+      ()=>{ const start=randInt(10,25), given=randInt(2,start-1);
+        return { prompt:`There are ${start} fish in a tank. ${given} are given to a friend. How many fish remain?`, answer:String(start-given),
+          explanation:`${start} − ${given} = ${start-given}.` }; },
+    ])();
+  }
+  if(diff==='medium'){
+    return pick([
+      ()=>{ const boxes=randInt(3,8), each=randInt(4,9), total=boxes*each, used=randInt(2,total-1);
+        return { prompt:`${boxes} boxes contain ${each} pencils each. ${used} pencils are used. How many pencils remain?`, answer:String(total-used),
+          explanation:`${boxes} × ${each} = ${total}, then ${total} − ${used} = ${total-used}.` }; },
+      ()=>{ const packs=randInt(3,8), each=randInt(4,9), total=packs*each, used=randInt(2,total-1);
+        return { prompt:`${packs} packs contain ${each} stickers each. ${used} stickers are used. How many stickers remain?`, answer:String(total-used),
+          explanation:`${packs} × ${each} = ${total}, then ${total} − ${used} = ${total-used}.` }; },
+    ])();
+  }
+  return pick([
+    ()=>{ const perBus=randInt(20,40), students=randInt(perBus*3+5, perBus*8); const busesNeeded=Math.ceil(students/perBus);
+      return { prompt:`A school has ${students} students travelling on buses. Each bus holds ${perBus} students. What is the smallest number of buses needed?`,
+        answer:String(busesNeeded), explanation:`${students} ÷ ${perBus} = ${(students/perBus).toFixed(2)}, rounded up to ${busesNeeded} buses.` }; },
+    ()=>{ const perBox=randInt(10,30), items=randInt(perBox*3+5, perBox*8); const boxesNeeded=Math.ceil(items/perBox);
+      return { prompt:`A warehouse has ${items} items to pack. Each box holds ${perBox} items. What is the smallest number of boxes needed?`,
+        answer:String(boxesNeeded), explanation:`${items} ÷ ${perBox} = ${(items/perBox).toFixed(2)}, rounded up to ${boxesNeeded} boxes.` }; },
+  ])();
+}
+// 8. Break the problem into smaller parts
+function wpBreakDown(diff){
+  if(diff==='easy'){
+    return pick([
+      ()=>{ const a=randInt(10,40), b=randInt(10,40);
+        return { prompt:`A shop sold ${a} drinks in the morning and ${b} in the afternoon. How many drinks were sold altogether?`, answer:String(a+b),
+          explanation:`${a} + ${b} = ${a+b}.` }; },
+      ()=>{ const a=randInt(10,40), b=randInt(10,40);
+        return { prompt:`A fair sold ${a} tickets on Saturday and ${b} on Sunday. How many tickets were sold altogether?`, answer:String(a+b),
+          explanation:`${a} + ${b} = ${a+b}.` }; },
+    ])();
+  }
+  if(diff==='medium'){
+    return pick([
+      ()=>{ const a=randInt(50,150), b=randInt(50,150), c=randInt(50,150);
+        return { prompt:`A class collected ${a} cans on Monday, ${b} on Tuesday and ${c} on Wednesday. How many cans did they collect altogether?`,
+          answer:String(a+b+c), explanation:`${a} + ${b} + ${c} = ${a+b+c}.` }; },
+      ()=>{ const a=randInt(2,10), b=randInt(2,10), c=randInt(2,10);
+        return { prompt:`${pick(WP_NAMES)} jogged ${a} km on Monday, ${b} km on Wednesday and ${c} km on Friday. How many kilometres did they jog altogether?`,
+          answer:String(a+b+c), explanation:`${a} + ${b} + ${c} = ${a+b+c}.` }; },
+    ])();
+  }
+  return pick([
+    ()=>{ const a=randInt(80,250), b=randInt(80,250), c=randInt(50,150), sum=a+b+c, goal=sum+randInt(20,150);
+      return { prompt:`A family travelled ${a} kilometres in the morning, ${b} kilometres in the afternoon and ${c} kilometres in the evening. Their goal was ${goal} kilometres. How many kilometres short were they?`,
+        answer:String(goal-sum), explanation:`${a} + ${b} + ${c} = ${sum}. ${goal} − ${sum} = ${goal-sum} km short.` }; },
+    ()=>{ const a=randInt(30,90), b=randInt(30,90), c=randInt(20,60), sum=a+b+c, goal=sum+randInt(10,80);
+      return { prompt:`${pick(WP_NAMES)} saved $${a} in January, $${b} in February and $${c} in March. Their savings goal was $${goal}. How much short of the goal are they?`,
+        answer:String(goal-sum), explanation:`$${a} + $${b} + $${c} = $${sum}. $${goal} − $${sum} = $${goal-sum} short.` }; },
+  ])();
+}
+// 9. Solve a simpler version first
+function wpSimpler(diff){
+  if(diff==='easy'){
+    return pick([
+      ()=>{ const perUnit=randInt(2,6), n1=randInt(1,4), n2=randInt(n1+1,n1+10); const l=perUnit*n1;
+        return { prompt:`${n1} cats have ${l} legs altogether. How many legs do ${n2} cats have?`, answer:String(perUnit*n2),
+          explanation:`Each cat has ${perUnit} legs, so ${n2} × ${perUnit} = ${perUnit*n2}.` }; },
+      ()=>{ const perUnit=randInt(2,6), n1=randInt(1,4), n2=randInt(n1+1,n1+10); const w=perUnit*n1;
+        return { prompt:`${n1} bicycles have ${w} wheels altogether. How many wheels do ${n2} bicycles have?`, answer:String(perUnit*n2),
+          explanation:`Each bicycle has ${perUnit} wheels, so ${n2} × ${perUnit} = ${perUnit*n2}.` }; },
+    ])();
+  }
+  if(diff==='medium'){
+    return pick([
+      ()=>{ const perUnit=randInt(2,8), n1=randInt(2,6), n2=randInt(n1+1,20); const c=perUnit*n1;
+        return { prompt:`${n1} notebooks cost $${c}. How much do ${n2} notebooks cost?`, answer:String(perUnit*n2),
+          explanation:`Each notebook costs $${perUnit}, so ${n2} × $${perUnit} = $${perUnit*n2}.` }; },
+      ()=>{ const perUnit=randInt(2,8), n1=randInt(2,6), n2=randInt(n1+1,20); const c=perUnit*n1;
+        return { prompt:`${n1} packs of stickers cost $${c}. How much do ${n2} packs cost?`, answer:String(perUnit*n2),
+          explanation:`Each pack costs $${perUnit}, so ${n2} × $${perUnit} = $${perUnit*n2}.` }; },
+    ])();
+  }
+  return pick([
+    ()=>{ const rate=randInt(1,5), m=randInt(2,6), h=randInt(1,4), t=rate*m*h; const m2=randInt(m+1,m+10), h2=randInt(h+1,h+6);
+      return { prompt:`${m} machines make ${t} toys in ${h} hour${h===1?'':'s'}. At the same rate, how many toys do ${m2} machines make in ${h2} hours?`,
+        answer:String(rate*m2*h2), explanation:`Each machine makes ${rate} toys per hour, so ${m2} × ${h2} × ${rate} = ${rate*m2*h2}.` }; },
+    ()=>{ const rate=randInt(1,5), p=randInt(2,6), h=randInt(1,4), t=rate*p*h; const p2=randInt(p+1,p+10), h2=randInt(h+1,h+6);
+      return { prompt:`${p} printers print ${t} pages in ${h} hour${h===1?'':'s'}. At the same rate, how many pages do ${p2} printers print in ${h2} hours?`,
+        answer:String(rate*p2*h2), explanation:`Each printer makes ${rate} pages per hour, so ${p2} × ${h2} × ${rate} = ${rate*p2*h2}.` }; },
+  ])();
+}
+// 10. Use logical reasoning
+function wpLogic(diff){
+  if(diff==='easy'){
+    return pick([
+      ()=>{ const [p1,p2,p3]=shuffleArr(PETS); const [n1,n2,n3]=shuffleArr(WP_NAMES);
+        return { prompt:`${n1}, ${n2} and ${n3} each have a different pet: a ${p1}, ${p2} or ${p3}. ${n1} has the ${p1}. ${n2} does not have the ${p3}. Which pet does ${n2} have?`,
+          answer:p2, inputType:'choice', choices:shuffleArr([p1,p2,p3]),
+          explanation:`${n1} has the ${p1}, so ${p2}/${p3} are left for ${n2}/${n3}. Since ${n2} doesn't have the ${p3}, ${n2} has the ${p2}.` }; },
+      ()=>{ const [c1,c2,c3]=shuffleArr(COLORS).slice(0,3); const [n1,n2,n3]=shuffleArr(WP_NAMES);
+        return { prompt:`${n1}, ${n2} and ${n3} each like a different colour best: ${c1}, ${c2} or ${c3}. ${n1} likes ${c1} best. ${n2} does not like ${c3} best. Which colour does ${n2} like best?`,
+          answer:c2, inputType:'choice', choices:shuffleArr([c1,c2,c3]),
+          explanation:`${n1} likes ${c1}, so ${c2}/${c3} are left for ${n2}/${n3}. Since ${n2} doesn't like ${c3}, ${n2} likes ${c2}.` }; },
+    ])();
+  }
+  if(diff==='medium'){
+    return pick([
+      ()=>{ const [n1,n2,n3]=shuffleArr(WP_NAMES);
+        return { prompt:`${n1}, ${n2} and ${n3} finished a race in first, second and third place. ${n3} finished third. ${n1} finished before ${n2}. Who finished first?`,
+          answer:n1, inputType:'choice', choices:shuffleArr([n1,n2,n3]),
+          explanation:`${n3} is third, leaving 1st/2nd for ${n1}/${n2}. Since ${n1} finished before ${n2}, ${n1} is first.` }; },
+      ()=>{ const [n1,n2,n3]=shuffleArr(WP_NAMES);
+        return { prompt:`${n1}, ${n2} and ${n3} lined up to eat lunch first, second and third. ${n3} was last in line. ${n1} was ahead of ${n2}. Who was first in line?`,
+          answer:n1, inputType:'choice', choices:shuffleArr([n1,n2,n3]),
+          explanation:`${n3} is last, leaving 1st/2nd for ${n1}/${n2}. Since ${n1} was ahead of ${n2}, ${n1} is first.` }; },
+    ])();
+  }
+  return pick([
+    ()=>{ const [n1,n2,n3,n4]=shuffleArr(WP_NAMES);
+      return { prompt:`${n1}, ${n2}, ${n3} and ${n4} sit in a row. ${n1} sits first. ${n2} sits next to ${n1}. ${n4} sits to the left of ${n3}. Who sits last?`,
+        answer:n3, inputType:'choice', choices:shuffleArr([n1,n2,n3,n4]),
+        explanation:`${n1}=1st, ${n2}=2nd (next to ${n1}). That leaves 3rd/4th for ${n4}/${n3} — since ${n4} is left of ${n3}, ${n4}=3rd and ${n3}=4th (last).` }; },
+    ()=>{ const [n1,n2,n3,n4]=shuffleArr(WP_NAMES);
+      return { prompt:`Four books by ${n1}, ${n2}, ${n3} and ${n4} sit on a shelf. ${n1}'s book is first. ${n2}'s book is right next to ${n1}'s. ${n4}'s book is to the left of ${n3}'s. Whose book is last?`,
+        answer:n3, inputType:'choice', choices:shuffleArr([n1,n2,n3,n4]),
+        explanation:`${n1}=1st, ${n2}=2nd (next to ${n1}). That leaves 3rd/4th for ${n4}/${n3} — since ${n4} is left of ${n3}, ${n4}=3rd and ${n3}=4th (last).` }; },
+  ])();
+}
+// 11. Eliminate impossible answers
+function wpEliminate(diff){
+  if(diff==='easy'){
+    return pick([
+      ()=>{ const target=randInt(6,30)*2, L=target-2, H=target+1;
+        return { prompt:`A bag contains more than ${L} but fewer than ${H} marbles. The number is even. How many marbles are in the bag?`, answer:String(target),
+          explanation:`Between ${L} and ${H} are ${L+1} and ${target}; only ${target} is even.` }; },
+      ()=>{ const target=randInt(6,30)*2, L=target-2, H=target+1;
+        return { prompt:`A packet contains more than ${L} but fewer than ${H} stickers. The number is even. How many stickers are in the packet?`, answer:String(target),
+          explanation:`Between ${L} and ${H} are ${L+1} and ${target}; only ${target} is even.` }; },
+    ])();
+  }
+  if(diff==='medium'){
+    return pick([
+      ()=>{ const m=randInt(4,9), mult=randInt(3,9), target=m*mult, L=target-randInt(1,m-1), H=target+randInt(1,m-1);
+        return { prompt:`A mystery number is between ${L} and ${H}. It is a multiple of ${m}. What is the number?`, answer:String(target),
+          explanation:`The only multiple of ${m} between ${L} and ${H} is ${target}.` }; },
+      ()=>{ const m=randInt(4,9), mult=randInt(3,9), target=m*mult, L=target-randInt(1,m-1), H=target+randInt(1,m-1);
+        return { prompt:`The number of students in a group is between ${L} and ${H}. It is a multiple of ${m}. How many students are in the group?`, answer:String(target),
+          explanation:`The only multiple of ${m} between ${L} and ${H} is ${target}.` }; },
+    ])();
+  }
+  return pick([
+    ()=>{ let target,X,Y,digitSum,ok=false,tries=0;
+      while(!ok && tries<300){ tries++; target=randInt(26,49)*2; X=Math.max(10,target-randInt(4,15)); Y=Math.min(99,target+randInt(4,15));
+        digitSum=Math.floor(target/10)+(target%10); const matches=[];
+        for(let n=X+1;n<Y;n++){ if(n%2===0 && (Math.floor(n/10)+(n%10))===digitSum) matches.push(n); }
+        if(matches.length===1 && matches[0]===target) ok=true; }
+      return { prompt:`A two-digit number is even, greater than ${X} and less than ${Y}. Its digits add to ${digitSum}. What is the number?`, answer:String(target),
+        explanation:`The only even number between ${X} and ${Y} whose digits add to ${digitSum} is ${target}.` }; },
+    ()=>{ let target,X,Y,digitSum,ok=false,tries=0;
+      while(!ok && tries<300){ tries++; target=randInt(26,49)*2; X=Math.max(10,target-randInt(4,15)); Y=Math.min(99,target+randInt(4,15));
+        digitSum=Math.floor(target/10)+(target%10); const matches=[];
+        for(let n=X+1;n<Y;n++){ if(n%2===0 && (Math.floor(n/10)+(n%10))===digitSum) matches.push(n); }
+        if(matches.length===1 && matches[0]===target) ok=true; }
+      return { prompt:`A secret number is even, greater than ${X} and less than ${Y}. Its two digits add to ${digitSum}. What is the secret number?`, answer:String(target),
+        explanation:`The only even number between ${X} and ${Y} whose digits add to ${digitSum} is ${target}.` }; },
+  ])();
+}
+// 12. Estimate, then check
+function wpEstimate(diff){
+  if(diff==='easy'){
+    return pick([
+      ()=>{ const a=randInt(11,89), b=randInt(11,89); const answer=roundTo(a,10)+roundTo(b,10);
+        return { prompt:`Round ${a} and ${b} to the nearest ten and estimate their total.`, answer:String(answer),
+          explanation:`${a}→${roundTo(a,10)}, ${b}→${roundTo(b,10)}. ${roundTo(a,10)} + ${roundTo(b,10)} = ${answer}.` }; },
+      ()=>{ const a=randInt(11,89), b=randInt(11,89); const answer=roundTo(a,10)+roundTo(b,10);
+        return { prompt:`${a} people are at one event and ${b} at another. Round each to the nearest ten and estimate the total attendance.`, answer:String(answer),
+          explanation:`${a}→${roundTo(a,10)}, ${b}→${roundTo(b,10)}. ${roundTo(a,10)} + ${roundTo(b,10)} = ${answer}.` }; },
+    ])();
+  }
+  if(diff==='medium'){
+    return pick([
+      ()=>{ const a=randInt(11,89), b=randInt(11,89), c=randInt(11,89); const answer=roundTo(a,10)+roundTo(b,10)+roundTo(c,10);
+        return { prompt:`Round $${a}, $${b} and $${c} to the nearest ten and estimate the total cost.`, answer:String(answer),
+          explanation:`$${a}→$${roundTo(a,10)}, $${b}→$${roundTo(b,10)}, $${c}→$${roundTo(c,10)}. Total ≈ $${answer}.` }; },
+      ()=>{ const a=randInt(11,89), b=randInt(11,89), c=randInt(11,89); const answer=roundTo(a,10)+roundTo(b,10)+roundTo(c,10);
+        return { prompt:`Three friends cycled ${a} km, ${b} km and ${c} km. Round each distance to the nearest ten and estimate the total distance.`, answer:String(answer),
+          explanation:`${a}→${roundTo(a,10)}, ${b}→${roundTo(b,10)}, ${c}→${roundTo(c,10)}. Total ≈ ${answer} km.` }; },
+    ])();
+  }
+  return pick([
+    ()=>{ const a=randInt(120,450), b=randInt(120,450), c=randInt(50,150); const answer=roundTo(a,100)+roundTo(b,100)+roundTo(c,100);
+      return { prompt:`Round ${a}, ${b} and ${c} to the nearest hundred and estimate the total.`, answer:String(answer),
+        explanation:`${a}→${roundTo(a,100)}, ${b}→${roundTo(b,100)}, ${c}→${roundTo(c,100)}. Total ≈ ${answer}.` }; },
+    ()=>{ const a=randInt(120,450), b=randInt(120,450), c=randInt(50,150); const answer=roundTo(a,100)+roundTo(b,100)+roundTo(c,100);
+      return { prompt:`A concert had ${a} people on Friday, ${b} on Saturday and ${c} on Sunday. Round each to the nearest hundred and estimate the total attendance.`, answer:String(answer),
+        explanation:`${a}→${roundTo(a,100)}, ${b}→${roundTo(b,100)}, ${c}→${roundTo(c,100)}. Total ≈ ${answer}.` }; },
+  ])();
+}
+// 13. Use a known fact
+function wpKnownFact(diff){
+  if(diff==='easy'){
+    return pick([
+      ()=>{ const a=randInt(2,9), b=randInt(2,9), p=a*b;
+        return { prompt:`You know that ${a} × ${b} = ${p}. What is ${a+1} × ${b}?`, answer:String((a+1)*b),
+          explanation:`${a+1} × ${b} = ${a}×${b} + ${b} = ${p} + ${b} = ${(a+1)*b}.` }; },
+      ()=>{ const a=randInt(2,9), b=randInt(2,9), p=a*b;
+        return { prompt:`Use the fact that ${a} × ${b} = ${p} to work out ${a} × ${b+1}.`, answer:String(a*(b+1)),
+          explanation:`${a} × ${b+1} = ${a}×${b} + ${a} = ${p} + ${a} = ${a*(b+1)}.` }; },
+    ])();
+  }
+  if(diff==='medium'){
+    return pick([
+      ()=>{ const a=randInt(3,9), b=randInt(3,9), p=a*b, a2=a*2;
+        return { prompt:`You know that ${a} × ${b} = ${p}. What is ${a2} × ${b}?`, answer:String(a2*b),
+          explanation:`${a2} × ${b} is double ${a} × ${b}, so ${p} × 2 = ${a2*b}.` }; },
+      ()=>{ const a=randInt(3,9), b=randInt(3,9), p=a*b, b2=b*2;
+        return { prompt:`Use the fact that ${a} × ${b} = ${p} to work out ${a} × ${b2}.`, answer:String(a*b2),
+          explanation:`${a} × ${b2} is double ${a} × ${b}, so ${p} × 2 = ${a*b2}.` }; },
+    ])();
+  }
+  return pick([
+    ()=>{ const a=pick([12,15,20,25,50]), b=randInt(2,6), p=a*b, mult=randInt(3,12), askB=b*mult;
+      return { prompt:`You know that ${a} × ${b} = ${p}. What is ${a} × ${askB}?`, answer:String(p*mult),
+        explanation:`${askB} is ${mult} × ${b}, so the answer is ${mult} × ${p} = ${p*mult}.` }; },
+    ()=>{ const a=pick([12,15,20,25,50]), b=randInt(2,6), p=a*b, mult=randInt(3,12), askA=a*mult;
+      return { prompt:`Use the fact that ${a} × ${b} = ${p} to work out ${askA} × ${b}.`, answer:String(p*mult),
+        explanation:`${askA} is ${mult} × ${a}, so the answer is ${mult} × ${p} = ${p*mult}.` }; },
+  ])();
+}
+// 14. Try a different strategy
+function wpDifferent(diff){
+  if(diff==='easy'){
+    return pick([
+      ()=>{ const a=randInt(3,15), b=randInt(3,15);
+        return { prompt:`What is ${a} + ${b}?`, answer:String(a+b), explanation:`${a} + ${b} = ${a+b}.` }; },
+      ()=>{ const a=randInt(10,30), b=randInt(1,a-1);
+        return { prompt:`What is ${a} − ${b}?`, answer:String(a-b), explanation:`${a} − ${b} = ${a-b}.` }; },
+    ])();
+  }
+  if(diff==='medium'){
+    return pick([
+      ()=>{ const b=randInt(2,9), q=randInt(3,12), a=b*q;
+        return { prompt:`What is ${a} ÷ ${b}?`, answer:String(q), explanation:`${a} ÷ ${b} = ${q}.` }; },
+      ()=>{ const a=randInt(3,12), b=randInt(3,12);
+        return { prompt:`What is ${a} × ${b}?`, answer:String(a*b), explanation:`${a} × ${b} = ${a*b}.` }; },
+    ])();
+  }
+  return pick([
+    ()=>{ const w=randInt(3,15), l=randInt(3,15), ar=w*l;
+      return { prompt:`A rectangle has an area of ${ar} square centimetres and a length of ${l} centimetres. What is its width?`, answer:String(w),
+        explanation:`${ar} ÷ ${l} = ${w} cm.` }; },
+    ()=>{ const w=randInt(3,15), l=randInt(3,15), ar=w*l;
+      return { prompt:`A rectangle has an area of ${ar} square centimetres and a width of ${w} centimetres. What is its length?`, answer:String(l),
+        explanation:`${ar} ÷ ${w} = ${l} cm.` }; },
+  ])();
+}
+// 15. Check that the answer makes sense
+function wpCheckSense(diff){
+  if(diff==='easy'){
+    return pick([
+      ()=>{ const bags=randInt(3,9), each=randInt(3,9), trueTotal=bags*each; const isTrue=pick([true,false]);
+        const stated = isTrue? trueTotal : trueTotal+randInt(2,10); const name=pick(WP_NAMES);
+        return { prompt:`${name} says that ${bags} bags with ${each} oranges in each bag contain ${stated} oranges. Is ${name} correct?`,
+          answer: isTrue?'Yes':'No', inputType:'choice', choices:['Yes','No'],
+          explanation:`${bags} × ${each} = ${trueTotal}, so the statement is ${isTrue?'correct':'incorrect'}.` }; },
+      ()=>{ const packs=randInt(3,9), each=randInt(3,9), trueTotal=packs*each; const isTrue=pick([true,false]);
+        const stated = isTrue? trueTotal : trueTotal+randInt(2,10); const name=pick(WP_NAMES);
+        return { prompt:`${name} says that ${packs} packs with ${each} pencils in each pack contain ${stated} pencils. Is ${name} correct?`,
+          answer: isTrue?'Yes':'No', inputType:'choice', choices:['Yes','No'],
+          explanation:`${packs} × ${each} = ${trueTotal}, so the statement is ${isTrue?'correct':'incorrect'}.` }; },
+    ])();
+  }
+  if(diff==='medium'){
+    return pick([
+      ()=>{ const a=randInt(100,400), b=randInt(100,400), trueSum=a+b; const isTrue=pick([true,false]);
+        const stated = isTrue? trueSum : trueSum+randInt(50,900); const name=pick(WP_NAMES);
+        return { prompt:`${name} says that ${a} + ${b} = ${stated}. Is ${name} correct?`, answer: isTrue?'Yes':'No', inputType:'choice', choices:['Yes','No'],
+          explanation:`${a} + ${b} = ${trueSum}, so the statement is ${isTrue?'correct':'incorrect'}.` }; },
+      ()=>{ const a=randInt(150,500), b=randInt(10,a-10), trueDiff=a-b; const isTrue=pick([true,false]);
+        const stated = isTrue? trueDiff : trueDiff+randInt(20,300); const name=pick(WP_NAMES);
+        return { prompt:`${name} says that ${a} − ${b} = ${stated}. Is ${name} correct?`, answer: isTrue?'Yes':'No', inputType:'choice', choices:['Yes','No'],
+          explanation:`${a} − ${b} = ${trueDiff}, so the statement is ${isTrue?'correct':'incorrect'}.` }; },
+    ])();
+  }
+  return pick([
+    ()=>{ const cap=randInt(30,60), n=randInt(2,5), trueTotal=cap*n; const isTrue=pick([true,false]);
+      const stated = isTrue? trueTotal : trueTotal+randInt(10,60); const name=pick(WP_NAMES);
+      return { prompt:`A bus holds ${cap} passengers. ${name} says that ${n} buses can carry ${stated} passengers. Is ${name} correct?`,
+        answer: isTrue?'Yes':'No', inputType:'choice', choices:['Yes','No'],
+        explanation:`${cap} × ${n} = ${trueTotal}, so the statement is ${isTrue?'correct':'incorrect'}.` }; },
+    ()=>{ const perRow=randInt(15,40), rows=randInt(2,6), trueTotal=perRow*rows; const isTrue=pick([true,false]);
+      const stated = isTrue? trueTotal : trueTotal+randInt(10,60); const name=pick(WP_NAMES);
+      return { prompt:`A concert hall has ${perRow} seats per row. ${name} says that ${rows} rows hold ${stated} seats. Is ${name} correct?`,
+        answer: isTrue?'Yes':'No', inputType:'choice', choices:['Yes','No'],
+        explanation:`${perRow} × ${rows} = ${trueTotal}, so the statement is ${isTrue?'correct':'incorrect'}.` }; },
+  ])();
+}
+
+const WORD_PROBLEM_STRATEGIES=[
+  {key:'draw', label:'Draw a picture or diagram', gen:wpDraw},
+  {key:'guesscheck', label:'Guess, check and improve', gen:wpGuessCheck},
+  {key:'table', label:'Make a table or organised list', gen:wpTable},
+  {key:'pattern', label:'Look for a pattern', gen:wpPattern},
+  {key:'backwards', label:'Work backwards', gen:wpBackwards},
+  {key:'actout', label:'Act it out or use materials', gen:wpActOut},
+  {key:'equation', label:'Write a number sentence or equation', gen:wpEquation},
+  {key:'breakdown', label:'Break the problem into smaller parts', gen:wpBreakDown},
+  {key:'simpler', label:'Solve a simpler version first', gen:wpSimpler},
+  {key:'logic', label:'Use logical reasoning', gen:wpLogic},
+  {key:'eliminate', label:'Eliminate impossible answers', gen:wpEliminate},
+  {key:'estimate', label:'Estimate, then check', gen:wpEstimate},
+  {key:'knownfact', label:'Use a known fact', gen:wpKnownFact},
+  {key:'different', label:'Try a different strategy', gen:wpDifferent},
+  {key:'checksense', label:'Check that the answer makes sense', gen:wpCheckSense},
+];
+function genWordProblem(diff, strategyKey){
+  let entry = WORD_PROBLEM_STRATEGIES.find(s=>s.key===strategyKey);
+  if(!entry) entry = pick(WORD_PROBLEM_STRATEGIES);
+  const q = entry.gen(diff);
+  q.strategyKey = entry.key; q.strategyLabel = entry.label;
+  return q;
 }
 
 const SLOTS=[
@@ -573,17 +1088,18 @@ const SLOTS=[
   {title:'Choosing units', gen:genUnitChoice},
   {title:'Unit conversion', gen:genConversion},
   {title:'Angle types', gen:genAngle},
-  {title:'Volume', gen:genVolume},
+  {title:'Word problem', gen:(diff,strategyKey)=>genWordProblem(diff,strategyKey)},
 ];
-function buildQuestion(slotIdx, diff){
-  const slot=SLOTS[slotIdx]; const q=slot.gen(diff);
+function buildQuestion(slotIdx, diff, strategyKey){
+  const slot=SLOTS[slotIdx]; const q=slot.gen(diff, strategyKey);
   return { id:uid('q'), slot:slotIdx+1, title:slot.title, prompt:q.prompt,
     answer:q.answer!=null?String(q.answer):null, explanation:q.explanation||'',
     inputType:q.inputType||'text', choices:q.choices||null, svg:q.svg||null,
     checkType:q.checkType||null, targetCents:q.targetCents!=null?q.targetCents:null, coins:q.coins||null,
-    items:q.items||null, minCoins:q.minCoins!=null?q.minCoins:null };
+    items:q.items||null, minCoins:q.minCoins!=null?q.minCoins:null,
+    strategyKey:q.strategyKey||null, strategyLabel:q.strategyLabel||null };
 }
-function generateWeekQuestions(diff){ return SLOTS.map((s,i)=>buildQuestion(i,diff)); }
+function generateWeekQuestions(diff, strategyKey){ return SLOTS.map((s,i)=>buildQuestion(i,diff,strategyKey)); }
 
 function normalize(s){ return String(s==null?'':s).trim().toLowerCase().replace(/\s+/g,''); }
 function isNumeric(s){ return s!=='' && !isNaN(Number(s)); }
@@ -653,7 +1169,7 @@ const S = {
   authMode:'login', authError:null, showSignup:false,
   weeks:[], results:[], profiles:{},
   teacherTab:'weeks', editingDraftId:null,
-  genForm:{ label:'', difficulty:'easy' },
+  genForm:{ label:'', difficulty:'easy', strategy:'random' },
   activeWeekId:null, quiz:{}, toast:null,
   bulkCreating:false, bulkProgress:null, bulkResults:null, bulkNamesText:'', bulkPassword:'',
   studentTab:'weekly', ttAttempts:[], tt:null,
@@ -849,12 +1365,17 @@ function renderTeacherWeeks(){
   const form=el(`
     <div class="mmc-card">
       <h3>Create a new week</h3>
-      <div class="meta">Every week has the same 20 questions in the same order (place value, sequences, rounding... through to volume) — just the numbers change. Edit anything before you publish.</div>
+      <div class="meta">Every week has the same 20 questions in the same order (place value, sequences, rounding... through to a word problem) — just the numbers change. Edit anything before you publish.</div>
       <div class="mmc-row" style="align-items:flex-end;">
         <div class="mmc-field" style="flex:2;min-width:160px;"><label>Week label</label>
           <input type="text" id="mmc-gen-label" placeholder="e.g. Week 6" value="${esc(S.genForm.label)}"></div>
         <div class="mmc-field" style="flex:1;min-width:120px;"><label>Difficulty</label>
           <select id="mmc-gen-diff">${['easy','medium','hard'].map(d=>`<option value="${d}" ${S.genForm.difficulty===d?'selected':''}>${d[0].toUpperCase()+d.slice(1)}</option>`).join('')}</select></div>
+        <div class="mmc-field" style="flex:2;min-width:200px;"><label>Word problem strategy (Q20)</label>
+          <select id="mmc-gen-strategy">
+            <option value="random" ${S.genForm.strategy==='random'?'selected':''}>Random each time</option>
+            ${WORD_PROBLEM_STRATEGIES.map(s=>`<option value="${s.key}" ${S.genForm.strategy===s.key?'selected':''}>${esc(s.label)}</option>`).join('')}
+          </select></div>
       </div>
       <button class="mmc-btn gold" id="mmc-gen-btn">✨ Generate this week's 20 questions</button>
     </div>
@@ -862,12 +1383,13 @@ function renderTeacherWeeks(){
   form.querySelector('#mmc-gen-btn').onclick=async ()=>{
     const label=form.querySelector('#mmc-gen-label').value.trim() || `Week ${S.weeks.length+1}`;
     const difficulty=form.querySelector('#mmc-gen-diff').value;
+    const strategy=form.querySelector('#mmc-gen-strategy').value;
     const weekData={ label, difficulty, status:'draft', createdAt:serverTimestamp(), teacherUid:S.user.uid,
-      questions:generateWeekQuestions(difficulty) };
+      questions:generateWeekQuestions(difficulty, strategy) };
     try{
       const ref=await addDoc(collection(db,'weeks'), weekData);
       S.editingDraftId=ref.id;
-      S.genForm={label:'',difficulty:'easy'};
+      S.genForm={label:'',difficulty:'easy',strategy:'random'};
     }catch(e){ S.toast='Could not save the new week — check your connection.'; }
     render();
   };
@@ -923,7 +1445,7 @@ function renderQuestionEditor(week){
     const isStructured = !!(q.svg || q.inputType==='choice' || q.inputType==='coins' || q.inputType==='order');
     const row=el(`
       <div class="mmc-qedit">
-        <div class="idx">Q${i+1} — ${esc(q.title||'Question')}</div>
+        <div class="idx">Q${i+1} — ${esc(q.title||'Question')}${q.strategyLabel?` (${esc(q.strategyLabel)})`:''}</div>
         ${q.svg ? `<div class="mmc-qsvg">${q.svg}</div>` : ''}
         <div class="label2">Question</div>
         <textarea rows="2" data-f="prompt">${esc(q.prompt)}</textarea>
@@ -954,7 +1476,7 @@ function renderQuestionEditor(week){
     row.querySelector('[data-f="explanation"]').onchange=(e)=>{ q.explanation=e.target.value; saveQuestions(); };
     row.querySelector('[data-act="rm"]').onclick=()=>{ week.questions=week.questions.filter(x=>x.id!==q.id); saveQuestions(); render(); };
     row.querySelector('[data-act="regen"]').onclick=()=>{
-      const fresh = q.slot ? buildQuestion(q.slot-1, week.difficulty) : q;
+      const fresh = q.slot ? buildQuestion(q.slot-1, week.difficulty, q.strategyKey) : q;
       Object.assign(q, fresh, {id:q.id});
       saveQuestions(); render();
     };
@@ -1640,7 +2162,7 @@ function renderQuizTaking(week){
     const st=S.quiz[q.id];
     const qbox=el(`
       <div class="mmc-quiz-q">
-        <div class="qnum">Question ${i+1} of ${week.questions.length} — ${esc(q.title||'')}</div>
+        <div class="qnum">Question ${i+1} of ${week.questions.length} — ${esc(q.title||'')}${q.strategyLabel?` (${esc(q.strategyLabel)})`:''}</div>
         ${q.svg ? `<div class="mmc-qsvg">${q.svg}</div>` : ''}
         <div class="qtext">${esc(q.prompt)}</div>
       </div>
