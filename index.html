@@ -424,15 +424,18 @@ function genShadedGrid(diff){
   }
   if(diff==='medium'){
     const size=pick(GRID_SIZES); const total=size.rows*size.cols;
-    const n=randInt(1,total-1);
-    const correct=`${n}/${total}`;
+    let n=randInt(2,total-2);
+    if(gcd(n,total)<2){ n = total%2===0 ? total-2 : total-3; } // ensure it's reducible, so there's a real unsimplified form to offer as a decoy
+    const correct=fracStr(n,total);
+    const raw=`${n}/${total}`;
     const seen=new Set([correct]); const decoys=[];
+    if(raw!==correct){ seen.add(raw); decoys.push(raw); } // the obvious unsimplified answer — kept as an option, but wrong
     const candidates=[total-n, n+size.cols, n-size.cols, n+1, n-1, n+size.rows, n-size.rows].filter(x=>x>0&&x<total&&x!==n);
-    for(const c of shuffleArr(candidates)){ const f=`${c}/${total}`; if(!seen.has(f)){ seen.add(f); decoys.push(f); if(decoys.length===3) break; } }
-    while(decoys.length<3){ const c=randInt(1,total-1); const f=`${c}/${total}`; if(!seen.has(f)){ seen.add(f); decoys.push(f); } }
+    for(const c of shuffleArr(candidates)){ const f=fracStr(c,total); if(!seen.has(f)){ seen.add(f); decoys.push(f); if(decoys.length>=3) break; } }
+    while(decoys.length<3){ const c=randInt(1,total-1); const f=fracStr(c,total); if(!seen.has(f)){ seen.add(f); decoys.push(f); } }
     const choices=shuffleArr([correct,...decoys.slice(0,3)]);
-    return { prompt:`What fraction of the grid is shaded?`, answer:correct, inputType:'choice', choices,
-      explanation:`${n} out of ${total} squares are shaded, so the fraction is ${n}/${total}.`, svg:drawShadedGrid(size.rows,size.cols,n) };
+    return { prompt:`What fraction of the grid is shaded? Give your answer in simplest form.`, answer:correct, inputType:'choice', choices,
+      explanation:`${n} out of ${total} squares are shaded — ${n}/${total} simplifies to ${correct}.`, svg:drawShadedGrid(size.rows,size.cols,n) };
   }
   // hard: multiple choice, correct answer is the simplified fraction
   const pool=GRID_SIZES.filter(s=>s.rows*s.cols>=20);
@@ -645,16 +648,37 @@ function genFractionSimplify(diff){
     explanation:`${n0}/${d0} ÷ ${k}/${k} = ${n1}/${d1}.` };
 }
 const CONVERSIONS=[{from:'kg',to:'g',factor:1000},{from:'km',to:'m',factor:1000},{from:'L',to:'mL',factor:1000},{from:'m',to:'cm',factor:100},{from:'cm',to:'mm',factor:10}];
+function zeroVariants(n){
+  const variants=new Set();
+  if(n%10===0) variants.add(String(n/10));
+  variants.add(String(n*10));
+  if(n%100===0) variants.add(String(n/100));
+  variants.add(String(n*100));
+  const s=String(n);
+  if(s.includes('0')){
+    const idx=s.indexOf('0');
+    const removed=s.slice(0,idx)+s.slice(idx+1);
+    if(removed!=='' && !removed.startsWith('0')) variants.add(removed);
+  }
+  if(s.length>=1){
+    const inserted=s[0]+'0'+s.slice(1);
+    variants.add(inserted);
+  }
+  return [...variants].filter(v=>v!==String(n) && v!=='' && Number(v)>0 && !v.startsWith('0'));
+}
 function genConversion(diff){
   const c=pick(CONVERSIONS);
   const range= diff==='easy'?[1,20]: diff==='medium'?[1,100]:[1,999];
   const val=randInt(range[0],range[1]); const result=val*c.factor;
   const correct=String(result);
-  const rawCandidates=[result/10, result*10, val+c.factor, result+c.factor, Math.round(result*1.1), result-c.factor]
-    .map(v=>String(Math.round(v))).filter(v=>v!==correct && Number(v)>0);
   const seen=new Set([correct]); const decoys=[];
-  for(const d of shuffleArr([...new Set(rawCandidates)])){ if(!seen.has(d)){ seen.add(d); decoys.push(d); if(decoys.length>=3) break; } }
-  while(decoys.length<3){ const d=String(Math.max(1,result+randInt(-50,50))); if(!seen.has(d)){ seen.add(d); decoys.push(d); } }
+  for(const d of shuffleArr(zeroVariants(result))){ if(!seen.has(d)){ seen.add(d); decoys.push(d); if(decoys.length>=3) break; } }
+  while(decoys.length<3){
+    const factor=pick([10,100]); const op=pick(['*','/']);
+    const d = op==='*' ? result*factor : Math.max(1,Math.round(result/factor));
+    const ds=String(d);
+    if(!seen.has(ds)){ seen.add(ds); decoys.push(ds); }
+  }
   const choices=shuffleArr([correct, ...decoys.slice(0,3)]);
   return { prompt:`Complete the conversion: ${val} ${c.from} = ___ ${c.to}`, answer:correct, inputType:'choice', choices,
     explanation:`${val} ${c.from} × ${c.factor} = ${result} ${c.to}.` };
@@ -1343,6 +1367,7 @@ const S = {
   weeks:[], results:[], profiles:{},
   teacherTab:'weeks', editingDraftId:null,
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null,
+  weekProgress:[],
   genForm:{ label:'', difficulty:'easy', strategy:'random' },
   activeWeekId:null, quiz:{}, toast:null,
   bulkCreating:false, bulkProgress:null, bulkResults:null, bulkNamesText:'', bulkPassword:'',
@@ -1447,6 +1472,9 @@ function subscribeData(){
     unsubs.push(onSnapshot(query(collection(db,'results'), where('uid','==',S.user.uid)), snap=>{
       S.results=snap.docs.map(d=>({id:d.id,...d.data()})); render();
     }, (err)=>{ S.toast='Results error: '+err.message; render(); }));
+    unsubs.push(onSnapshot(query(collection(db,'weekProgress'), where('uid','==',S.user.uid)), snap=>{
+      S.weekProgress=snap.docs.map(d=>({id:d.id,...d.data()})); render();
+    }, (err)=>{ S.toast='Saved progress error: '+err.message; render(); }));
     unsubs.push(onSnapshot(query(collection(db,'ttAttempts'), where('uid','==',S.user.uid)), snap=>{
       S.ttAttempts=snap.docs.map(d=>({id:d.id,...d.data()})); render();
     }, (err)=>{ S.toast='Timetable data error: '+err.message; render(); }));
@@ -2175,6 +2203,23 @@ function initQuizState(week){
     ? {given:'', pool:shuffleArr(q.items||[]), placed:[], checked:false, correct:false}
     : {given: q.inputType==='coins' ? [] : '', checked:false, correct:false});
 }
+function progressMatchesWeek(progress, week){
+  if(!progress || !progress.quiz) return false;
+  return (week.questions||[]).every(q => progress.quiz[q.id] !== undefined);
+}
+async function saveWeekProgress(week){
+  if(!S.user) return;
+  try{
+    await setDoc(doc(db,'weekProgress', `${S.user.uid}_${week.id}`), {
+      uid:S.user.uid, weekId:week.id, teacherUid: S.profile? S.profile.teacherUid : null,
+      quiz:S.quiz, updatedAt:serverTimestamp()
+    });
+  }catch(e){ /* auto-save is best-effort — don't interrupt the student over it */ }
+}
+async function deleteWeekProgress(weekId){
+  if(!S.user) return;
+  try{ await deleteDoc(doc(db,'weekProgress', `${S.user.uid}_${weekId}`)); }catch(e){}
+}
 function renderWeeklyPassport(){
   const wrap=el('<div></div>');
   if(S.weeks.length===0){
@@ -2201,9 +2246,20 @@ function renderWeeklyPassport(){
       };
       right.appendChild(retakeBtn);
     } else {
-      const startBtn=el('<button class="mmc-btn gold">Start ▶</button>');
-      startBtn.onclick=()=>{ initQuizState(week); render(); };
-      right.appendChild(startBtn);
+      const progress = S.weekProgress.find(p=>p.weekId===week.id);
+      if(progress && progressMatchesWeek(progress, week)){
+        const answeredCount = (week.questions||[]).filter(q=>progress.quiz[q.id] && progress.quiz[q.id].checked).length;
+        right.style.cssText='display:flex;flex-direction:column;align-items:flex-end;gap:6px;';
+        right.appendChild(el(`<div class="meta" style="margin:0;">${answeredCount}/${(week.questions||[]).length} answered so far</div>`));
+        const continueBtn=el('<button class="mmc-btn gold">Continue ▶</button>');
+        continueBtn.onclick=()=>{ S.activeWeekId=week.id; S.quiz=progress.quiz; render(); };
+        right.appendChild(continueBtn);
+      } else {
+        if(progress) deleteWeekProgress(week.id); // stale (week was regenerated since) — clean it up
+        const startBtn=el('<button class="mmc-btn gold">Start ▶</button>');
+        startBtn.onclick=()=>{ initQuizState(week); render(); };
+        right.appendChild(startBtn);
+      }
     }
     wrap.appendChild(card);
   });
@@ -2636,7 +2692,7 @@ function renderQuizTaking(week){
         <div class="qtext">${esc(q.prompt)}</div>
       </div>
     `);
-    function doCheck(){ if(st.checked) return; st.checked=true; st.correct=gradeQuestion(q, st.given); render(); }
+    function doCheck(){ if(st.checked) return; st.checked=true; st.correct=gradeQuestion(q, st.given); render(); saveWeekProgress(week); }
 
     if(q.inputType==='choice'){
       if(q.renderFractionChoices && q.givenNum!=null){
@@ -2666,7 +2722,7 @@ function renderQuizTaking(week){
       input.oninput=(e)=>{ st.given=e.target.value; };
       input.addEventListener('keydown', e=>{ if(e.key==='Enter' && !st.checked) doCheck(); });
       qbox.appendChild(row);
-      const checkBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" style="margin-top:10px;" ${st.checked||!st.given?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
+      const checkBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" style="margin-top:10px;" ${st.checked?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
       checkBtn.onclick=doCheck;
       qbox.appendChild(checkBtn);
     } else if(q.inputType==='fracHard'){
@@ -2685,10 +2741,9 @@ function renderQuizTaking(week){
       const numIn=row.querySelector('#mmc-frac-num'), denIn=row.querySelector('#mmc-frac-den');
       const sync=()=>{ st.given=`${numIn.value.trim()}/${denIn.value.trim()}`; };
       numIn.oninput=sync; denIn.oninput=sync;
-      [numIn,denIn].forEach(inp=>inp.addEventListener('keydown', e=>{ if(e.key==='Enter' && !st.checked) doCheck(); }));
+      [numIn,denIn].forEach(inp=>inp.addEventListener('keydown', e=>{ if(e.key==='Enter' && !st.checked){ sync(); doCheck(); } }));
       qbox.appendChild(row);
-      const filled = numIn.value.trim()!=='' && denIn.value.trim()!=='';
-      const checkBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" style="margin-top:10px;" ${st.checked||!filled?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
+      const checkBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" style="margin-top:10px;" ${st.checked?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
       checkBtn.onclick=()=>{ sync(); doCheck(); };
       qbox.appendChild(checkBtn);
     } else if(q.inputType==='coins'){
@@ -2768,6 +2823,7 @@ function renderQuizTaking(week){
         weekId:week.id, weekLabel:week.label, score, total, answers, submittedAt:serverTimestamp()
       });
     }catch(e){ S.toast='Could not save your result — check your connection and try again.'; render(); return; }
+    deleteWeekProgress(week.id);
     S.activeWeekId=null; render();
   };
   wrap.appendChild(finishBtn);
