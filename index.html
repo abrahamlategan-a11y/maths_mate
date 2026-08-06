@@ -118,21 +118,23 @@
   .mmc-coin-chip.selected { background:var(--yellow); }
   .mmc-coin-chip:disabled { opacity:.7; }
   .mmc-coin-total { font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--ink-soft); margin-bottom:8px; font-weight:700; }
-  .mmc-race-wrap { overflow-x:auto; margin-bottom:16px; }
-  .mmc-race-track { position:relative; min-width:320px; background:repeating-linear-gradient(180deg,#F5F2E8 0 40px, #ECE6D6 40px 42px);
-    border:2.5px solid var(--ink); border-radius:14px; box-shadow:4px 4px 0 var(--ink); }
+  .mmc-race-scene { overflow-x:auto; overflow-y:hidden; margin-bottom:16px; padding:6px 0 26px; perspective:700px; }
+  .mmc-race-track { position:relative; min-width:340px; background:repeating-linear-gradient(180deg,#F5F2E8 0 42px, #ECE6D6 42px 44px);
+    border:2.5px solid var(--ink); border-radius:14px; box-shadow:4px 4px 0 var(--ink);
+    transform:rotateX(48deg); transform-origin:center bottom; transform-style:preserve-3d; }
   .mmc-race-lane { position:absolute; left:8px; right:14px; height:2px; }
-  .mmc-race-track-line { position:absolute; left:0; right:0; top:20px; height:2px; background:var(--paper-line); }
-  .mmc-race-horse { position:absolute; top:-9px; display:flex; align-items:center; gap:4px;
-    transition:left 0.7s cubic-bezier(.34,1.4,.64,1); animation:mmcTrot 0.5s infinite alternate; z-index:1; }
+  .mmc-race-track-line { position:absolute; left:0; right:0; top:22px; height:2px; background:var(--paper-line); }
+  .mmc-race-horse { position:absolute; top:-11px; z-index:1; transition:left 0.7s cubic-bezier(.34,1.4,.64,1); }
   .mmc-race-horse.me { z-index:2; }
+  .mmc-race-horse-inner { display:flex; align-items:center; gap:4px; transform:rotateX(-48deg); transform-origin:center bottom;
+    animation:mmcTrot 0.5s infinite alternate; filter:drop-shadow(0 3px 2px rgba(0,0,0,0.2)); }
   .mmc-race-horse.me .mmc-race-emoji { filter:drop-shadow(0 0 5px var(--purple)); }
   .mmc-race-horse.me .mmc-race-name { background:var(--purple); color:#fff; border-color:var(--purple-deep); }
-  .mmc-race-emoji { font-size:22px; }
+  .mmc-race-emoji { font-size:24px; }
   .mmc-race-name { font-family:'Baloo 2',sans-serif; font-size:10.5px; font-weight:700; background:#fff; border:1.5px solid var(--ink); border-radius:8px; padding:1px 6px; white-space:nowrap; }
   .mmc-race-finish { position:absolute; right:10px; top:4px; bottom:4px; width:9px; border-radius:3px;
     background:repeating-linear-gradient(45deg,#17181C 0 6px, #fff 6px 12px); border:1.5px solid var(--ink); }
-  @keyframes mmcTrot { from{ transform:translateY(0); } to{ transform:translateY(-3px); } }
+  @keyframes mmcTrot { from{ transform:rotateX(-48deg) translateY(0); } to{ transform:rotateX(-48deg) translateY(-3px); } }
   .mmc-frac-eq { display:inline-flex; align-items:center; gap:10px; font-size:22px; font-weight:700; flex-wrap:wrap; justify-content:center; }
   .mmc-frac { display:inline-flex; flex-direction:column; align-items:center; vertical-align:middle; font-family:'IBM Plex Mono',monospace; font-weight:700; }
   .mmc-frac .num, .mmc-frac .den { padding:2px 8px; line-height:1.25; }
@@ -1332,7 +1334,7 @@ function genTTQuestion(level, idx){
 }
 function formatMMSS(s){ const m=Math.floor(Math.max(0,s)/60), sec=Math.max(0,s)%60; return `${m}:${String(sec).padStart(2,'0')}`; }
 function raceBoostAmount(level, isDivision, elapsedSec){
-  const base = { easy:6, medium:8, hard:10 }[level] + (isDivision?2:0);
+  const base = { easy:1.0, medium:1.3, hard:1.7 }[level] + (isDivision?0.3:0);
   const speedFactor = Math.max(0.3, 1 - elapsedSec/12);
   return base * speedFactor;
 }
@@ -2409,27 +2411,41 @@ function renderLiveLeaderboardCard(title, room, isFinal){
   });
   return card;
 }
-function renderRaceTrack(myUid){
+function renderRaceTrack(myUid, capNearFinish){
   const participants=S.liveParticipants.slice().sort((a,b)=>(a.joinedAt?.seconds||0)-(b.joinedAt?.seconds||0));
-  const wrap=el('<div class="mmc-race-wrap"></div>');
-  if(participants.length===0){ wrap.appendChild(el('<div class="meta">No players yet.</div>')); return wrap; }
-  const laneH=42, topPad=10;
+  const outer=el('<div class="mmc-race-scene"></div>');
+  if(participants.length===0){ outer.appendChild(el('<div class="meta">No players yet.</div>')); return outer; }
+  const laneH=46, topPad=14;
   const track=el(`<div class="mmc-race-track" style="height:${participants.length*laneH+topPad*2}px;"></div>`);
   track.appendChild(el('<div class="mmc-race-finish"></div>'));
   participants.forEach((p,i)=>{
-    const pos=Math.max(0,Math.min(100,p.position||0));
+    let pos=Math.max(0,Math.min(100,p.position||0));
+    if(capNearFinish) pos=Math.min(pos,96); // the line is only actually crossed once time runs out
     const isMe = myUid && p.id===myUid;
     const lane=el(`<div class="mmc-race-lane" style="top:${topPad+i*laneH}px;"><div class="mmc-race-track-line"></div></div>`);
     const horse=el(`
-      <div class="mmc-race-horse${isMe?' me':''}" style="left:calc(${pos}% - 16px);">
-        <span class="mmc-race-emoji">🐎</span><span class="mmc-race-name">${esc(p.name)}${isMe?' (you)':''}</span>
+      <div class="mmc-race-horse${isMe?' me':''}" style="left:calc(${pos}% - 18px);">
+        <div class="mmc-race-horse-inner">
+          <span class="mmc-race-emoji">🐎</span><span class="mmc-race-name">${esc(p.name)}${isMe?' (you)':''}</span>
+        </div>
       </div>
     `);
     lane.appendChild(horse);
     track.appendChild(lane);
   });
-  wrap.appendChild(track);
-  return wrap;
+  outer.appendChild(track);
+  return outer;
+}
+function renderChaseCallout(myUid){
+  const sorted=S.liveParticipants.slice().sort((a,b)=>(b.position||0)-(a.position||0));
+  const myIdx=sorted.findIndex(p=>p.id===myUid);
+  if(myIdx===-1) return null;
+  if(myIdx===0){
+    return el(`<div class="mmc-card" style="text-align:center;background:var(--slime);"><h3 style="margin:0;">🏆 You're in the lead — don't let up!</h3></div>`);
+  }
+  const ahead=sorted[myIdx-1];
+  const gap=Math.max(0.1, (ahead.position||0)-(sorted[myIdx].position||0));
+  return el(`<div class="mmc-card" style="text-align:center;"><h3 style="margin:0;">🎯 Chasing ${esc(ahead.name)}</h3><div class="meta" style="margin:2px 0 0;">${gap.toFixed(1)} points ahead of you — answer fast to catch up!</div></div>`);
 }
 
 // ---------- Live Game (teacher) ----------
@@ -2532,7 +2548,7 @@ function renderTeacherLiveGame(){
       try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended'}); }catch(e){ S.toast='Could not end — check your connection.'; render(); }
     };
     wrap.appendChild(head);
-    wrap.appendChild(renderRaceTrack(null));
+    wrap.appendChild(renderRaceTrack(null, true));
     wrap.appendChild(renderLiveLeaderboardCard('Live leaderboard', room, false));
     startLiveTeacherTimer(room);
     return wrap;
@@ -2580,7 +2596,7 @@ async function submitMyLiveAnswer(given){
     const boost = raceBoostAmount(S.myLive.currentQ.level, S.myLive.currentQ.isDivision, elapsedSec) * rubberBand;
     S.myLive.position = Math.min(100, S.myLive.position + boost);
   } else {
-    S.myLive.position = Math.max(0, S.myLive.position - 4);
+    S.myLive.position = Math.max(0, S.myLive.position - 0.8);
   }
   S.myLive.qIndex++; S.myLive.currentQ=genTTQuestion(S.myLive.level, S.myLive.qIndex); S.myLive.questionStartedAt=Date.now();
   render();
@@ -2599,6 +2615,8 @@ function renderMyLiveSession(){
     </div>
   `);
   wrap.appendChild(head);
+  const chase=renderChaseCallout(S.user.uid);
+  if(chase) wrap.appendChild(chase);
   const qbox=el(`
     <div class="mmc-card" style="text-align:center;">
       <div style="font-family:'Baloo 2',sans-serif;font-size:36px;font-weight:700;margin-bottom:16px;">${esc(S.myLive.currentQ.prompt)} = ?</div>
@@ -2613,7 +2631,7 @@ function renderMyLiveSession(){
   qbox.querySelector('#mmc-live-submit').onclick=go;
   input.addEventListener('keydown', e=>{ if(e.key==='Enter') go(); });
   wrap.appendChild(qbox);
-  wrap.appendChild(renderRaceTrack(S.user.uid));
+  wrap.appendChild(renderRaceTrack(S.user.uid, true));
   wrap.appendChild(renderLiveLeaderboardCard('Live leaderboard', room||{}, false));
   return wrap;
 }
