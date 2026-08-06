@@ -61,7 +61,8 @@
     var(--paper); }
   .mmc-empty { text-align:center; padding:40px 20px; color:var(--ink-soft); font-weight:600; }
   .mmc-empty-icon { font-size:36px; margin-bottom:8px; }
-  .mmc-toast { position:sticky; top:8px; z-index:20; background:var(--incorrect); color:#fff; padding:10px 14px; border-radius:10px; border:2.5px solid var(--ink); font-size:13px; font-weight:700; margin-bottom:14px; box-shadow:3px 3px 0 var(--ink); }
+  .mmc-toast { position:sticky; top:8px; z-index:20; background:var(--incorrect); color:#fff; padding:10px 14px; border-radius:10px; border:2.5px solid var(--ink); font-size:13px; font-weight:700; margin-bottom:14px; box-shadow:3px 3px 0 var(--ink); display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .mmc-toast-close { background:none; border:none; color:#fff; font-weight:800; font-size:14px; cursor:pointer; padding:0 2px; flex-shrink:0; }
 
   .mmc-btn { font-family:'Baloo 2',sans-serif; font-weight:700; font-size:14px; padding:10px 18px;
     border-radius:12px; border:2.5px solid var(--ink); background:var(--purple); color:#fff;
@@ -1353,7 +1354,7 @@ let unsubs = [];
 let liveParticipantsUnsub = null, liveParticipantsRoomId = null;
 function clearSubs(){
   unsubs.forEach(u=>{ try{u();}catch(e){} }); unsubs=[];
-  if(liveParticipantsUnsub){ try{liveParticipantsUnsub();}catch(e){} liveParticipantsUnsub=null; liveParticipantsRoomId=null; }
+  if(liveParticipantsUnsub){ try{liveParticipantsUnsub();}catch(e){} liveParticipantsUnsub=null; liveParticipantsRoomId=null; liveParticipantsGen++; }
   if(teacherLiveTimerHandle){ clearInterval(teacherLiveTimerHandle); teacherLiveTimerHandle=null; teacherLiveTimerRoomId=null; }
 }
 function currentLiveRoom(){
@@ -1363,17 +1364,23 @@ function currentLiveRoom(){
   const ended = S.liveGames.filter(g=>g.status==='ended').slice().sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
   return ended[0] || null;
 }
+let liveParticipantsGen = 0;
 function ensureParticipantsSub(gameId){
   if(!gameId){
     if(liveParticipantsUnsub){ liveParticipantsUnsub(); liveParticipantsUnsub=null; }
-    liveParticipantsRoomId=null; S.liveParticipants=[]; return;
+    liveParticipantsRoomId=null; S.liveParticipants=[]; liveParticipantsGen++; return;
   }
   if(liveParticipantsRoomId===gameId) return;
   if(liveParticipantsUnsub) liveParticipantsUnsub();
   liveParticipantsRoomId=gameId;
+  const myGen = ++liveParticipantsGen;
   liveParticipantsUnsub = onSnapshot(collection(db,'liveGames',gameId,'participants'), snap=>{
+    if(myGen!==liveParticipantsGen) return; // this listener has been superseded — ignore
     S.liveParticipants=snap.docs.map(d=>({id:d.id,...d.data()})); render();
-  }, (err)=>{ S.toast='Leaderboard error: '+err.message; render(); });
+  }, (err)=>{
+    if(myGen!==liveParticipantsGen) return; // stale/superseded listener erroring after being replaced — ignore
+    S.toast='Leaderboard error: '+err.message; render();
+  });
 }
 
 function el(html){ const t=document.createElement('template'); t.innerHTML=html.trim(); return t.content.firstElementChild; }
@@ -1450,12 +1457,28 @@ function subscribeData(){
 }
 
 // ---------- Root render ----------
+let toastTimer=null, toastTimerValue=null;
+function scheduleToastClear(){
+  if(S.toast && S.toast!==toastTimerValue){
+    if(toastTimer) clearTimeout(toastTimer);
+    toastTimerValue=S.toast;
+    toastTimer=setTimeout(()=>{ S.toast=null; toastTimerValue=null; toastTimer=null; render(); }, 7000);
+  } else if(!S.toast){
+    if(toastTimer){ clearTimeout(toastTimer); toastTimer=null; }
+    toastTimerValue=null;
+  }
+}
 function render(){
   const root=document.getElementById('mmc');
   root.innerHTML='';
   root.appendChild(renderHead());
   const body=el('<div class="mmc-body"></div>');
-  if(S.toast) body.appendChild(el(`<div class="mmc-toast">${esc(S.toast)}</div>`));
+  if(S.toast){
+    scheduleToastClear();
+    const toastEl=el(`<div class="mmc-toast">${esc(S.toast)}<button type="button" class="mmc-toast-close">✕</button></div>`);
+    toastEl.querySelector('.mmc-toast-close').onclick=()=>{ S.toast=null; if(toastTimer){clearTimeout(toastTimer); toastTimer=null;} toastTimerValue=null; render(); };
+    body.appendChild(toastEl);
+  }
   if(S.error) body.appendChild(el(`<div class="mmc-toast">${esc(S.error)}</div>`));
   if(S.loading){ body.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">✏️</div>Loading…</div>')); }
   else if(!configured){ /* error already shown above */ }
@@ -2445,10 +2468,11 @@ function renderTeacherLiveGame(){
           <div><h3 style="text-transform:capitalize;">${esc(room.level)} — Live!</h3><div class="meta">${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} · Room: <code class="mmc-code">${esc(room.id.slice(0,6))}</code></div></div>
           <div id="mmc-live-timer" style="font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:700;color:var(--purple-deep);">${room.startedAt? formatMMSS(liveTimeLeft(room)) : 'Starting…'}</div>
         </div>
-        <button class="mmc-btn danger sm" id="mmc-live-end" style="margin-top:8px;">End now</button>
+        <button class="mmc-btn danger" id="mmc-live-end" style="margin-top:10px;width:100%;font-size:16px;padding:12px;">⏹ End Game Now</button>
       </div>
     `);
     head.querySelector('#mmc-live-end').onclick=async ()=>{
+      if(!confirm('End the live game now for everyone? This freezes the final standings.')) return;
       try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended'}); }catch(e){ S.toast='Could not end — check your connection.'; render(); }
     };
     wrap.appendChild(head);
