@@ -2325,6 +2325,10 @@ function renderQuizTaking(week){
     function doCheck(){ if(st.checked) return; st.checked=true; st.correct=gradeQuestion(q, st.given); render(); }
 
     if(q.inputType==='choice'){
+      if(q.renderFractionChoices && q.givenNum!=null){
+        const givenRow=el(`<div class="mmc-frac-eq" style="margin-bottom:14px;">${fracHTML(q.givenNum, q.givenDen)}</div>`);
+        qbox.appendChild(givenRow);
+      }
       const choiceRow=el('<div class="mmc-choices"></div>');
       (q.choices||[]).forEach(c=>{
         const label = q.renderFractionChoices ? fracChoiceHTML(c) : esc(c);
