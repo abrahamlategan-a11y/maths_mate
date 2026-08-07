@@ -372,7 +372,7 @@
   }
   #mmc.mmc-pro .mmc-classpick select:hover { border-color:var(--pro-mute); }
   #mmc.mmc-pro .mmc-stu {
-    display:flex; align-items:center; gap:12px; padding:11px 0;
+    display:flex; align-items:center; gap:10px; padding:11px 0;
     border-bottom:1px solid var(--pro-soft); flex-wrap:wrap;
   }
   #mmc.mmc-pro .mmc-stu:last-child { border-bottom:0; }
@@ -384,11 +384,26 @@
     font-family:'IBM Plex Mono',monospace; font-size:12.5px; font-weight:500;
     background:var(--pro-wash); border:1px solid var(--pro-line); border-radius:4px;
     padding:3px 8px; color:var(--slate); white-space:nowrap;
+    width:110px; overflow:hidden; text-overflow:ellipsis; flex-shrink:0;
   }
+  #mmc.mmc-pro .mmc-stu-head {
+    display:flex; align-items:center; gap:10px; padding:0 0 8px;
+    border-bottom:1px solid var(--pro-line); margin-top:14px; flex-wrap:wrap;
+  }
+  #mmc.mmc-pro .mmc-stu-head span {
+    font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--pro-mute);
+  }
+  #mmc.mmc-pro .mmc-stu-head .h-name { flex:1; min-width:120px; }
+  #mmc.mmc-pro .mmc-stu-head .h-user, #mmc.mmc-pro .mmc-stu-head .h-pass { width:110px; flex-shrink:0; }
+  #mmc.mmc-pro .mmc-stu-head .h-cls { width:104px; flex-shrink:0; }
+  #mmc.mmc-pro .mmc-stu-head .h-grp { width:120px; flex-shrink:0; }
+  #mmc.mmc-pro .mmc-stu-actions select[data-act="class"] { width:104px; }
+  #mmc.mmc-pro .mmc-stu-actions select[data-act="group"] { width:120px; }
   #mmc.mmc-pro .mmc-stu-pass.none {
     background:transparent; border-style:dashed; color:var(--pro-mute);
   }
-  #mmc.mmc-pro .mmc-stu-actions { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  #mmc.mmc-pro .mmc-stu-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
   #mmc.mmc-pro .mmc-stu-actions select {
     font-family:'Nunito Sans',sans-serif; font-size:12.5px; font-weight:600; padding:5px 8px;
     border:1px solid var(--pro-line); border-radius:6px; background:var(--paper); color:var(--ink);
@@ -4073,6 +4088,13 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
       generateLoginCardsPDF(withPasswords, 'mmc-manage-pdf', 'Download Login Cards PDF');
     };
     list.appendChild(downloadRow);
+    list.appendChild(el(`<div class="mmc-stu-head">
+      <span class="h-name">Student</span>
+      <span class="h-user">Username</span>
+      <span class="h-pass">Password</span>
+      <span class="h-cls">${S.classes.length>1?'Class':''}</span>
+      <span class="h-grp">Ability group</span>
+    </div>`));
     const ul=el('<div></div>');
     existing.sort((a,b)=>(a[1].displayName||'').localeCompare(b[1].displayName||'')).forEach(([uid,p])=>{
       const row=el(`<div class="mmc-stu">
