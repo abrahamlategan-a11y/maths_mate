@@ -1872,9 +1872,9 @@ async function generateLoginCardsPDF(students, btnId, idleLabel){
     setBtnState(idleLabel, false); render(); return;
   }
   const siteUrl = window.location.origin + window.location.pathname;
-  let qrDataUrl;
+  let qrDataUrl = null;
   try{ qrDataUrl = await window.QRCode.toDataURL(siteUrl, {width:300, margin:1}); }
-  catch(e){ S.toast='Could not generate the QR code.'; setBtnState(idleLabel, false); render(); return; }
+  catch(e){ console.warn('QR code generation failed — continuing without it:', e); }
 
   try{
     const { jsPDF } = window.jspdf;
@@ -1896,9 +1896,11 @@ async function generateLoginCardsPDF(students, btnId, idleLabel){
       doc.setTextColor(20,20,20); doc.setFont('helvetica','bold'); doc.text(String(s.username), x+28, y+25);
       doc.setFont('helvetica','normal'); doc.setTextColor(110,110,110); doc.text('Password:', x+5, y+32);
       doc.setTextColor(20,20,20); doc.setFont('helvetica','bold'); doc.text(String(s.password), x+28, y+32);
-      doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(130,130,130);
-      doc.text('Scan to open Maths Mate', x+5, y+cardH-6);
-      doc.addImage(qrDataUrl, 'PNG', x+cardW-24, y+cardH-24, 19, 19);
+      if(qrDataUrl){
+        doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(130,130,130);
+        doc.text('Scan to open Maths Mate', x+5, y+cardH-6);
+        doc.addImage(qrDataUrl, 'PNG', x+cardW-24, y+cardH-24, 19, 19);
+      }
     });
     doc.save('maths-mate-login-cards.pdf');
   }catch(e){
@@ -3075,7 +3077,7 @@ function renderStudentsTab(){
     const banner=el(`
       <div class="mmc-card" style="background:#FFF4E5;border-color:#E85C0A;margin-bottom:14px;">
         <h3>New password for ${esc(r.displayName)}</h3>
-        <div class="meta" style="color:var(--incorrect);font-weight:700;">Save or write this down now — it can't be shown again after you leave this page.</div>
+        <div class="meta">You can find this again anytime in Student Management below.</div>
         <div class="mmc-row" style="gap:16px;margin-top:6px;">
           <div><div class="label2">Username</div><code class="mmc-code">${esc(r.username)}</code></div>
           <div><div class="label2">New password</div><code class="mmc-code">${esc(r.password)}</code></div>
@@ -3097,7 +3099,7 @@ function renderStudentsTab(){
     const card=el(`
       <div class="mmc-card">
         <h3>Accounts created ✓</h3>
-        <div class="meta" style="color:var(--incorrect);font-weight:700;">Save or print this now — passwords can never be shown again after you leave this page.</div>
+        <div class="meta">You can find these again anytime in Student Management below.</div>
         <div class="mmc-ledger-wrap"><table class="mmc-ledger"><thead><tr><th>Name</th><th>Username</th><th>Password</th><th>Status</th></tr></thead>
           <tbody>${S.bulkResults.map(r=>`<tr><td>${esc(r.name)}</td><td><code class="mmc-code">${esc(r.username)}</code></td><td><code class="mmc-code">${esc(r.password||'—')}</code></td><td>${r.status==='ok'?'✓':'✗ '+esc(r.error||'failed')}</td></tr>`).join('')}</tbody>
         </table></div>
@@ -3189,7 +3191,7 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
   const existing = Object.entries(S.profiles).filter(([uid,p])=>p.username && (S.showAllClasses || !p.classId || p.classId===S.currentClassId));
   if(existing.length){
     const list=el('<div class="mmc-card"><h3>Student Management</h3><div class="meta">Passwords shown below reflect whatever is currently set — use "Reset Password" to issue a new one if needed.</div></div>');
-    const withPasswords = existing.filter(([uid,p])=>p.currentPassword).map(([uid,p])=>({name:p.displayName, username:p.username, password:p.currentPassword}));
+    const withPasswords = existing.filter(([uid,p])=>p.currentPassword).map(([uid,p])=>({name:p.displayName, username:p.username, password:p.currentPassword, status:'ok'}));
     const missingCount = existing.length - withPasswords.length;
     const downloadRow=el(`<div class="mmc-row" style="margin-top:10px;">
       <button class="mmc-btn gold sm" id="mmc-manage-csv">Download logins CSV</button>
