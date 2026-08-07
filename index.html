@@ -2797,6 +2797,7 @@ async function resetStudentPassword(uid, displayName, btnEl){
     const call = httpsCallable(functions, 'resetStudentPassword');
     const res = await call({ uid });
     S.resetPasswordResult = { displayName: (res.data&&res.data.displayName)||displayName, username: res.data&&res.data.username, password: res.data&&res.data.password };
+    if(S.profiles[uid]) S.profiles[uid].currentPassword = res.data&&res.data.password;
   }catch(e){
     S.toast = 'Could not reset password: '+(e.message||'unknown error')+' — make sure the Cloud Function is deployed.';
   }
@@ -2919,7 +2920,7 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
         try{
           const cred=await createUserWithEmailAndPassword(auth,email,password);
           await updateProfile(cred.user,{displayName:fullName});
-          await setDoc(doc(db,'profiles',cred.user.uid),{displayName:fullName, username, email, createdByTeacher:true, teacherUid:S.user.uid});
+          await setDoc(doc(db,'profiles',cred.user.uid),{displayName:fullName, username, email, createdByTeacher:true, teacherUid:S.user.uid, currentPassword:password});
           await signInWithEmailAndPassword(auth,teacherEmail,teacherPass);
           S.bulkResults.push({name:fullName, username, password, status:'ok'});
           done=true;
@@ -2944,13 +2945,14 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
 
   const existing = Object.entries(S.profiles).filter(([uid,p])=>p.username);
   if(existing.length){
-    const list=el('<div class="mmc-card"><h3>Existing student logins</h3><div class="meta">Passwords can\'t be shown again — use "Reset Password" below if a student loses theirs. Group labels let you assign differentiated tasks below.</div></div>');
+    const list=el('<div class="mmc-card"><h3>Existing student logins</h3><div class="meta">Passwords shown below reflect whatever is currently set — use "Reset Password" to issue a new one if needed.</div></div>');
     const ul=el('<div></div>');
     existing.sort((a,b)=>(a[1].displayName||'').localeCompare(b[1].displayName||'')).forEach(([uid,p])=>{
       const row=el(`<div class="mmc-row" style="justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--paper-line);flex-wrap:wrap;">
         <div>${esc(p.displayName)}</div>
         <div class="mmc-row" style="gap:8px;align-items:center;">
           <code class="mmc-code">${esc(p.username)}</code>
+          <code class="mmc-code" style="background:#FFF4E5;border-color:#E85C0A;">${p.currentPassword ? esc(p.currentPassword) : '— unknown (reset to set)'}</code>
           <select data-act="group" style="font-size:12px;padding:4px 8px;">
             <option value="">Unassigned</option>
             ${STUDENT_GROUPS.map(g=>`<option value="${g.key}" ${p.group===g.key?'selected':''}>${g.emoji} ${g.label}</option>`).join('')}
