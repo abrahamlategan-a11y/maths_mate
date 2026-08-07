@@ -1366,6 +1366,13 @@ const HORSE_COLOR_FILTERS = {
   gold: 'hue-rotate(35deg) saturate(2.2) brightness(1.25)',
 };
 const HORSE_HAT_EMOJI = { none:'', cap:'🧢', crown:'👑', party:'🎉', wizard:'🧙' };
+// ---------- Class groups (Support / Mainstream / Extension) for differentiation ----------
+const STUDENT_GROUPS = [
+  { key:'support', label:'Support', emoji:'🌱' },
+  { key:'mainstream', label:'Mainstream', emoji:'📘' },
+  { key:'extension', label:'Extension', emoji:'🚀' },
+];
+function groupLabel(key){ const g=STUDENT_GROUPS.find(x=>x.key===key); return g? `${g.emoji} ${g.label}` : 'Unassigned'; }
 const BADGE_TIERS = {
   rookie: { key:'rookie', label:'Rookie', emoji:'🐴', colors:['default'], hats:['none'], nickname:false },
   upandcomer: { key:'upandcomer', label:'Up and Comer', emoji:'🌟', colors:['default','black','white'], hats:['none','cap'], nickname:false },
@@ -1727,6 +1734,7 @@ const S = {
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
+  quickDeployDone:null,
   genForm:{ label:'', difficulty:'easy', strategy:'random' },
   activeWeekId:null, quiz:{}, toast:null,
   bulkCreating:false, bulkProgress:null, bulkResults:null, bulkNamesText:'', bulkPassword:'',
@@ -2044,6 +2052,46 @@ function renderTeacher(){
 
 function renderTeacherWeeks(){
   const wrap=el('<div></div>');
+
+  if(S.quickDeployDone){
+    const banner=el(`<div class="mmc-card" style="background:#E7F9EE;border-color:#2E9E4F;margin-bottom:14px;">
+      <div class="mmc-row" style="justify-content:space-between;align-items:center;">
+        <div><h3 style="margin:0;">✅ "${esc(S.quickDeployDone)}" deployed instantly</h3>
+          <div class="meta">Support got Easy, Mainstream got Medium, Extension got Hard — no review needed, already live for students.</div></div>
+        <button class="mmc-btn ghost sm" id="mmc-quick-dismiss">Dismiss</button>
+      </div>
+    </div>`);
+    banner.querySelector('#mmc-quick-dismiss').onclick=()=>{ S.quickDeployDone=null; render(); };
+    wrap.appendChild(banner);
+  }
+
+  const quickForm=el(`
+    <div class="mmc-card" style="border-color:var(--purple);background:#F5F1FF;">
+      <h3>🏃 I'm in a rush</h3>
+      <div class="meta">One click deploys 3 versions of the same week straight away — no review step. Support students automatically get Easy, Mainstream get Medium, Extension get Hard. Unassigned students default to Mainstream.</div>
+      <div class="mmc-row" style="align-items:flex-end;">
+        <div class="mmc-field" style="flex:2;min-width:160px;"><label>Week label</label>
+          <input type="text" id="mmc-quick-label" placeholder="e.g. Week 6"></div>
+        <button class="mmc-btn gold" id="mmc-quick-go">⚡ Quick deploy to whole class</button>
+      </div>
+    </div>
+  `);
+  quickForm.querySelector('#mmc-quick-go').onclick=async ()=>{
+    const btn=quickForm.querySelector('#mmc-quick-go');
+    const label=quickForm.querySelector('#mmc-quick-label').value.trim() || `Week ${S.weeks.filter(w=>w.status!=='archived').length+1}`;
+    btn.disabled=true; btn.textContent='Deploying…';
+    try{
+      const pairs=[['support','easy'],['mainstream','medium'],['extension','hard']];
+      for(const [group,difficulty] of pairs){
+        await addDoc(collection(db,'weeks'), { label, difficulty, status:'published', createdAt:serverTimestamp(),
+          teacherUid:S.user.uid, questions:generateWeekQuestions(difficulty,'random'), targetGroups:[group] });
+      }
+      S.quickDeployDone=label;
+    }catch(e){ S.toast='Could not deploy — check your connection.'; }
+    render();
+  };
+  wrap.appendChild(quickForm);
+
   const form=el(`
     <div class="mmc-card">
       <h3>Create a new week</h3>
@@ -2059,15 +2107,29 @@ function renderTeacherWeeks(){
             ${WORD_PROBLEM_STRATEGIES.map(s=>`<option value="${s.key}" ${S.genForm.strategy===s.key?'selected':''}>${esc(s.label)}</option>`).join('')}
           </select></div>
       </div>
+      <div class="mmc-field"><label>Who is this for?</label>
+        <div class="mmc-row" style="gap:14px;">
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:700;"><input type="checkbox" id="mmc-gen-group-all" checked> All students</label>
+          ${STUDENT_GROUPS.map(g=>`<label style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:700;"><input type="checkbox" class="mmc-gen-group-cb" value="${g.key}"> ${g.emoji} ${g.label}</label>`).join('')}
+        </div>
+      </div>
       <button class="mmc-btn gold" id="mmc-gen-btn">✨ Generate this week's 20 questions</button>
     </div>
   `);
+  const allCb=form.querySelector('#mmc-gen-group-all');
+  const groupCbs=[...form.querySelectorAll('.mmc-gen-group-cb')];
+  allCb.onchange=()=>{ if(allCb.checked) groupCbs.forEach(cb=>cb.checked=false); };
+  groupCbs.forEach(cb=>cb.onchange=()=>{
+    if(cb.checked) allCb.checked=false;
+    if(groupCbs.every(c=>!c.checked)) allCb.checked=true;
+  });
   form.querySelector('#mmc-gen-btn').onclick=async ()=>{
     const label=form.querySelector('#mmc-gen-label').value.trim() || `Week ${S.weeks.length+1}`;
     const difficulty=form.querySelector('#mmc-gen-diff').value;
     const strategy=form.querySelector('#mmc-gen-strategy').value;
+    const targetGroups = allCb.checked ? [] : groupCbs.filter(cb=>cb.checked).map(cb=>cb.value);
     const weekData={ label, difficulty, status:'draft', createdAt:serverTimestamp(), teacherUid:S.user.uid,
-      questions:generateWeekQuestions(difficulty, strategy) };
+      questions:generateWeekQuestions(difficulty, strategy), targetGroups };
     try{
       const ref=await addDoc(collection(db,'weeks'), weekData);
       S.editingDraftId=ref.id;
@@ -2211,10 +2273,12 @@ function renderWeekCard(week){
     : (live ? '<span style="color:#2E9E4F;font-size:12px;font-weight:700;">LIVE (scheduled)</span>'
       : (isScheduled ? `<span style="color:#8B5CF6;font-size:12px;font-weight:700;">⏰ SCHEDULED — ${esc(formatScheduledAt(week.scheduledAt))}</span>`
         : '<span style="color:#E85C0A;font-size:12px;font-weight:700;">DRAFT</span>'));
+  const groupText = (!week.targetGroups || week.targetGroups.length===0) ? 'All students'
+    : week.targetGroups.map(g=>groupLabel(g)).join(', ');
   const card=el(`
     <div class="mmc-card">
       <h3>${esc(week.label)} ${statusBadge}</h3>
-      <div class="meta" style="margin-bottom:10px;">${esc(week.difficulty)} · ${(week.questions||[]).length} questions</div>
+      <div class="meta" style="margin-bottom:10px;">${esc(week.difficulty)} · ${(week.questions||[]).length} questions · 👥 ${esc(groupText)}</div>
     </div>
   `);
   card.appendChild(buildWeekControlPanel(week, isEditing, 'top'));
@@ -2757,14 +2821,26 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
 
   const existing = Object.entries(S.profiles).filter(([uid,p])=>p.username);
   if(existing.length){
-    const list=el('<div class="mmc-card"><h3>Existing student logins</h3><div class="meta">Passwords can\'t be shown again — if one\'s lost, re-run that name through the form above to issue a fresh login.</div></div>');
+    const list=el('<div class="mmc-card"><h3>Existing student logins</h3><div class="meta">Passwords can\'t be shown again — if one\'s lost, re-run that name through the form above to issue a fresh login. Group labels let you assign differentiated tasks below.</div></div>');
     const ul=el('<div></div>');
     existing.sort((a,b)=>(a[1].displayName||'').localeCompare(b[1].displayName||'')).forEach(([uid,p])=>{
-      const row=el(`<div class="mmc-row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--paper-line);">
+      const row=el(`<div class="mmc-row" style="justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--paper-line);flex-wrap:wrap;">
         <div>${esc(p.displayName)}</div>
-        <div class="mmc-row" style="gap:8px;"><code class="mmc-code">${esc(p.username)}</code><button class="mmc-btn ghost sm" data-act="dash">📊 Dashboard</button></div>
+        <div class="mmc-row" style="gap:8px;align-items:center;">
+          <code class="mmc-code">${esc(p.username)}</code>
+          <select data-act="group" style="font-size:12px;padding:4px 8px;">
+            <option value="">Unassigned</option>
+            ${STUDENT_GROUPS.map(g=>`<option value="${g.key}" ${p.group===g.key?'selected':''}>${g.emoji} ${g.label}</option>`).join('')}
+          </select>
+          <button class="mmc-btn ghost sm" data-act="dash">📊 Dashboard</button>
+        </div>
       </div>`);
       row.querySelector('[data-act="dash"]').onclick=()=>{ S.viewingStudentDashboardUid=uid; render(); };
+      row.querySelector('[data-act="group"]').onchange=async (e)=>{
+        const val=e.target.value||null;
+        try{ await updateDoc(doc(db,'profiles',uid), {group:val}); }
+        catch(err){ S.toast='Could not update group — check your connection.'; render(); }
+      };
       ul.appendChild(row);
     });
     list.appendChild(ul);
@@ -2819,14 +2895,20 @@ async function deleteWeekProgress(weekId){
   if(!S.user) return;
   try{ await deleteDoc(doc(db,'weekProgress', `${S.user.uid}_${weekId}`)); }catch(e){}
 }
+function studentEffectiveGroup(){ return (S.profile && S.profile.group) || 'mainstream'; }
+function weekVisibleToMe(week){
+  if(!week.targetGroups || week.targetGroups.length===0) return true;
+  return week.targetGroups.includes(studentEffectiveGroup());
+}
 function renderWeeklyPassport(){
   const wrap=el('<div></div>');
-  if(S.weeks.length===0){
+  const myWeeks = S.weeks.filter(weekVisibleToMe);
+  if(myWeeks.length===0){
     wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">📭</div>No quizzes published yet — check back soon!</div>'));
     return wrap;
   }
   wrap.appendChild(el('<h3 style="font-family:Fredoka,sans-serif;margin:4px 0 12px;">Your maths passport</h3>'));
-  S.weeks.slice().sort((a,b)=> (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0)).forEach(week=>{
+  myWeeks.slice().sort((a,b)=> (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0)).forEach(week=>{
     const rec = S.results.find(r=>r.weekId===week.id);
     const card=el(`
       <div class="mmc-card mmc-row" style="justify-content:space-between;">
