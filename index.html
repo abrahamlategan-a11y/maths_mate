@@ -2093,7 +2093,7 @@ const S = {
   user:null, isTeacher:false, profile:null, teacherEmails:[],
   authMode:'login', authError:null, showSignup:false,
   weeks:[], results:[], profiles:{},
-  teacherTab:'home', editingDraftId:null, showArchivedWeeks:false,
+  teacherTab:'home', weeksView:'create', editingDraftId:null, showArchivedWeeks:false,
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
@@ -2748,6 +2748,17 @@ function quickDefaultLabel(){
 function renderTeacherWeeks(){
   const wrap=el('<div></div>');
 
+  const activeCount = S.weeks.filter(w=>w.status!=='archived').length;
+  const sub = S.weeksView || 'create';
+  const subtabs=el(`<div class="mmc-tabs" style="margin-bottom:14px;">
+    <button class="mmc-tab" data-wv="create">Create</button>
+    <button class="mmc-tab" data-wv="list">Your sets${activeCount?` (${activeCount})`:''}</button>
+  </div>`);
+  subtabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.wv===sub) b.classList.add('active');
+    b.onclick=()=>{ S.weeksView=b.dataset.wv; render(); }; });
+  wrap.appendChild(subtabs);
+
+  if(sub==='create'){
   if(S.quickDeployDone){
     const banner=el(`<div class="mmc-card" style="background:#E7F9EE;border-color:#2E9E4F;margin-bottom:14px;">
       <div class="mmc-row" style="justify-content:space-between;align-items:center;">
@@ -2794,6 +2805,7 @@ function renderTeacherWeeks(){
           questions:generateWeekQuestions(difficulty,'random'), targetGroups:[group], classIds });
       }
       S.quickDeployDone=label;
+      S.weeksView='list';
     }catch(e){ S.toast='Could not deploy — check your connection.'; }
     render();
   };
@@ -2835,7 +2847,7 @@ function renderTeacherWeeks(){
           <div class="mmc-row" style="align-items:flex-end;">
             <div class="mmc-field" style="flex:2;min-width:150px;margin-bottom:0;"><label>Week label</label>
               <input type="text" id="mmc-gen-label" placeholder="e.g. Week 6" value="${esc(S.genForm.label)}"></div>
-            <div class="mmc-field" style="flex:1;min-width:110px;margin-bottom:0;"><label>Difficulty</label>
+            <div class="mmc-field" id="mmc-diff-wrap" style="flex:1;min-width:110px;margin-bottom:0;"><label>Difficulty</label>
               <select id="mmc-gen-diff">${['easy','medium','hard'].map(d=>`<option value="${d}" ${S.genForm.difficulty===d?'selected':''}>${d[0].toUpperCase()+d.slice(1)}</option>`).join('')}</select></div>
             <div class="mmc-field" style="flex:2;min-width:180px;margin-bottom:0;"><label>Word problem (Q20)</label>
               <select id="mmc-gen-strategy">
@@ -2857,17 +2869,24 @@ function renderTeacherWeeks(){
   const GROUP_DIFF={support:'easy',mainstream:'medium',extension:'hard'};
   const syncDifficulty=()=>{
     const picked=groupCbs.filter(cb=>cb.checked).map(cb=>cb.value);
-    if(picked.length!==1) return;
-    const d=GROUP_DIFF[picked[0]];
     const sel=form.querySelector('#mmc-gen-diff');
-    if(d && sel) sel.value=d;
+    const box=form.querySelector('#mmc-diff-wrap');
+    if(picked.length===1 && GROUP_DIFF[picked[0]]){
+      if(sel) sel.value=GROUP_DIFF[picked[0]];
+      // Determined by the group, so showing the control would only invite a
+      // contradiction between what's picked and what's generated.
+      if(box) box.style.display='none';
+    } else {
+      if(box) box.style.display='';
+    }
   };
-  allCb.onchange=()=>{ if(allCb.checked) groupCbs.forEach(cb=>cb.checked=false); };
+  allCb.onchange=()=>{ if(allCb.checked) groupCbs.forEach(cb=>cb.checked=false); syncDifficulty(); };
   groupCbs.forEach(cb=>cb.onchange=()=>{
     if(cb.checked) allCb.checked=false;
     if(groupCbs.every(c=>!c.checked)) allCb.checked=true;
     syncDifficulty();
   });
+  syncDifficulty();
   const allClassCb=form.querySelector('#mmc-gen-class-all');
   const classCbs=[...form.querySelectorAll('.mmc-gen-class-cb')];
   if(allClassCb){
@@ -2898,15 +2917,19 @@ function renderTeacherWeeks(){
     try{
       const ref=await addDoc(collection(db,'weeks'), weekData);
       S.editingDraftId=ref.id;
+      S.weeksView='list';  // jump to the set you just made, ready to review
       S.genForm={label:'',difficulty:'easy',strategy:'random'};
     }catch(e){ S.toast='Could not save the new week — check your connection.'; }
     render();
   };
   wrap.appendChild(form);
   wrap.appendChild(quickForm);
+  return wrap;
+  }
 
+  // ---- "Your sets" sub-tab -------------------------------------------
   const archivedCount = S.weeks.filter(w=>w.status==='archived').length;
-  const toggleBtn=el(`<button class="mmc-btn ghost" style="margin-bottom:14px;">${S.showArchivedWeeks? '◀ Back to active sets' : `Archived Sets (${archivedCount})`}</button>`);
+  const toggleBtn=el(`<button class="mmc-btn ghost" style="margin-bottom:14px;">${S.showArchivedWeeks? '◀ Back to active sets' : `Archived sets (${archivedCount})`}</button>`);
   toggleBtn.onclick=()=>{ S.showArchivedWeeks=!S.showArchivedWeeks; render(); };
   wrap.appendChild(toggleBtn);
 
@@ -2917,7 +2940,8 @@ function renderTeacherWeeks(){
 
   const activeWeeks = S.weeks.filter(w=>w.status!=='archived');
   if(activeWeeks.length===0){
-    wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">🧮</div>No weeks yet — generate your first set above.</div>'));
+    const empty=el('<div class="mmc-empty">No sets yet. Create your first one from the Create tab.</div>');
+    wrap.appendChild(empty);
     return wrap;
   }
   activeWeeks.slice().sort((a,b)=> (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0)).forEach(week=> wrap.appendChild(renderWeekCard(week)));
