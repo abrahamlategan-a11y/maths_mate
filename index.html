@@ -1759,8 +1759,10 @@ function loadScriptOnce(url){
     document.head.appendChild(s);
   });
 }
-async function generateLoginCardsPDF(students){
-  const btn=document.getElementById('mmc-bulk-pdf');
+async function generateLoginCardsPDF(students, btnId, idleLabel){
+  btnId = btnId || 'mmc-bulk-pdf';
+  idleLabel = idleLabel || '🪪 Download Login Cards PDF';
+  const btn=document.getElementById(btnId);
   const setBtnState=(text,disabled)=>{ if(btn){ btn.textContent=text; btn.disabled=disabled; } };
   setBtnState('Preparing…', true);
   try{
@@ -1768,12 +1770,12 @@ async function generateLoginCardsPDF(students){
     if(!window.QRCode) await loadScriptOnce('https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js');
   }catch(e){
     S.toast='Could not load the PDF tools — check your internet connection and try again.';
-    setBtnState('🪪 Download Login Cards PDF', false); render(); return;
+    setBtnState(idleLabel, false); render(); return;
   }
   const siteUrl = window.location.origin + window.location.pathname;
   let qrDataUrl;
   try{ qrDataUrl = await window.QRCode.toDataURL(siteUrl, {width:300, margin:1}); }
-  catch(e){ S.toast='Could not generate the QR code.'; setBtnState('🪪 Download Login Cards PDF', false); render(); return; }
+  catch(e){ S.toast='Could not generate the QR code.'; setBtnState(idleLabel, false); render(); return; }
 
   try{
     const { jsPDF } = window.jspdf;
@@ -1803,7 +1805,7 @@ async function generateLoginCardsPDF(students){
   }catch(e){
     S.toast='Something went wrong building the PDF — check the browser console for details.';
   }
-  setBtnState('🪪 Download Login Cards PDF', false); render();
+  setBtnState(idleLabel, false); render();
 }
 function usernameToEmail(u){ return `${u.toLowerCase()}@${STUDENT_DOMAIN}`; }
 
@@ -2814,9 +2816,15 @@ function renderStudentsTab(){
           <div><div class="label2">Username</div><code class="mmc-code">${esc(r.username)}</code></div>
           <div><div class="label2">New password</div><code class="mmc-code">${esc(r.password)}</code></div>
         </div>
-        <button class="mmc-btn ghost sm" id="mmc-reset-dismiss" style="margin-top:10px;">Done</button>
+        <div class="mmc-row" style="margin-top:10px;">
+          <button class="mmc-btn gold sm" id="mmc-reset-pdf">🪪 Download Login Card PDF</button>
+          <button class="mmc-btn ghost sm" id="mmc-reset-dismiss">Done</button>
+        </div>
       </div>
     `);
+    banner.querySelector('#mmc-reset-pdf').onclick=()=>generateLoginCardsPDF([
+      { name:r.displayName, username:r.username, password:r.password, status:'ok' }
+    ], 'mmc-reset-pdf', '🪪 Download Login Card PDF');
     banner.querySelector('#mmc-reset-dismiss').onclick=()=>{ S.resetPasswordResult=null; render(); };
     wrap.appendChild(banner);
   }
