@@ -3189,6 +3189,26 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
   const existing = Object.entries(S.profiles).filter(([uid,p])=>p.username && (S.showAllClasses || !p.classId || p.classId===S.currentClassId));
   if(existing.length){
     const list=el('<div class="mmc-card"><h3>Student Management</h3><div class="meta">Passwords shown below reflect whatever is currently set — use "Reset Password" to issue a new one if needed.</div></div>');
+    const withPasswords = existing.filter(([uid,p])=>p.currentPassword).map(([uid,p])=>({name:p.displayName, username:p.username, password:p.currentPassword}));
+    const missingCount = existing.length - withPasswords.length;
+    const downloadRow=el(`<div class="mmc-row" style="margin-top:10px;">
+      <button class="mmc-btn gold sm" id="mmc-manage-csv">Download logins CSV</button>
+      <button class="mmc-btn gold sm" id="mmc-manage-pdf">Download Login Cards PDF</button>
+      ${missingCount>0 ? `<span class="meta" style="align-self:center;">${missingCount} student${missingCount===1?'':'s'} with no password set yet won't be included — reset their password first.</span>` : ''}
+    </div>`);
+    downloadRow.querySelector('#mmc-manage-csv').onclick=()=>{
+      if(!withPasswords.length){ S.toast='No students with a set password yet.'; render(); return; }
+      const rows=[['Name','Username','Password'], ...withPasswords.map(r=>[r.name,r.username,r.password])];
+      const csv=rows.map(r=>r.map(c=>{ const s=String(c); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }).join(',')).join('\n');
+      const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob);
+      const a=document.createElement('a'); a.href=url; a.download='student-logins.csv';
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    };
+    downloadRow.querySelector('#mmc-manage-pdf').onclick=()=>{
+      if(!withPasswords.length){ S.toast='No students with a set password yet.'; render(); return; }
+      generateLoginCardsPDF(withPasswords, 'mmc-manage-pdf', 'Download Login Cards PDF');
+    };
+    list.appendChild(downloadRow);
     const ul=el('<div></div>');
     existing.sort((a,b)=>(a[1].displayName||'').localeCompare(b[1].displayName||'')).forEach(([uid,p])=>{
       const row=el(`<div style="padding:10px 0;border-bottom:1px solid var(--paper-line);">
