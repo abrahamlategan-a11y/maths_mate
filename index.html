@@ -1981,7 +1981,9 @@ function subscribeData(){
       S.skillPracticeRecords=snap.docs.map(d=>({id:d.id,...d.data()})); render();
     }, (err)=>{ S.toast='Skill practice data error: '+err.message; render(); }));
     unsubs.push(onSnapshot(query(collection(db,'liveGames'), where('teacherUid','==',(S.profile&&S.profile.teacherUid)||'__none__')), snap=>{
-      S.liveGames=snap.docs.map(d=>({id:d.id,...d.data()})); ensureParticipantsSub(currentLiveRoom()?.id||null); render();
+      S.liveGames=snap.docs.map(d=>({id:d.id,...d.data()})); ensureParticipantsSub(currentLiveRoom()?.id||null);
+      if(S.myLive && S.myLive.answering) return; // same reasoning as the participants listener — don't interrupt active typing
+      render();
     }, (err)=>{ S.toast='Racing Ground error: '+err.message; render(); }));
   }
 }
@@ -1999,6 +2001,7 @@ function scheduleToastClear(){
   }
 }
 function render(){
+  window.__mmcRenderCount = (window.__mmcRenderCount||0)+1;
   const root=document.getElementById('mmc');
   applyTheme();
   root.innerHTML='';
@@ -2019,8 +2022,11 @@ function render(){
   root.appendChild(body);
   const ttInput=document.getElementById('mmc-tt-input');
   if(ttInput) ttInput.focus();
-  const liveInput=document.getElementById('mmc-live-input');
-  if(liveInput) liveInput.focus();
+  // Note: the Live Game race screen (renderMyLiveSession) manages its own focus and cursor
+  // position deliberately — an unconditional, unpositioned .focus() call here on every single
+  // render was fighting against that and is the real reason multi-digit answers were
+  // collapsing down to just the last digit typed (an unpositioned focus can reset or select
+  // the field's existing text in some browsers, so the next keystroke overwrites it).
 }
 
 function renderHead(){
@@ -3536,6 +3542,11 @@ function renderMyLiveSession(){
     </div>
   `);
   wrap.appendChild(head);
+  // Temporary debug readout — shows how many times this screen has rebuilt since the page
+  // loaded. Should climb very slowly while just sitting on a question (ideally not at all
+  // between your own answers). If it's climbing fast while you're mid-typing, that's the
+  // smoking gun for what's still interrupting typing — screenshot this number.
+  wrap.appendChild(el(`<div class="meta" style="text-align:center;opacity:.6;">🔧 debug — screen rebuilt ${window.__mmcRenderCount||0} times so far</div>`));
   const chase=renderChaseCallout(S.user.uid);
   if(chase) wrap.appendChild(chase);
   const qbox=el(`
