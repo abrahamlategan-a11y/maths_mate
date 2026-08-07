@@ -256,26 +256,26 @@
     min-width:0; display:block;
   }
   #mmc.mmc-pro .mmc-head-bottom > :last-child { border-right:0; padding-right:0; }
+  #mmc.mmc-pro .mmc-stat-card { display:none; }
   #mmc.mmc-pro .mmc-stat-icon { display:none; }
-  #mmc.mmc-pro .mmc-stat-label {
-    color:var(--pro-mute); font-size:11px; font-weight:700; letter-spacing:.08em;
-    text-transform:uppercase; display:block; margin-bottom:3px; white-space:nowrap;
+  #mmc.mmc-pro .mmc-title {
+    font-size:30px; font-weight:800; color:var(--ink); letter-spacing:-.035em; line-height:1;
+    text-align:left; margin:0 0 2px;
   }
+  #mmc.mmc-pro .mmc-title-plain, #mmc.mmc-pro .mmc-title-rainbow {
+    color:var(--ink); background:none; -webkit-text-fill-color:var(--ink); text-shadow:none;
+  }
+  #mmc.mmc-pro .mmc-title-rainbow { color:var(--orange); -webkit-text-fill-color:var(--orange); }
+  #mmc.mmc-pro .mmc-welcome-name { display:none; }
+  #mmc.mmc-pro .mmc-welcome-role { font-size:13px; margin-top:0; color:var(--pro-mute); }
+  #mmc.mmc-pro .mmc-avatar { display:none; }
+  #mmc.mmc-pro .mmc-welcome-card { border-right:0; padding:0; flex:0 0 auto; }
+  #mmc.mmc-pro .mmc-head-bottom { margin-top:2px; }
+  #mmc.mmc-pro .mmc-head { padding:20px 30px 16px; }
   #mmc.mmc-pro .mmc-stat-num {
     color:var(--ink) !important; font-family:'IBM Plex Mono',monospace !important; font-weight:500 !important;
-    font-size:27px !important; letter-spacing:-.04em; font-variant-numeric:tabular-nums;
-    display:block; line-height:1.05;
+    letter-spacing:-.04em; font-variant-numeric:tabular-nums; display:block; line-height:1.05;
   }
-  #mmc.mmc-pro .mmc-title { font-size:15px; font-weight:700; color:var(--pro-mute); letter-spacing:.01em; }
-  #mmc.mmc-pro .mmc-title-plain, #mmc.mmc-pro .mmc-title-rainbow {
-    color:var(--pro-mute); background:none; -webkit-text-fill-color:var(--pro-mute); text-shadow:none;
-  }
-  #mmc.mmc-pro .mmc-welcome-name {
-    color:var(--ink); font-size:22px; font-weight:700; letter-spacing:-.02em; line-height:1.2;
-  }
-  #mmc.mmc-pro .mmc-welcome-role { font-size:13px; margin-top:1px; }
-  #mmc.mmc-pro .mmc-avatar { display:none; }
-  #mmc.mmc-pro .mmc-welcome-card { border-right:0; padding-right:28px; align-items:flex-end; }
   #mmc.mmc-pro .mmc-body { background:var(--pro-wash); padding:24px 30px 34px; }
   #mmc.mmc-pro .mmc-card {
     border:1px solid var(--pro-line); border-radius:6px; box-shadow:none; padding:22px 24px; margin-bottom:16px;
@@ -2329,7 +2329,7 @@ function renderHead(){
             <div class="mmc-avatar">${esc(initials||'?')}</div>
             <div>
               <div class="mmc-welcome-name">${S.isTeacher ? `${(h=>h<12?'Morning':h<17?'Afternoon':'Evening')(new Date().getHours())}, ${esc((name||'').trim().split(/\s+/)[0])}` : `Welcome back, ${esc(name)}! 👋`}</div>
-              <div class="mmc-welcome-role">Signed in as <b>${S.isTeacher?'Teacher':'Student'}</b></div>
+              <div class="mmc-welcome-role">${S.isTeacher?`${esc(name)} · <b>Teacher</b>`:`Signed in as <b>Student</b>`}</div>
             </div>
           </div>
           ${teacherStats ? `
@@ -2476,13 +2476,14 @@ function renderTeacherHome(){
   wrap.appendChild(card);
 
   if(roster.length){
-    const delta = last7.length - prev7.length;
+    const prev24 = everything.filter(r=>{const t=ts(r); return t && (now-t)>DAY && (now-t)<=2*DAY;});
+    const delta = last24.length - prev24.length;
     const stats=el(`<div class="mmc-card">
       <div class="mmc-row" style="gap:0;align-items:stretch;">
         <div style="flex:1;min-width:120px;padding-right:20px;">
           <div class="meta" style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:3px;">Finished today</div>
           <div class="mmc-stat-num" style="font-size:27px;">${last24.length}</div>
-          ${delta!==0?`<div class="meta" style="font-size:12px;margin:2px 0 0;color:${delta>0?'#2E7D4F':'#8A6008'};font-weight:600;">${delta>0?'+':''}${delta} on last week</div>`:''}
+          ${delta!==0?`<div class="meta" style="font-size:12px;margin:2px 0 0;color:${delta>0?'#2E7D4F':'#8A6008'};font-weight:600;">${delta>0?'+':''}${delta} on yesterday</div>`:''}
         </div>
         <div style="flex:1;min-width:120px;padding:0 20px;border-left:1px solid #EEECE7;">
           <div class="meta" style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:3px;">Active this week</div>
@@ -2497,34 +2498,87 @@ function renderTeacherHome(){
     wrap.appendChild(stats);
   }
 
-  // Worth knowing — only surfaces items that are actually true right now.
+  // ---- Insight engine -------------------------------------------------
+  // Deliberately reuses computeSkillStats / pickStrengthsAndWeaknesses — the same
+  // engine behind the student dashboard — rather than recalculating alongside it.
+  // That means insights here include self-directed skillPractice (not just set
+  // results), and inherit the tuned thresholds that avoid false positives on
+  // small samples. Everything is measured against the student's own history,
+  // never ranked against classmates.
   const notes=[];
+  const nameOf=(u)=>(S.profiles[u]&&S.profiles[u].displayName)||'';
+  const practiceFor=(u)=>(S.allSkillPracticeRecords||[]).filter(r=>r.uid===u);
+
+  roster.forEach(uid=>{
+    const nm=nameOf(uid); if(!nm) return;
+    const mine=results.filter(r=>r.uid===uid);
+    if(!mine.length) return;
+    let stats;
+    try { stats=computeSkillStats(mine, S.weeks, practiceFor(uid)); } catch(e){ return; }
+
+    // Something they used to get wrong and now reliably get right. Note the
+    // thresholds account for recentAccuracy being a fixed 5-attempt window —
+    // a genuine turnaround still carries older misses inside that window, so
+    // demanding near-perfect recent accuracy would suppress the very insight
+    // this is here to surface.
+    const turned=stats.filter(sk=>sk.total>=4 && sk.trend==='improving'
+        && sk.recentAccuracy>=0.6 && sk.overallAccuracy<0.7)
+      .sort((a,b)=>(b.recentAccuracy-b.overallAccuracy)-(a.recentAccuracy-a.overallAccuracy))[0];
+    if(turned){
+      const mastered = turned.recentAccuracy>=0.85;
+      notes.push({score: mastered?130:110, k: mastered?'Finally clicked':'Turning a corner', good:true,
+        t: mastered
+          ? nm+' has cracked '+turned.title.toLowerCase()+' — '+Math.round(turned.recentAccuracy*100)+'% lately.'
+          : nm+' is getting '+turned.title.toLowerCase()+' right at last, after a long run of misses.'});
+    }
+
+    // Broader upward movement, when there's no single breakthrough to report.
+    const rising=stats.filter(sk=>sk.total>=4 && sk.trend==='improving');
+    if(rising.length>=2) notes.push({score:70, k:'On the up', good:true,
+      t:nm+' is improving across '+rising.length+' skills.'});
+
+    // A skill slipping for someone who is otherwise engaged.
+    const slipping=stats.filter(sk=>sk.total>=4 && sk.trend==='declining' && sk.recentAccuracy<0.6)
+      .sort((a,b)=>b.concernScore-a.concernScore)[0];
+    if(slipping) notes.push({score:75, k:'Slipping', good:false,
+      t:nm+' has gone backwards on '+slipping.title.toLowerCase()+' — '+Math.round(slipping.recentAccuracy*100)+'% lately.'});
+  });
+
+  // Class-wide weak spot, using the same weakness rules as the student view.
+  try {
+    const classStats=computeSkillStats(results, S.weeks, practice);
+    const cw=pickStrengthsAndWeaknesses(classStats).weaknesses[0];
+    if(cw && cw.total>=Math.max(4,roster.length)) notes.push({score:90, k:'Sticking point', good:false,
+      t:cw.title+' — the class is at '+Math.round(cw.recentAccuracy*100)+'% and it is the weakest topic going.'});
+  } catch(e){}
+
   if(afterHoursNames.length){
-    const who = afterHoursNames.length===1 ? afterHoursNames[0]
-      : afterHoursNames.length===2 ? afterHoursNames.join(' and ')
-      : `${afterHoursNames[0]} and ${afterHoursNames.length-1} others`;
-    notes.push({k:'Off their own bat', good:true,
-      t:`${who} practised outside school hours this week. Nobody set it.`});
+    notes.push({score:55+afterHoursNames.length, k:'Nobody asked them to', good:true,
+      t:afterHoursNames.length===1 ? afterHoursNames[0]+' practised after hours this week.'
+        : afterHoursNames.length+' students practised after hours this week.'});
   }
+
   const quiet = roster.filter(u=>!activeUids.has(u));
   if(quiet.length && roster.length){
-    const names = quiet.slice(0,2).map(u=>(S.profiles[u]&&S.profiles[u].displayName)||'').filter(Boolean);
-    notes.push({k:'Worth a look', good:false,
-      t:`${quiet.length} student${quiet.length===1?'':'s'} haven't practised this week${names.length?' — including '+names.join(' and '):''}.`});
+    const names = quiet.map(nameOf).filter(Boolean);
+    notes.push({score:60+quiet.length, k:'Gone quiet', good:false,
+      t: (quiet.length===1 && names.length) ? names[0]+' — nothing all week.'
+        : quiet.length+" students haven't touched it this week"+(names.length?'. '+names.slice(0,2).join(', ')+(quiet.length>2?' and others':''):'')+'.'});
   }
-  const weak = (S.weeks||[]).length ? null : null;
-  if(scored.length>=3){
-    const sorted=[...scored].sort((a,b)=>(b.score/b.total)-(a.score/a.total));
-    const top=sorted[0], nm=(S.profiles[top.uid]&&S.profiles[top.uid].displayName);
-    if(nm) notes.push({k:'Best result', good:true,
-      t:`${nm} scored ${top.score} out of ${top.total} on ${esc(top.weekLabel||'their latest set')}.`});
+
+  if(!notes.length && scored.length>=3){
+    const best=[...scored].sort((a,b)=>(b.score/b.total)-(a.score/a.total))[0];
+    const nm=nameOf(best.uid);
+    if(nm) notes.push({score:10, k:'Best this week', good:true, t:nm+' — '+best.score+' out of '+best.total+'.'});
   }
-  if(notes.length){
+
+  const show = notes.sort((a,b)=>b.score-a.score).slice(0,4);
+  if(show.length){
     const nc=el(`<div class="mmc-card">
       <div class="meta" style="font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;">Worth knowing</div>
-      ${notes.map(n=>`<div style="border-left:2px solid ${n.good?'#2E7D4F':'#FF7A1A'};padding:2px 0 2px 14px;margin-top:14px;">
-        <div class="meta" style="font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;margin-bottom:2px;">${esc(n.k)}</div>
-        <div style="font-size:15px;">${esc(n.t)}</div></div>`).join('')}
+      ${show.map(n=>`<div style="border-left:3px solid ${n.good?'#2E7D4F':'#FF7A1A'};padding:1px 0 1px 15px;margin-top:16px;">
+        <div class="meta" style="font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;margin-bottom:1px;color:${n.good?'#2E7D4F':'#8A6008'};">${esc(n.k)}</div>
+        <div style="font-size:17px;font-weight:600;letter-spacing:-.01em;">${esc(n.t)}</div></div>`).join('')}
     </div>`);
     wrap.appendChild(nc);
   }
