@@ -2144,7 +2144,7 @@ const S = {
   user:null, isTeacher:false, profile:null, teacherEmails:[],
   authMode:'login', authError:null, showSignup:false,
   weeks:[], results:[], profiles:{},
-  teacherTab:'home', weeksView:'create', studentsView:'list', editingDraftId:null, showArchivedWeeks:false,
+  teacherTab:'home', weeksView:'create', studentsView:'list', editingClasses:false, editingDraftId:null, showArchivedWeeks:false,
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
@@ -3856,20 +3856,53 @@ function renderStudentsTab(mode){
     await createClass(name, yr);
   };
   clsBtns.appendChild(newCls);
-  if(!S.showAllClasses && S.currentClassId){
-    const ren=el('<button class="mmc-btn ghost sm">Rename class</button>');
-    ren.onclick=async ()=>{
-      const cur=S.classes.find(c=>c.id===S.currentClassId);
-      const name=prompt('New name for this class:', cur? cur.name : '');
-      if(!name) return;
-      const yr=prompt('Which year level? Enter 3, 4, 5 or 6.', String(classYear(cur)));
-      if(yr===null) return;
-      await renameClass(S.currentClassId, name, yr);
-    };
-    clsBtns.appendChild(ren);
-  }
+  const editCls=el(`<button class="mmc-btn ghost sm">${S.editingClasses?'Done':'Edit classes'}</button>`);
+  editCls.onclick=()=>{ S.editingClasses=!S.editingClasses; render(); };
+  clsBtns.appendChild(editCls);
   clsBar.appendChild(clsBtns);
   wrap.appendChild(clsBar);
+
+  if(S.editingClasses){
+    const panel=el('<div class="mmc-card"><h3>Your classes</h3><div class="meta">Rename a class or change its year level. A class can only be deleted once it has no students in it.</div></div>');
+    if(!S.classes.length){
+      panel.appendChild(el('<div class="meta" style="margin-top:10px;">No classes yet.</div>'));
+    }
+    S.classes.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'')).forEach(c=>{
+      const count=Object.values(S.profiles||{}).filter(p=>p.username && p.classId===c.id).length;
+      const r=el(`<div class="mmc-stu">
+        <div class="mmc-stu-name">${esc(c.name)}</div>
+        <code class="mmc-stu-user">Year ${classYear(c)}</code>
+        <code class="mmc-stu-user">${count} student${count===1?'':'s'}</code>
+        <div class="mmc-stu-actions">
+          <button class="mmc-btn ghost sm" data-c="rename">Rename</button>
+          <button class="mmc-btn danger sm" data-c="del"${count?' disabled title="Move or delete its students first"':''}>Delete</button>
+        </div>
+      </div>`);
+      r.querySelector('[data-c="rename"]').onclick=async ()=>{
+        const name=prompt('New name for this class:', c.name||'');
+        if(!name) return;
+        const yr=prompt('Which year level? Enter 3, 4, 5 or 6.', String(classYear(c)));
+        if(yr===null) return;
+        await renameClass(c.id, name, yr);
+      };
+      const delBtn=r.querySelector('[data-c="del"]');
+      if(!count) delBtn.onclick=async ()=>{
+        if(!confirm(`Delete the class "${c.name}"? It has no students, so nothing else is affected. This can't be undone.`)) return;
+        try{
+          await deleteDoc(doc(db,'classes',c.id));
+          // Don't leave the app pointing at a class that no longer exists.
+          if(S.currentClassId===c.id){
+            const left=(S.classes||[]).filter(x=>x.id!==c.id);
+            S.currentClassId = left.length ? left[0].id : null;
+            if(!left.length) S.showAllClasses=true;
+          }
+          render();
+        }catch(e){ S.toast='Could not delete that class — check your connection.'; render(); }
+      };
+      panel.appendChild(r);
+    });
+    wrap.appendChild(panel);
+  }
 
   if(S.resetPasswordResult){
     const r=S.resetPasswordResult;
