@@ -346,6 +346,26 @@
   #mmc.mmc-pro .mmc-toast { border:1px solid var(--pro-bad); border-radius:6px; box-shadow:none; font-weight:600; }
   #mmc.mmc-pro code.mmc-code { border:1px solid var(--pro-line); background:var(--pro-wash); border-radius:4px; }
   #mmc.mmc-pro .mmc-empty { color:var(--pro-mute); font-weight:400; }
+  #mmc.mmc-pro .mmc-genstep {
+    display:flex; gap:14px; align-items:flex-start; padding:18px 0;
+    border-top:1px solid var(--pro-soft);
+  }
+  #mmc.mmc-pro .mmc-genstep:last-child { padding-bottom:2px; }
+  #mmc.mmc-pro .mmc-stepnum {
+    flex-shrink:0; width:24px; height:24px; border-radius:50%; border:1px solid var(--pro-line);
+    display:flex; align-items:center; justify-content:center; color:var(--pro-mute);
+    font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:500; margin-top:1px;
+  }
+  #mmc.mmc-pro .mmc-steplabel { font-size:16px; font-weight:700; letter-spacing:-.015em; margin-bottom:4px; }
+  #mmc.mmc-pro .mmc-pick {
+    display:flex; align-items:center; gap:7px; font-size:14px; font-weight:600; cursor:pointer;
+    color:var(--ink);
+  }
+  #mmc.mmc-pro .mmc-pick input { accent-color:var(--ink); width:15px; height:15px; }
+  #mmc.mmc-pro .mmc-quickcard {
+    background:var(--paper) !important; border:1px solid var(--pro-line) !important;
+    border-left:3px solid var(--orange) !important; border-radius:6px !important;
+  }
 </style>
 </head>
 <body>
@@ -1902,18 +1922,30 @@ async function ensureDefaultClass(){
   ensuringDefaultClass=false;
   render();
 }
-async function createClass(name){
+// Year level is stored per class so question generation can eventually scale
+// difficulty by year (3–6) rather than assuming Year 4. Existing classes have
+// no yearLevel and fall back to DEFAULT_YEAR until the teacher sets one.
+const YEAR_LEVELS=[3,4,5,6];
+const DEFAULT_YEAR=4;
+function classYear(cls){
+  const y=cls && cls.yearLevel;
+  return (YEAR_LEVELS.indexOf(+y)!==-1) ? +y : DEFAULT_YEAR;
+}
+async function createClass(name, yearLevel){
   name=(name||'').trim();
   if(!name) return;
+  const year=(YEAR_LEVELS.indexOf(+yearLevel)!==-1)? +yearLevel : DEFAULT_YEAR;
   try{
-    const ref=await addDoc(collection(db,'classes'), { name, teacherUid:S.user.uid, createdAt:serverTimestamp() });
+    const ref=await addDoc(collection(db,'classes'), { name, yearLevel:year, teacherUid:S.user.uid, createdAt:serverTimestamp() });
     S.currentClassId=ref.id;
   }catch(e){ S.toast='Could not create class — check your connection.'; render(); }
 }
-async function renameClass(classId, name){
+async function renameClass(classId, name, yearLevel){
   name=(name||'').trim();
   if(!name) return;
-  try{ await updateDoc(doc(db,'classes',classId), {name}); }
+  const patch={name};
+  if(YEAR_LEVELS.indexOf(+yearLevel)!==-1) patch.yearLevel=+yearLevel;
+  try{ await updateDoc(doc(db,'classes',classId), patch); }
   catch(e){ S.toast='Could not rename class — check your connection.'; render(); }
 }
 function currentClassLabel(){
@@ -1940,7 +1972,7 @@ function renderClassSwitcher(){
   const left=el('<div class="mmc-row" style="align-items:center;gap:8px;"></div>');
   left.appendChild(el('<span style="font-weight:700;font-size:13px;">Viewing:</span>'));
   const select=el(`<select style="font-weight:700;padding:6px 10px;">
-    ${S.classes.map(c=>`<option value="${c.id}" ${!S.showAllClasses && S.currentClassId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}
+    ${S.classes.map(c=>`<option value="${c.id}" ${!S.showAllClasses && S.currentClassId===c.id?'selected':''}>${esc(c.name)} · Year ${classYear(c)}</option>`).join('')}
     <option value="__all__" ${S.showAllClasses?'selected':''}>All classes (combined)</option>
   </select>`);
   select.onchange=(e)=>{
@@ -1953,7 +1985,10 @@ function renderClassSwitcher(){
   const newBtn=el('<button class="mmc-btn ghost sm">+ New class</button>');
   newBtn.onclick=async ()=>{
     const name=prompt('Name for the new class (e.g. "5B" or "Year 4 Green"):');
-    if(name) await createClass(name);
+    if(!name) return;
+    const yr=prompt('Which year level? Enter 3, 4, 5 or 6.', String(DEFAULT_YEAR));
+    if(yr===null) return;
+    await createClass(name, yr);
   };
   right.appendChild(newBtn);
   if(!S.showAllClasses && S.currentClassId){
@@ -1961,7 +1996,10 @@ function renderClassSwitcher(){
     renameBtn.onclick=async ()=>{
       const cur=S.classes.find(c=>c.id===S.currentClassId);
       const name=prompt('New name for this class:', cur? cur.name : '');
-      if(name) await renameClass(S.currentClassId, name);
+      if(!name) return;
+      const yr=prompt('Which year level? Enter 3, 4, 5 or 6.', String(classYear(cur)));
+      if(yr===null) return;
+      await renameClass(S.currentClassId, name, yr);
     };
     right.appendChild(renameBtn);
   }
@@ -2698,6 +2736,15 @@ function renderTeacher(){
   return wrap;
 }
 
+function quickDefaultLabel(){
+  // Prefilled so a rushed teacher can just hit Deploy, but it's a normal text
+  // field — overwrite it with "Week 6" or anything else and that wins.
+  const d=new Date();
+  const days=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return `${days[d.getDay()]} ${months[d.getMonth()]} ${d.getDate()}`;
+}
+
 function renderTeacherWeeks(){
   const wrap=el('<div></div>');
 
@@ -2714,70 +2761,112 @@ function renderTeacherWeeks(){
   }
 
   const quickForm=el(`
-    <div class="mmc-card" style="border-color:var(--purple);background:#F5F1FF;">
-      <h3>🏃 I'm in a rush</h3>
-      <div class="meta">One click deploys 3 versions of the same week straight away — no review step. Support students automatically get Easy, Mainstream get Medium, Extension get Hard. Unassigned students default to Mainstream.</div>
-      <div class="mmc-row" style="align-items:flex-end;">
-        <div class="mmc-field" style="flex:2;min-width:160px;"><label>Week label</label>
-          <input type="text" id="mmc-quick-label" placeholder="e.g. Week 6"></div>
-        <button class="mmc-btn gold" id="mmc-quick-go">⚡ Quick deploy to whole class</button>
+    <div class="mmc-card mmc-quickcard" style="border-color:var(--purple);background:#F5F1FF;">
+      <h3>In a rush?</h3>
+      <div class="meta">Pick a class and go. Every student gets questions at their own level — Support get Easy, Mainstream get Medium, Extension get Hard, and anyone unassigned gets Mainstream. Live immediately, no review step.</div>
+      <div class="mmc-row" style="align-items:flex-end;gap:14px;margin-top:12px;">
+        ${S.classes.length>1
+          ? `<div class="mmc-field" style="margin-bottom:0;"><label>Class</label>
+               <select id="mmc-quick-class" style="font-weight:600;min-width:170px;">
+                 ${S.classes.map(c=>`<option value="${c.id}" ${!S.showAllClasses && c.id===S.currentClassId?'selected':''}>${esc(c.name)}</option>`).join('')}
+                 <option value="__all__" ${S.showAllClasses?'selected':''}>Every class</option>
+               </select></div>`
+          : `<span class="meta" style="margin:0 0 9px;font-weight:600;">${esc(((S.classes||[])[0]||{}).name || 'Your class')}</span>`}
+        <div class="mmc-field" style="flex:1;min-width:180px;margin-bottom:0;"><label>Name</label>
+          <input type="text" id="mmc-quick-label" value="${esc(quickDefaultLabel())}"></div>
+        <button class="mmc-btn gold" id="mmc-quick-go">Deploy now</button>
       </div>
     </div>
   `);
   quickForm.querySelector('#mmc-quick-go').onclick=async ()=>{
     const btn=quickForm.querySelector('#mmc-quick-go');
-    const label=quickForm.querySelector('#mmc-quick-label').value.trim() || `Week ${S.weeks.filter(w=>w.status!=='archived').length+1}`;
+    const label=quickForm.querySelector('#mmc-quick-label').value.trim() || quickDefaultLabel();
+    const sel=quickForm.querySelector('#mmc-quick-class');
+    const pickedClass = sel ? sel.value : (S.currentClassId||null);
+    const classIds = (!pickedClass || pickedClass==='__all__') ? [] : [pickedClass];
+    const yearFrom = classIds.length===1 ? S.classes.find(c=>c.id===classIds[0]) : (S.classes||[])[0];
     btn.disabled=true; btn.textContent='Deploying…';
     try{
       const pairs=[['support','easy'],['mainstream','medium'],['extension','hard']];
       for(const [group,difficulty] of pairs){
         await addDoc(collection(db,'weeks'), { label, difficulty, status:'published', createdAt:serverTimestamp(),
-          teacherUid:S.user.uid, questions:generateWeekQuestions(difficulty,'random'), targetGroups:[group],
-          classIds: S.showAllClasses ? [] : (S.currentClassId? [S.currentClassId] : []) });
+          teacherUid:S.user.uid, yearLevel:classYear(yearFrom),
+          questions:generateWeekQuestions(difficulty,'random'), targetGroups:[group], classIds });
       }
       S.quickDeployDone=label;
     }catch(e){ S.toast='Could not deploy — check your connection.'; }
     render();
   };
-  wrap.appendChild(quickForm);
+  // Quick deploy is appended AFTER the main form below, so the considered path
+  // leads and the shortcut sits underneath it.
 
   const form=el(`
     <div class="mmc-card">
-      <h3>Create a new week</h3>
-      <div class="meta">Every week has the same 20 questions in the same order (place value, sequences, rounding... through to a word problem) — just the numbers change. Edit anything before you publish.</div>
-      <div class="mmc-row" style="align-items:flex-end;">
-        <div class="mmc-field" style="flex:2;min-width:160px;"><label>Week label</label>
-          <input type="text" id="mmc-gen-label" placeholder="e.g. Week 6" value="${esc(S.genForm.label)}"></div>
-        <div class="mmc-field" style="flex:1;min-width:120px;"><label>Difficulty</label>
-          <select id="mmc-gen-diff">${['easy','medium','hard'].map(d=>`<option value="${d}" ${S.genForm.difficulty===d?'selected':''}>${d[0].toUpperCase()+d.slice(1)}</option>`).join('')}</select></div>
-        <div class="mmc-field" style="flex:2;min-width:200px;"><label>Word problem strategy (Q20)</label>
-          <select id="mmc-gen-strategy">
-            <option value="random" ${S.genForm.strategy==='random'?'selected':''}>Random each time</option>
-            ${WORD_PROBLEM_STRATEGIES.map(s=>`<option value="${s.key}" ${S.genForm.strategy===s.key?'selected':''}>${esc(s.label)}</option>`).join('')}
-          </select></div>
-      </div>
-      ${S.classes.length>1 ? `
-      <div class="mmc-field"><label>Which class(es)?</label>
-        <div class="mmc-row" style="gap:14px;">
-          <label style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:700;"><input type="checkbox" id="mmc-gen-class-all" checked> All classes</label>
-          ${S.classes.map(c=>`<label style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:700;"><input type="checkbox" class="mmc-gen-class-cb" value="${c.id}" ${!S.showAllClasses && c.id===S.currentClassId?'checked':''}> ${esc(c.name)}</label>`).join('')}
-        </div>
-      </div>` : ''}
-      <div class="mmc-field"><label>Who is this for?</label>
-        <div class="mmc-row" style="gap:14px;">
-          <label style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:700;"><input type="checkbox" id="mmc-gen-group-all" checked> All students</label>
-          ${STUDENT_GROUPS.map(g=>`<label style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:700;"><input type="checkbox" class="mmc-gen-group-cb" value="${g.key}"> ${g.emoji} ${g.label}</label>`).join('')}
+      <h3>Create a practice set</h3>
+      <div class="meta">Same 20 questions in the same order every week — only the numbers change. You'll review everything before it goes live.</div>
+
+      <div class="mmc-genstep">
+        <span class="mmc-stepnum">1</span>
+        <div style="flex:1;">
+          <div class="mmc-steplabel">Which class?</div>
+          ${S.classes.length>1 ? `<div class="mmc-row" style="gap:16px;">
+            <label class="mmc-pick"><input type="checkbox" id="mmc-gen-class-all" checked> All classes</label>
+            ${S.classes.map(c=>`<label class="mmc-pick"><input type="checkbox" class="mmc-gen-class-cb" value="${c.id}" ${!S.showAllClasses && c.id===S.currentClassId?'checked':''}> ${esc(c.name)}</label>`).join('')}
+          </div>` : `<div class="meta" style="margin:0;">${esc(((S.classes||[])[0]||{}).name || 'Your class')}</div>`}
         </div>
       </div>
-      <button class="mmc-btn gold" id="mmc-gen-btn">Generate this week's 20 questions</button>
+
+      <div class="mmc-genstep">
+        <span class="mmc-stepnum">2</span>
+        <div style="flex:1;">
+          <div class="mmc-steplabel">Which group?</div>
+          <div class="meta" style="margin:0 0 8px;">Sets the difficulty automatically. Change it below if you'd rather.</div>
+          <div class="mmc-row" style="gap:16px;">
+            <label class="mmc-pick"><input type="checkbox" id="mmc-gen-group-all" checked> Everyone</label>
+            ${STUDENT_GROUPS.map(g=>`<label class="mmc-pick"><input type="checkbox" class="mmc-gen-group-cb" value="${g.key}"> ${esc(g.label)}</label>`).join('')}
+          </div>
+        </div>
+      </div>
+
+      <div class="mmc-genstep">
+        <span class="mmc-stepnum">3</span>
+        <div style="flex:1;">
+          <div class="mmc-steplabel">Name it, then generate</div>
+          <div class="mmc-row" style="align-items:flex-end;">
+            <div class="mmc-field" style="flex:2;min-width:150px;margin-bottom:0;"><label>Week label</label>
+              <input type="text" id="mmc-gen-label" placeholder="e.g. Week 6" value="${esc(S.genForm.label)}"></div>
+            <div class="mmc-field" style="flex:1;min-width:110px;margin-bottom:0;"><label>Difficulty</label>
+              <select id="mmc-gen-diff">${['easy','medium','hard'].map(d=>`<option value="${d}" ${S.genForm.difficulty===d?'selected':''}>${d[0].toUpperCase()+d.slice(1)}</option>`).join('')}</select></div>
+            <div class="mmc-field" style="flex:2;min-width:180px;margin-bottom:0;"><label>Word problem (Q20)</label>
+              <select id="mmc-gen-strategy">
+                <option value="random" ${S.genForm.strategy==='random'?'selected':''}>Random each time</option>
+                ${WORD_PROBLEM_STRATEGIES.map(s=>`<option value="${s.key}" ${S.genForm.strategy===s.key?'selected':''}>${esc(s.label)}</option>`).join('')}
+              </select></div>
+          </div>
+          <button class="mmc-btn gold" id="mmc-gen-btn" style="margin-top:14px;">Generate 20 questions</button>
+          <div class="meta" style="margin:8px 0 0;">Nothing is published yet — you'll be able to check every question, regenerate any you don't like, and either publish straight away or schedule it for later.</div>
+        </div>
+      </div>
     </div>
   `);
   const allCb=form.querySelector('#mmc-gen-group-all');
   const groupCbs=[...form.querySelectorAll('.mmc-gen-group-cb')];
+  // Picking a group sets the matching difficulty, using the same mapping as
+  // quick deploy (support→easy, mainstream→medium, extension→hard). The
+  // teacher can still override it afterwards — this only sets a sensible default.
+  const GROUP_DIFF={support:'easy',mainstream:'medium',extension:'hard'};
+  const syncDifficulty=()=>{
+    const picked=groupCbs.filter(cb=>cb.checked).map(cb=>cb.value);
+    if(picked.length!==1) return;
+    const d=GROUP_DIFF[picked[0]];
+    const sel=form.querySelector('#mmc-gen-diff');
+    if(d && sel) sel.value=d;
+  };
   allCb.onchange=()=>{ if(allCb.checked) groupCbs.forEach(cb=>cb.checked=false); };
   groupCbs.forEach(cb=>cb.onchange=()=>{
     if(cb.checked) allCb.checked=false;
     if(groupCbs.every(c=>!c.checked)) allCb.checked=true;
+    syncDifficulty();
   });
   const allClassCb=form.querySelector('#mmc-gen-class-all');
   const classCbs=[...form.querySelectorAll('.mmc-gen-class-cb')];
@@ -2797,7 +2886,14 @@ function renderTeacherWeeks(){
     const targetGroups = allCb.checked ? [] : groupCbs.filter(cb=>cb.checked).map(cb=>cb.value);
     const classIds = !allClassCb ? (S.showAllClasses ? [] : (S.currentClassId?[S.currentClassId]:[]))
       : (allClassCb.checked ? [] : classCbs.filter(cb=>cb.checked).map(cb=>cb.value));
+    // yearLevel is recorded on the set now so that when the generators become
+    // year-aware, existing sets already carry the year they were built for.
+    // Taken from the targeted class; falls back to the current class, then DEFAULT_YEAR.
+    const yearFrom = (classIds && classIds.length===1)
+      ? S.classes.find(c=>c.id===classIds[0])
+      : (S.currentClassId ? S.classes.find(c=>c.id===S.currentClassId) : (S.classes||[])[0]);
     const weekData={ label, difficulty, status:'draft', createdAt:serverTimestamp(), teacherUid:S.user.uid,
+      yearLevel:classYear(yearFrom),
       questions:generateWeekQuestions(difficulty, strategy), targetGroups, classIds };
     try{
       const ref=await addDoc(collection(db,'weeks'), weekData);
@@ -2807,6 +2903,7 @@ function renderTeacherWeeks(){
     render();
   };
   wrap.appendChild(form);
+  wrap.appendChild(quickForm);
 
   const archivedCount = S.weeks.filter(w=>w.status==='archived').length;
   const toggleBtn=el(`<button class="mmc-btn ghost" style="margin-bottom:14px;">${S.showArchivedWeeks? '◀ Back to active sets' : `Archived Sets (${archivedCount})`}</button>`);
