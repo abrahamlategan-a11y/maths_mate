@@ -222,6 +222,7 @@ import {
   getFirestore, collection, doc, addDoc, setDoc, updateDoc, deleteDoc,
   getDoc, getDocs, onSnapshot, query, where, serverTimestamp, increment
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-functions.js";
 
 // ===== PASTE YOUR FIREBASE CONFIG HERE (see SETUP-INSTRUCTIONS.md) =====
 const firebaseConfig = {
@@ -235,11 +236,12 @@ const firebaseConfig = {
 // =========================================================================
 
 const configured = firebaseConfig.apiKey !== "PASTE_ME";
-let app, auth, db;
+let app, auth, db, functions;
 if (configured) {
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
+  functions = getFunctions(app);
 }
 
 function randInt(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
@@ -1729,6 +1731,80 @@ function genUsername(first,last,taken){
   return candidate;
 }
 function genPassword(){ return pick(PASSWORD_WORDS)+randInt(10,99); }
+// ---------- Login card PDF layout (pure math — testable without the PDF/QR libraries themselves) ----------
+function computeCardLayout(n, opts){
+  opts = opts || {};
+  const pageW=opts.pageW||210, pageH=opts.pageH||297; // A4 in mm
+  const cardW=opts.cardW||85, cardH=opts.cardH||54; // close to a standard business card
+  const marginX=opts.marginX||12, marginY=opts.marginY||12;
+  const gapX=opts.gapX||6, gapY=opts.gapY||6;
+  const cols=Math.max(1, Math.floor((pageW-marginX*2+gapX)/(cardW+gapX)));
+  const rows=Math.max(1, Math.floor((pageH-marginY*2+gapY)/(cardH+gapY)));
+  const positions=[];
+  let col=0, row=0, page=0;
+  for(let i=0;i<n;i++){
+    if(row>=rows){ row=0; col=0; page++; }
+    const x=marginX+col*(cardW+gapX), y=marginY+row*(cardH+gapY);
+    positions.push({x,y,page,cardW,cardH});
+    col++;
+    if(col>=cols){ col=0; row++; }
+  }
+  return {positions, cols, rows, cardW, cardH, pageW, pageH};
+}
+function loadScriptOnce(url){
+  return new Promise((resolve,reject)=>{
+    if(document.querySelector(`script[src="${url}"]`)){ resolve(); return; }
+    const s=document.createElement('script');
+    s.src=url; s.onload=()=>resolve(); s.onerror=()=>reject(new Error('Failed to load '+url));
+    document.head.appendChild(s);
+  });
+}
+async function generateLoginCardsPDF(students){
+  const btn=document.getElementById('mmc-bulk-pdf');
+  const setBtnState=(text,disabled)=>{ if(btn){ btn.textContent=text; btn.disabled=disabled; } };
+  setBtnState('Preparing…', true);
+  try{
+    if(!window.jspdf) await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    if(!window.QRCode) await loadScriptOnce('https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js');
+  }catch(e){
+    S.toast='Could not load the PDF tools — check your internet connection and try again.';
+    setBtnState('🪪 Download Login Cards PDF', false); render(); return;
+  }
+  const siteUrl = window.location.origin + window.location.pathname;
+  let qrDataUrl;
+  try{ qrDataUrl = await window.QRCode.toDataURL(siteUrl, {width:300, margin:1}); }
+  catch(e){ S.toast='Could not generate the QR code.'; setBtnState('🪪 Download Login Cards PDF', false); render(); return; }
+
+  try{
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({unit:'mm', format:'a4'});
+    const usable = students.filter(s=>s.status==='ok');
+    const { positions, cardW, cardH } = computeCardLayout(usable.length);
+    let currentPage=0;
+    usable.forEach((s,i)=>{
+      const pos=positions[i];
+      if(pos.page>currentPage){ doc.addPage(); currentPage=pos.page; }
+      const {x,y}=pos;
+      doc.setDrawColor(190); doc.setLineWidth(0.3); doc.rect(x,y,cardW,cardH);
+      doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(30,30,30);
+      doc.text('Maths Mate Login', x+5, y+8);
+      doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(20,20,20);
+      doc.text(String(s.name).slice(0,26), x+5, y+16);
+      doc.setFontSize(9);
+      doc.setTextColor(110,110,110); doc.text('Username:', x+5, y+25);
+      doc.setTextColor(20,20,20); doc.setFont('helvetica','bold'); doc.text(String(s.username), x+28, y+25);
+      doc.setFont('helvetica','normal'); doc.setTextColor(110,110,110); doc.text('Password:', x+5, y+32);
+      doc.setTextColor(20,20,20); doc.setFont('helvetica','bold'); doc.text(String(s.password), x+28, y+32);
+      doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(130,130,130);
+      doc.text('Scan to open Maths Mate', x+5, y+cardH-6);
+      doc.addImage(qrDataUrl, 'PNG', x+cardW-24, y+cardH-24, 19, 19);
+    });
+    doc.save('maths-mate-login-cards.pdf');
+  }catch(e){
+    S.toast='Something went wrong building the PDF — check the browser console for details.';
+  }
+  setBtnState('🪪 Download Login Cards PDF', false); render();
+}
 function usernameToEmail(u){ return `${u.toLowerCase()}@${STUDENT_DOMAIN}`; }
 
 // ---------- State ----------
@@ -1741,7 +1817,7 @@ const S = {
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
-  quickDeployDone:null,
+  quickDeployDone:null, resetPasswordResult:null,
   genForm:{ label:'', difficulty:'easy', strategy:'random' },
   activeWeekId:null, quiz:{}, toast:null,
   bulkCreating:false, bulkProgress:null, bulkResults:null, bulkNamesText:'', bulkPassword:'',
@@ -2711,8 +2787,39 @@ function exportTTCSV(studentUids){
 }
 
 // ================= STUDENTS (account creation) =================
+async function resetStudentPassword(uid, displayName, btnEl){
+  if(!confirm(`Reset the password for ${displayName}? Their old password will stop working immediately.`)) return;
+  const originalText = btnEl ? btnEl.textContent : '';
+  if(btnEl){ btnEl.disabled=true; btnEl.textContent='Resetting…'; }
+  try{
+    const call = httpsCallable(functions, 'resetStudentPassword');
+    const res = await call({ uid });
+    S.resetPasswordResult = { displayName: (res.data&&res.data.displayName)||displayName, username: res.data&&res.data.username, password: res.data&&res.data.password };
+  }catch(e){
+    S.toast = 'Could not reset password: '+(e.message||'unknown error')+' — make sure the Cloud Function is deployed.';
+  }
+  if(btnEl){ btnEl.disabled=false; btnEl.textContent=originalText; }
+  render();
+}
 function renderStudentsTab(){
   const wrap=el('<div></div>');
+
+  if(S.resetPasswordResult){
+    const r=S.resetPasswordResult;
+    const banner=el(`
+      <div class="mmc-card" style="background:#FFF4E5;border-color:#E85C0A;margin-bottom:14px;">
+        <h3>🔑 New password for ${esc(r.displayName)}</h3>
+        <div class="meta" style="color:var(--incorrect);font-weight:700;">Save or write this down now — it can't be shown again after you leave this page.</div>
+        <div class="mmc-row" style="gap:16px;margin-top:6px;">
+          <div><div class="label2">Username</div><code class="mmc-code">${esc(r.username)}</code></div>
+          <div><div class="label2">New password</div><code class="mmc-code">${esc(r.password)}</code></div>
+        </div>
+        <button class="mmc-btn ghost sm" id="mmc-reset-dismiss" style="margin-top:10px;">Done</button>
+      </div>
+    `);
+    banner.querySelector('#mmc-reset-dismiss').onclick=()=>{ S.resetPasswordResult=null; render(); };
+    wrap.appendChild(banner);
+  }
 
   const migrateCard=el(`
     <div class="mmc-card">
@@ -2744,6 +2851,7 @@ function renderStudentsTab(){
         </table></div>
         <div class="mmc-row" style="margin-top:12px;">
           <button class="mmc-btn gold" id="mmc-bulk-csv">⬇ Download credentials CSV</button>
+          <button class="mmc-btn gold" id="mmc-bulk-pdf">🪪 Download Login Cards PDF</button>
           <button class="mmc-btn ghost" id="mmc-bulk-done">Done</button>
         </div>
       </div>
@@ -2755,6 +2863,7 @@ function renderStudentsTab(){
       const a=document.createElement('a'); a.href=url; a.download='student-logins.csv';
       document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
     };
+    card.querySelector('#mmc-bulk-pdf').onclick=()=>generateLoginCardsPDF(S.bulkResults);
     card.querySelector('#mmc-bulk-done').onclick=()=>{ S.bulkResults=null; S.bulkNamesText=''; render(); };
     wrap.appendChild(card);
     return wrap;
@@ -2827,7 +2936,7 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
 
   const existing = Object.entries(S.profiles).filter(([uid,p])=>p.username);
   if(existing.length){
-    const list=el('<div class="mmc-card"><h3>Existing student logins</h3><div class="meta">Passwords can\'t be shown again — if one\'s lost, re-run that name through the form above to issue a fresh login. Group labels let you assign differentiated tasks below.</div></div>');
+    const list=el('<div class="mmc-card"><h3>Existing student logins</h3><div class="meta">Passwords can\'t be shown again — use "Reset Password" below if a student loses theirs. Group labels let you assign differentiated tasks below.</div></div>');
     const ul=el('<div></div>');
     existing.sort((a,b)=>(a[1].displayName||'').localeCompare(b[1].displayName||'')).forEach(([uid,p])=>{
       const row=el(`<div class="mmc-row" style="justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--paper-line);flex-wrap:wrap;">
@@ -2839,6 +2948,7 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
             ${STUDENT_GROUPS.map(g=>`<option value="${g.key}" ${p.group===g.key?'selected':''}>${g.emoji} ${g.label}</option>`).join('')}
           </select>
           <button class="mmc-btn ghost sm" data-act="dash">📊 Dashboard</button>
+          <button class="mmc-btn ghost sm" data-act="reset">🔑 Reset Password</button>
         </div>
       </div>`);
       row.querySelector('[data-act="dash"]').onclick=()=>{ S.viewingStudentDashboardUid=uid; render(); };
@@ -2847,6 +2957,7 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
         try{ await updateDoc(doc(db,'profiles',uid), {group:val}); }
         catch(err){ S.toast='Could not update group — check your connection.'; render(); }
       };
+      row.querySelector('[data-act="reset"]').onclick=()=>resetStudentPassword(uid, p.displayName, row.querySelector('[data-act="reset"]'));
       ul.appendChild(row);
     });
     list.appendChild(ul);
