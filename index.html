@@ -1869,7 +1869,16 @@ function ensureParticipantsSub(gameId){
   const myGen = ++liveParticipantsGen;
   liveParticipantsUnsub = onSnapshot(collection(db,'liveGames',gameId,'participants'), snap=>{
     if(myGen!==liveParticipantsGen) return; // this listener has been superseded — ignore
-    S.liveParticipants=snap.docs.map(d=>({id:d.id,...d.data()})); render();
+    S.liveParticipants=snap.docs.map(d=>({id:d.id,...d.data()}));
+    // In a busy race, other students submit answers constantly — with a full class racing,
+    // that can mean several updates per second hitting every screen. A student who is
+    // actively typing their own answer must NOT have their whole screen rebuilt every time
+    // someone else answers, or typing becomes impossible no matter how well the typed value
+    // itself is preserved across renders. Their own race position still updates the instant
+    // THEY submit an answer (which re-renders normally); this just skips the re-renders that
+    // would otherwise land mid-keystroke from everyone else's activity.
+    if(S.myLive && S.myLive.answering) return;
+    render();
   }, (err)=>{
     if(myGen!==liveParticipantsGen) return; // stale/superseded listener erroring after being replaced — ignore
     S.toast='Leaderboard error: '+err.message; render();
