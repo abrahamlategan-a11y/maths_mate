@@ -216,7 +216,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
   getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-  onAuthStateChanged, signOut, updateProfile
+  onAuthStateChanged, signOut, updateProfile, sendPasswordResetEmail
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 import {
   getFirestore, collection, doc, addDoc, setDoc, updateDoc, deleteDoc,
@@ -1919,7 +1919,8 @@ const S = {
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
   quickDeployDone:null, resetPasswordResult:null,
-  classes:[], currentClassId:null, classesEnsured:false, showAllClasses:false,
+  classes:[], currentClassId:null, classesEnsured:false, showAllClasses:false, inviteTeacherResult:null,
+  allTeacherEmails:[], adminTeacherEmails:null,
   genForm:{ label:'', difficulty:'easy', strategy:'random' },
   activeWeekId:null, quiz:{}, toast:null,
   bulkCreating:false, bulkProgress:null, bulkResults:null, bulkNamesText:'', bulkPassword:'',
@@ -2068,6 +2069,12 @@ function subscribeData(){
       ensureDefaultClass();
       render();
     }, (err)=>{ S.toast='Classes error: '+err.message; render(); }));
+    unsubs.push(onSnapshot(doc(db,'config','teachers'), snap=>{
+      const data=snap.exists()? snap.data() : {};
+      S.allTeacherEmails=(data.emails||[]).map(e=>String(e).toLowerCase());
+      S.adminTeacherEmails=data.admins? data.admins.map(e=>String(e).toLowerCase()) : null;
+      render();
+    }, (err)=>{ /* not critical to app function — silent */ }));
     unsubs.push(onSnapshot(query(collection(db,'liveGames'), where('teacherUid','==',S.user.uid)), snap=>{
       S.liveGames=snap.docs.map(d=>({id:d.id,...d.data()})); ensureParticipantsSub(currentLiveRoom()?.id||null); ensureTeacherLiveTimer(); render();
     }, (err)=>{ S.toast='Racing Ground error: '+err.message; render(); }));
@@ -2968,8 +2975,100 @@ async function deleteStudentAccount(uid, displayName, btnEl){
   if(btnEl){ btnEl.disabled=false; btnEl.textContent=originalText; }
   render();
 }
+function isCurrentUserAdminTeacher(){
+  const myEmail=(S.user&&S.user.email||'').toLowerCase();
+  // If no admin list has been configured yet, every current teacher is treated as admin
+  // (matches the Cloud Function's same fallback) — until you add an "admins" array to
+  // config/teachers in the Firestore console with just your own email in it.
+  if(!S.adminTeacherEmails) return true;
+  return S.adminTeacherEmails.includes(myEmail);
+}
+async function inviteTeacherColleague(name, email, btnEl){
+  const originalText = btnEl ? btnEl.textContent : '';
+  if(btnEl){ btnEl.disabled=true; btnEl.textContent='Inviting…'; }
+  try{
+    const call = httpsCallable(functions, 'inviteTeacher');
+    const res = await call({ name, email });
+    await sendPasswordResetEmail(auth, res.data.email);
+    S.inviteTeacherResult = { name, email: res.data.email };
+  }catch(e){
+    S.toast = 'Could not invite colleague: '+(e.message||'unknown error');
+  }
+  if(btnEl){ btnEl.disabled=false; btnEl.textContent=originalText; }
+  render();
+}
+async function revokeTeacherAccess(email, btnEl){
+  if(!confirm(`Revoke ${email}'s teacher access? They'll be signed out immediately and won't be able to log back in.`)) return;
+  const originalText = btnEl ? btnEl.textContent : '';
+  if(btnEl){ btnEl.disabled=true; btnEl.textContent='Revoking…'; }
+  try{
+    const call = httpsCallable(functions, 'revokeTeacher');
+    await call({ email });
+  }catch(e){
+    S.toast = 'Could not revoke access: '+(e.message||'unknown error');
+  }
+  if(btnEl){ btnEl.disabled=false; btnEl.textContent=originalText; }
+  render();
+}
 function renderStudentsTab(){
   const wrap=el('<div></div>');
+
+  if(S.inviteTeacherResult){
+    const r=S.inviteTeacherResult;
+    const banner=el(`
+      <div class="mmc-card" style="background:#E7F9EE;border-color:#2E9E4F;margin-bottom:14px;">
+        <h3>✅ Invitation sent to ${esc(r.name||r.email)}</h3>
+        <div class="meta">An email just went to <b>${esc(r.email)}</b> with a link to set up their own password. Once they do, they'll have their own completely separate teacher account — their own classes, students, and revision sets, with no visibility into yours (and you won't see theirs).</div>
+        <button class="mmc-btn ghost sm" id="mmc-invite-dismiss" style="margin-top:10px;">Done</button>
+      </div>
+    `);
+    banner.querySelector('#mmc-invite-dismiss').onclick=()=>{ S.inviteTeacherResult=null; render(); };
+    wrap.appendChild(banner);
+  }
+
+  const inviteCard=el(`
+    <div class="mmc-card" style="margin-bottom:14px;">
+      <h3>👥 Invite a colleague as a teacher</h3>
+      <div class="meta">They get their own fully independent teacher account — completely separate classes, students, and revision sets. You'll never see their data, and they'll never see yours.</div>
+      <div class="mmc-row" style="align-items:flex-end;">
+        <div class="mmc-field" style="flex:1;min-width:160px;"><label>Their name</label>
+          <input type="text" id="mmc-invite-name" placeholder="e.g. Priya Nair"></div>
+        <div class="mmc-field" style="flex:1;min-width:200px;"><label>Their email</label>
+          <input type="email" id="mmc-invite-email" placeholder="priya@school.edu"></div>
+        <button class="mmc-btn gold" id="mmc-invite-btn">Send invite</button>
+      </div>
+    </div>
+  `);
+  inviteCard.querySelector('#mmc-invite-btn').onclick=()=>{
+    const name=inviteCard.querySelector('#mmc-invite-name').value.trim();
+    const email=inviteCard.querySelector('#mmc-invite-email').value.trim();
+    if(!email || !email.includes('@')){ S.toast='Enter a valid email first.'; render(); return; }
+    inviteTeacherColleague(name, email, inviteCard.querySelector('#mmc-invite-btn'));
+  };
+
+  const isAdmin = isCurrentUserAdminTeacher();
+  if(isAdmin){
+    wrap.appendChild(inviteCard);
+    const myEmail=(S.user&&S.user.email||'').toLowerCase();
+    const others=S.allTeacherEmails.filter(e=>e!==myEmail);
+    if(others.length>0){
+      const teachersCard=el(`
+        <div class="mmc-card" style="margin-bottom:14px;">
+          <h3>Current teachers</h3>
+          <div class="meta">You're the admin — you can revoke a colleague's access at any time. This signs them out immediately and blocks them from logging back in.</div>
+        </div>
+      `);
+      others.forEach(email=>{
+        const row=el(`<div class="mmc-row" style="justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--paper-line);">
+          <div>${esc(email)}</div>
+          <button class="mmc-btn danger sm" data-act="revoke">🚫 Revoke access</button>
+        </div>`);
+        row.querySelector('[data-act="revoke"]').onclick=()=>revokeTeacherAccess(email, row.querySelector('[data-act="revoke"]'));
+        teachersCard.appendChild(row);
+      });
+      wrap.appendChild(teachersCard);
+    }
+  }
 
   if(S.resetPasswordResult){
     const r=S.resetPasswordResult;
