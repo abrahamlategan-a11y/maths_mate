@@ -2559,7 +2559,7 @@ function renderTeacher(){
   const wrap=el('<div></div>');
   wrap.appendChild(renderClassSwitcher());
   const pendingCount = (S.pendingTeacherRequests||[]).length;
-  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-t="home">Home</button><button class="mmc-tab" data-t="ledger">Gradebook</button><button class="mmc-tab" data-t="students">Students</button><button class="mmc-tab" data-t="teachers">Teachers${pendingCount?` (${pendingCount})`:''}</button><button class="mmc-tab" data-t="weeks">Practice sets</button><button class="mmc-tab" data-t="timetable">Times Tables</button><button class="mmc-tab" data-t="live">Racing Ground</button></div>`);
+  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-t="home">Home</button><button class="mmc-tab" data-t="ledger">Gradebook</button><button class="mmc-tab" data-t="activity">Activity</button><button class="mmc-tab" data-t="students">Students</button><button class="mmc-tab" data-t="teachers">Teachers${pendingCount?` (${pendingCount})`:''}</button><button class="mmc-tab" data-t="weeks">Practice sets</button><button class="mmc-tab" data-t="live">Racing Ground</button></div>`);
   tabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.t===S.teacherTab) b.classList.add('active');
     b.onclick=()=>{ S.teacherTab=b.dataset.t; render(); }; });
   wrap.appendChild(tabs);
@@ -2567,9 +2567,10 @@ function renderTeacher(){
     S.teacherTab==='home' ? renderTeacherHome() :
     S.teacherTab==='weeks' ? renderTeacherWeeks() :
     S.teacherTab==='ledger' ? renderLedger() :
+    S.teacherTab==='activity' ? renderTeacherActivity() :
     S.teacherTab==='students' ? renderStudentsTab('students') :
     S.teacherTab==='teachers' ? renderStudentsTab('teachers') :
-    S.teacherTab==='timetable' ? renderTeacherTimetable() : renderTeacherLiveGame()
+    S.teacherTab==='timetable' ? renderLedger() : renderTeacherLiveGame()
   );
   return wrap;
 }
@@ -2902,12 +2903,13 @@ function renderLedger(){
     <button class="mmc-tab" data-gv="summary">Summary</button>
     <button class="mmc-tab" data-gv="byweek">By Week</button>
     <button class="mmc-tab" data-gv="byquestion">By Question</button>
+    <button class="mmc-tab" data-gv="timetable">Times Tables</button>
   </div>`);
   const view=S.gradebookView||'summary';
   subtabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.gv===view) b.classList.add('active');
     b.onclick=()=>{ S.gradebookView=b.dataset.gv; S.gradebookDetail=null; render(); }; });
   wrap.appendChild(subtabs);
-  wrap.appendChild(view==='summary' ? renderLedgerSummary() : view==='byweek' ? renderLedgerByWeek() : renderLedgerByQuestion());
+  wrap.appendChild(view==='summary' ? renderLedgerSummary() : view==='byweek' ? renderLedgerByWeek() : view==='timetable' ? renderTeacherTimetable() : renderLedgerByQuestion());
   return wrap;
 }
 
@@ -3217,19 +3219,91 @@ function renderTeacherTimetable(){
   tableWrap.appendChild(table);
   wrap.appendChild(tableWrap);
 
-  if(S.ttAttempts.length){
-    wrap.appendChild(el('<h3 style="font-family:Fredoka,sans-serif;margin:20px 0 8px;">Recent activity</h3>'));
-    const recentWrap=el('<div class="mmc-ledger-wrap"></div>');
-    const rTable=el('<table class="mmc-ledger"><thead><tr><th>Date</th><th>Student</th><th>Level</th><th>Score</th><th>Accuracy</th></tr></thead><tbody></tbody></table>');
-    const rBody=rTable.querySelector('tbody');
-    S.ttAttempts.slice().sort((a,b)=>(b.submittedAt?.seconds||0)-(a.submittedAt?.seconds||0)).slice(0,40).forEach(a=>{
-      const date=a.submittedAt?.seconds? new Date(a.submittedAt.seconds*1000).toLocaleString() : '—';
-      const name=(S.profiles[a.uid]&&S.profiles[a.uid].displayName)||a.uid;
-      rBody.appendChild(el(`<tr><td>${esc(date)}</td><td>${esc(name)}</td><td>${esc(a.level)}</td><td>${a.score}/${a.attempted}</td><td>${a.accuracy}%</td></tr>`));
+  return wrap;
+}
+
+function renderTeacherActivity(){
+  const wrap=el('<div></div>');
+  const uids = classFilteredStudentUids();
+  const inClass = (u)=>uids.indexOf(u)!==-1;
+  const secs = (r)=> (r && r.submittedAt && r.submittedAt.seconds) ? r.submittedAt.seconds : 0;
+
+  const feed = []
+    .concat((S.ttAttempts||[]).filter(a=>inClass(a.uid)).map(a=>({
+      uid:a.uid, t:secs(a), kind:'Times tables',
+      detail:`${esc(a.level||'')} · ${a.score}/${a.attempted} · ${a.accuracy}%` })))
+    .concat((S.results||[]).filter(r=>inClass(r.uid)).map(r=>({
+      uid:r.uid, t:secs(r), kind:'Practice set',
+      detail:`${esc(r.weekLabel||'')} · ${r.score}/${r.total}` })))
+    .concat((S.allSkillPracticeRecords||[]).filter(r=>inClass(r.uid)).map(r=>({
+      uid:r.uid, t:secs(r), kind:'Own practice',
+      detail:`${r.score}/${r.total}` })))
+    .filter(x=>x.t).sort((a,b)=>b.t-a.t);
+
+  if(!uids.length){
+    wrap.appendChild(el('<div class="mmc-empty">No students yet — add some from the Students tab.</div>'));
+    return wrap;
+  }
+
+  const now=Date.now()/1000, DAY=86400;
+  const active7=new Set(feed.filter(x=>now-x.t<=7*DAY).map(x=>x.uid));
+  const afterHours=feed.filter(x=>{
+    if(now-x.t>7*DAY) return false;
+    const d=new Date(x.t*1000), h=d.getHours(), dy=d.getDay();
+    return dy===0||dy===6||h<8||h>=16;
+  });
+  const quiet=uids.filter(u=>!active7.has(u));
+
+  wrap.appendChild(el(`<div class="mmc-card">
+    <div class="mmc-row" style="gap:0;align-items:stretch;">
+      <div style="flex:1;min-width:120px;padding-right:20px;">
+        <div class="meta" style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:3px;">Active this week</div>
+        <div class="mmc-stat-num" style="font-size:27px;">${active7.size}<span style="font-size:16px;color:#8A8880;"> / ${uids.length}</span></div>
+      </div>
+      <div style="flex:1;min-width:120px;padding:0 20px;border-left:1px solid #EEECE7;">
+        <div class="meta" style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:3px;">Practising at home</div>
+        <div class="mmc-stat-num" style="font-size:27px;">${new Set(afterHours.map(x=>x.uid)).size}</div>
+      </div>
+      <div style="flex:1;min-width:120px;padding-left:20px;border-left:1px solid #EEECE7;">
+        <div class="meta" style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:3px;">Quiet 7 days</div>
+        <div class="mmc-stat-num" style="font-size:27px;">${quiet.length}</div>
+      </div>
+    </div>
+  </div>`));
+
+  const lastSeen = {};
+  feed.forEach(x=>{ if(!lastSeen[x.uid] || x.t>lastSeen[x.uid]) lastSeen[x.uid]=x.t; });
+  const ago=(t)=>{
+    if(!t) return 'Never';
+    const d=Math.floor((now-t)/DAY);
+    return d<1?'Today':d===1?'Yesterday':`${d} days ago`;
+  };
+  const sorted=uids.slice().sort((a,b)=>(lastSeen[a]||0)-(lastSeen[b]||0));
+  wrap.appendChild(el('<h3 style="margin:20px 0 8px;">Who\'s gone quiet</h3>'));
+  const lw=el('<div class="mmc-ledger-wrap"></div>');
+  const lt=el('<table class="mmc-ledger"><thead><tr><th>Student</th><th>Last seen</th><th>Activities</th><th>Outside school hours</th></tr></thead><tbody></tbody></table>');
+  const lb=lt.querySelector('tbody');
+  sorted.forEach(u=>{
+    const mine=feed.filter(x=>x.uid===u);
+    const oh=afterHours.filter(x=>x.uid===u).length;
+    const stale=!lastSeen[u] || (now-lastSeen[u])>7*DAY;
+    lb.appendChild(el(`<tr><td>${esc((S.profiles[u]&&S.profiles[u].displayName)||u)}</td>
+      <td${stale?' style="color:#B3352F;font-weight:700;"':''}>${esc(ago(lastSeen[u]))}</td>
+      <td>${mine.length}</td><td>${oh}</td></tr>`));
+  });
+  lw.appendChild(lt); wrap.appendChild(lw);
+
+  if(feed.length){
+    wrap.appendChild(el('<h3 style="margin:20px 0 8px;">Recent activity</h3>'));
+    const rw=el('<div class="mmc-ledger-wrap"></div>');
+    const rt=el('<table class="mmc-ledger"><thead><tr><th>When</th><th>Student</th><th>What</th><th>Detail</th></tr></thead><tbody></tbody></table>');
+    const rb=rt.querySelector('tbody');
+    feed.slice(0,60).forEach(x=>{
+      rb.appendChild(el(`<tr><td>${esc(new Date(x.t*1000).toLocaleString())}</td>
+        <td>${esc((S.profiles[x.uid]&&S.profiles[x.uid].displayName)||x.uid)}</td>
+        <td>${esc(x.kind)}</td><td>${x.detail}</td></tr>`));
     });
-    rTable.appendChild(rBody);
-    recentWrap.appendChild(rTable);
-    wrap.appendChild(recentWrap);
+    rw.appendChild(rt); wrap.appendChild(rw);
   }
   return wrap;
 }
