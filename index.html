@@ -366,6 +366,11 @@
     background:var(--paper) !important; border:1px solid var(--pro-line) !important;
     border-left:3px solid var(--orange) !important; border-radius:6px !important;
   }
+  #mmc.mmc-pro .mmc-classpick select {
+    font-size:13.5px; font-weight:600; padding:6px 10px; border:1px solid var(--pro-line);
+    border-radius:6px; background:var(--paper); color:var(--ink);
+  }
+  #mmc.mmc-pro .mmc-classpick select:hover { border-color:var(--pro-mute); }
 </style>
 </head>
 <body>
@@ -1963,6 +1968,25 @@ function classFilteredStudentUids(){
     return S.showAllClasses || !p.classId || p.classId===S.currentClassId;
   });
 }
+function renderClassPicker(opts){
+  // Compact, inline replacement for the old full-width banner. Sits inside the
+  // few tabs that are genuinely class-scoped rather than above every screen.
+  opts = opts || {};
+  if(!S.classes.length) return el('<span></span>');
+  const row=el('<div class="mmc-classpick"></div>');
+  const select=el(`<select>
+    ${S.classes.map(c=>`<option value="${c.id}" ${!S.showAllClasses && S.currentClassId===c.id?'selected':''}>${esc(c.name)} · Year ${classYear(c)}</option>`).join('')}
+    ${opts.allowAll===false ? '' : `<option value="__all__" ${S.showAllClasses?'selected':''}>All classes</option>`}
+  </select>`);
+  select.onchange=(e)=>{
+    if(e.target.value==='__all__'){ S.showAllClasses=true; }
+    else { S.showAllClasses=false; S.currentClassId=e.target.value; }
+    render();
+  };
+  row.appendChild(select);
+  return row;
+}
+
 function renderClassSwitcher(){
   if(S.classes.length===0){
     return el('<div class="mmc-card" style="margin-bottom:14px;"><div class="meta">Setting up your class…</div></div>');
@@ -2718,7 +2742,8 @@ function renderTeacher(){
     return wrap;
   }
   const wrap=el('<div></div>');
-  if(S.teacherTab!=='home') wrap.appendChild(renderClassSwitcher());
+  // The old full-width "Viewing:" banner is gone — class selection now lives
+  // inline inside the tabs that actually need it (see renderClassPicker).
   const pendingCount = (S.pendingTeacherRequests||[]).length;
   const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-t="home">Home</button><button class="mmc-tab" data-t="ledger">Gradebook</button><button class="mmc-tab" data-t="activity">Activity</button><button class="mmc-tab" data-t="students">Students</button><button class="mmc-tab" data-t="teachers">Teachers${pendingCount?` (${pendingCount})`:''}</button><button class="mmc-tab" data-t="weeks">Practice sets</button><button class="mmc-tab" data-t="live">Racing Ground</button></div>`);
   tabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.t===S.teacherTab) b.classList.add('active');
@@ -3152,7 +3177,10 @@ function renderLedger(){
   const view=S.gradebookView||'summary';
   subtabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.gv===view) b.classList.add('active');
     b.onclick=()=>{ S.gradebookView=b.dataset.gv; S.gradebookDetail=null; render(); }; });
-  wrap.appendChild(subtabs);
+  const bar=el('<div class="mmc-row" style="justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;"></div>');
+  bar.appendChild(subtabs);
+  bar.appendChild(renderClassPicker());
+  wrap.appendChild(bar);
   wrap.appendChild(view==='summary' ? renderLedgerSummary() : view==='byweek' ? renderLedgerByWeek() : view==='timetable' ? renderTeacherTimetable() : renderLedgerByQuestion());
   return wrap;
 }
@@ -3468,6 +3496,9 @@ function renderTeacherTimetable(){
 
 function renderTeacherActivity(){
   const wrap=el('<div></div>');
+  const head=el('<div class="mmc-row" style="justify-content:flex-end;margin-bottom:12px;"></div>');
+  head.appendChild(renderClassPicker());
+  wrap.appendChild(head);
   const uids = classFilteredStudentUids();
   const inClass = (u)=>uids.indexOf(u)!==-1;
   const secs = (r)=> (r && r.submittedAt && r.submittedAt.seconds) ? r.submittedAt.seconds : 0;
@@ -3775,6 +3806,35 @@ function renderStudentsTab(mode){
 
   return wrap;
   }
+
+  // Class management lives here now that the global banner is gone — Students
+  // is where classes are actually populated, so it's the natural home for it.
+  const clsBar=el('<div class="mmc-row" style="justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;"></div>');
+  clsBar.appendChild(renderClassPicker());
+  const clsBtns=el('<div class="mmc-row" style="gap:8px;"></div>');
+  const newCls=el('<button class="mmc-btn ghost sm">+ New class</button>');
+  newCls.onclick=async ()=>{
+    const name=prompt('Name for the new class (e.g. "5B" or "Year 4 Green"):');
+    if(!name) return;
+    const yr=prompt('Which year level? Enter 3, 4, 5 or 6.', String(DEFAULT_YEAR));
+    if(yr===null) return;
+    await createClass(name, yr);
+  };
+  clsBtns.appendChild(newCls);
+  if(!S.showAllClasses && S.currentClassId){
+    const ren=el('<button class="mmc-btn ghost sm">Rename class</button>');
+    ren.onclick=async ()=>{
+      const cur=S.classes.find(c=>c.id===S.currentClassId);
+      const name=prompt('New name for this class:', cur? cur.name : '');
+      if(!name) return;
+      const yr=prompt('Which year level? Enter 3, 4, 5 or 6.', String(classYear(cur)));
+      if(yr===null) return;
+      await renameClass(S.currentClassId, name, yr);
+    };
+    clsBtns.appendChild(ren);
+  }
+  clsBar.appendChild(clsBtns);
+  wrap.appendChild(clsBar);
 
   if(S.resetPasswordResult){
     const r=S.resetPasswordResult;
@@ -4372,6 +4432,9 @@ function ensureTeacherLiveTimer(){
 }
 function renderTeacherLiveGame(){
   const wrap=el('<div></div>');
+  const rgHead=el('<div class="mmc-row" style="justify-content:flex-end;margin-bottom:12px;"></div>');
+  rgHead.appendChild(renderClassPicker());
+  wrap.appendChild(rgHead);
   const room=currentLiveRoom();
 
   if(!room || room.status==='ended'){
