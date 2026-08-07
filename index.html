@@ -233,7 +233,14 @@
   #mmc.mmc-pro .mmc-title-plain, #mmc.mmc-pro .mmc-title-rainbow {
     color:var(--ink); background:none; -webkit-text-fill-color:var(--ink); text-shadow:none;
   }
-  #mmc.mmc-pro .mmc-sparkle, #mmc.mmc-pro .mmc-tagline { display:none; }
+  #mmc.mmc-pro .mmc-sparkle { display:none; }
+  #mmc.mmc-pro .mmc-tagline {
+    display:block; text-align:left; color:var(--pro-mute); font-family:'Nunito Sans',sans-serif;
+    font-weight:600; font-size:13px; margin:1px 0 0; letter-spacing:.01em;
+  }
+  #mmc.mmc-pro .mmc-tagline .dot { color:var(--orange); }
+  #mmc.mmc-pro .mmc-tagline .dot.d2 { color:var(--orange); }
+  #mmc.mmc-pro .mmc-tagline .dot.d3 { color:var(--orange); }
   #mmc.mmc-pro .mmc-sub { color:var(--pro-mute); font-size:13px; }
   #mmc.mmc-pro .mmc-signout-pill {
     background:var(--paper); border:1px solid var(--pro-line); border-radius:6px; box-shadow:none;
@@ -2425,15 +2432,11 @@ function renderAuth(){
 function renderTeacherHome(){
   const wrap=el('<div></div>');
   const ts = (r)=> (r && r.submittedAt && r.submittedAt.seconds) ? r.submittedAt.seconds*1000 : null;
-  const inClass = (uid)=>{
-    if(S.showAllClasses) return true;
-    const p=S.profiles[uid]; if(!p) return false;
-    return !S.currentClassId || p.classId===S.currentClassId || !p.classId;
-  };
-  const roster = Object.keys(S.profiles||{}).filter(inClass);
-  const results = (S.results||[]).filter(r=>inClass(r.uid));
-  const tt = (S.ttAttempts||[]).filter(r=>inClass(r.uid));
-  const practice = (S.allSkillPracticeRecords||[]).filter(r=>inClass(r.uid));
+  // Home deliberately ignores the class switcher — it's the whole-teaching-load view.
+  const roster = Object.keys(S.profiles||{});
+  const results = (S.results||[]);
+  const tt = (S.ttAttempts||[]);
+  const practice = (S.allSkillPracticeRecords||[]);
   const everything = results.concat(tt, practice);
 
   const now=Date.now(), DAY=86400000;
@@ -2458,8 +2461,8 @@ function renderTeacherHome(){
 
   const greet = (h=>h<12?'Morning':h<17?'Afternoon':'Evening')(new Date().getHours());
   const first = ((S.profile&&S.profile.displayName)||'').trim().split(/\s+/)[0] || 'there';
-  const className = S.showAllClasses ? 'All classes'
-    : ((S.classes||[]).find(c=>c.id===S.currentClassId)||{}).name || '';
+  const nClasses = (S.classes||[]).length;
+  const className = nClasses>1 ? `${nClasses} classes` : (((S.classes||[])[0]||{}).name || '');
   const dateStr = new Date().toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'});
 
   let lead;
@@ -2572,7 +2575,73 @@ function renderTeacherHome(){
     if(nm) notes.push({score:10, k:'Best this week', good:true, t:nm+' — '+best.score+' out of '+best.total+'.'});
   }
 
-  const show = notes.sort((a,b)=>b.score-a.score).slice(0,4);
+  // Additional observations, so the panel is rarely thin. Each is still only
+  // added when it's actually true — the list shortens rather than inventing.
+  try {
+    const classStats=computeSkillStats(results, S.weeks, practice);
+    const sw=pickStrengthsAndWeaknesses(classStats);
+    const strong=sw.strengths[0];
+    if(strong) notes.push({score:35, k:'Nailed it', good:true,
+      t:'The class is at '+Math.round(strong.overallAccuracy*100)+'% on '+strong.title.toLowerCase()+' — safe to move on.'});
+    const untouched=classStats.filter(sk=>sk.total===0).length;
+    if(untouched>0 && untouched<20) notes.push({score:15, k:'Not covered yet', good:false,
+      t:untouched+' of the 20 topics have not been attempted at all yet.'});
+  } catch(e){}
+
+  // Best scorer, even when other insights exist (lower priority).
+  if(scored.length>=3 && !notes.some(n=>n.k==='Best this week')){
+    const best=[...scored].sort((a,b)=>(b.score/b.total)-(a.score/a.total))[0];
+    const nm=nameOf(best.uid);
+    if(nm) notes.push({score:25, k:'Best result', good:true,
+      t:nm+' — '+best.score+' out of '+best.total+' on '+(best.weekLabel||'their latest set')+'.'});
+  }
+
+  // Busiest student by volume of activity this week.
+  if(last7.length>=5){
+    const tally={};
+    last7.forEach(r=>{ tally[r.uid]=(tally[r.uid]||0)+1; });
+    const topUid=Object.keys(tally).sort((a,b)=>tally[b]-tally[a])[0];
+    const nm=nameOf(topUid);
+    if(nm && tally[topUid]>=3) notes.push({score:30, k:'Putting the work in', good:true,
+      t:nm+' has done '+tally[topUid]+' activities this week — more than anyone.'});
+  }
+
+  // Whole-class momentum, week on week.
+  if(prev7.length>0 && last7.length>0){
+    const pct=Math.round((last7.length-prev7.length)/prev7.length*100);
+    if(Math.abs(pct)>=20) notes.push({score:45, k: pct>0?'Picking up':'Easing off', good: pct>0,
+      t:'Activity is '+(pct>0?'up':'down')+' '+Math.abs(pct)+'% on last week.'});
+  }
+
+  // Students with no results at all yet — different from having gone quiet.
+  const never = roster.filter(u=>!everything.some(r=>r.uid===u));
+  if(never.length){
+    const names=never.map(nameOf).filter(Boolean);
+    notes.push({score:65, k:'Never started', good:false,
+      t: never.length===1 && names.length ? names[0]+' has never used it.'
+        : never.length+' students have never used it'+(names.length?', including '+names.slice(0,2).join(' and '):'')+'.'});
+  }
+
+  // How the most recent published set is landing — the most useful thing to
+  // know when there isn't yet much history to draw on.
+  const published=(S.weeks||[]).filter(w=>w.status!=='archived' && w.status!=='draft');
+  if(published.length && roster.length){
+    const latest=published.slice().sort((a,b)=>
+      ((b.createdAt&&b.createdAt.seconds)||0)-((a.createdAt&&a.createdAt.seconds)||0))[0];
+    const did=new Set(results.filter(r=>r.weekId===latest.id).map(r=>r.uid)).size;
+    const pct=Math.round(did/roster.length*100);
+    if(did<roster.length) notes.push({score:80, k:'Still outstanding', good:false,
+      t:(roster.length-did)+' of '+roster.length+" haven't done "+(latest.label||'the latest set')+' yet.'});
+    else notes.push({score:50, k:'All in', good:true,
+      t:'Every student has finished '+(latest.label||'the latest set')+'.'});
+  }
+
+  // Keep one of each kind so the panel doesn't fill with five near-identical
+  // per-student notes, then show the strongest five.
+  const seen={};
+  const show = notes.sort((a,b)=>b.score-a.score)
+    .filter(n=>{ if(seen[n.k]) return false; seen[n.k]=1; return true; })
+    .slice(0,5);
   if(show.length){
     const nc=el(`<div class="mmc-card">
       <div class="meta" style="font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;">Worth knowing</div>
@@ -2611,7 +2680,7 @@ function renderTeacher(){
     return wrap;
   }
   const wrap=el('<div></div>');
-  wrap.appendChild(renderClassSwitcher());
+  if(S.teacherTab!=='home') wrap.appendChild(renderClassSwitcher());
   const pendingCount = (S.pendingTeacherRequests||[]).length;
   const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-t="home">Home</button><button class="mmc-tab" data-t="ledger">Gradebook</button><button class="mmc-tab" data-t="activity">Activity</button><button class="mmc-tab" data-t="students">Students</button><button class="mmc-tab" data-t="teachers">Teachers${pendingCount?` (${pendingCount})`:''}</button><button class="mmc-tab" data-t="weeks">Practice sets</button><button class="mmc-tab" data-t="live">Racing Ground</button></div>`);
   tabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.t===S.teacherTab) b.classList.add('active');
