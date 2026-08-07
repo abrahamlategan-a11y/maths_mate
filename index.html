@@ -257,11 +257,25 @@
   }
   #mmc.mmc-pro .mmc-head-bottom > :last-child { border-right:0; padding-right:0; }
   #mmc.mmc-pro .mmc-stat-icon { display:none; }
-  #mmc.mmc-pro .mmc-stat-label { color:var(--pro-mute); font-size:12px; font-weight:600; display:block; margin-bottom:2px; }
-  #mmc.mmc-pro .mmc-stat-num {
-    color:var(--ink); font-family:'IBM Plex Mono',monospace; font-weight:500; font-size:24px;
-    letter-spacing:-.03em; font-variant-numeric:tabular-nums; display:block;
+  #mmc.mmc-pro .mmc-stat-label {
+    color:var(--pro-mute); font-size:11px; font-weight:700; letter-spacing:.08em;
+    text-transform:uppercase; display:block; margin-bottom:3px; white-space:nowrap;
   }
+  #mmc.mmc-pro .mmc-stat-num {
+    color:var(--ink) !important; font-family:'IBM Plex Mono',monospace !important; font-weight:500 !important;
+    font-size:27px !important; letter-spacing:-.04em; font-variant-numeric:tabular-nums;
+    display:block; line-height:1.05;
+  }
+  #mmc.mmc-pro .mmc-title { font-size:15px; font-weight:700; color:var(--pro-mute); letter-spacing:.01em; }
+  #mmc.mmc-pro .mmc-title-plain, #mmc.mmc-pro .mmc-title-rainbow {
+    color:var(--pro-mute); background:none; -webkit-text-fill-color:var(--pro-mute); text-shadow:none;
+  }
+  #mmc.mmc-pro .mmc-welcome-name {
+    color:var(--ink); font-size:22px; font-weight:700; letter-spacing:-.02em; line-height:1.2;
+  }
+  #mmc.mmc-pro .mmc-welcome-role { font-size:13px; margin-top:1px; }
+  #mmc.mmc-pro .mmc-avatar { display:none; }
+  #mmc.mmc-pro .mmc-welcome-card { border-right:0; padding-right:28px; align-items:flex-end; }
   #mmc.mmc-pro .mmc-body { background:var(--pro-wash); padding:24px 30px 34px; }
   #mmc.mmc-pro .mmc-card {
     border:1px solid var(--pro-line); border-radius:6px; box-shadow:none; padding:22px 24px; margin-bottom:16px;
@@ -2034,7 +2048,7 @@ const S = {
   user:null, isTeacher:false, profile:null, teacherEmails:[],
   authMode:'login', authError:null, showSignup:false,
   weeks:[], results:[], profiles:{},
-  teacherTab:'weeks', editingDraftId:null, showArchivedWeeks:false,
+  teacherTab:'home', editingDraftId:null, showArchivedWeeks:false,
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
@@ -2314,7 +2328,7 @@ function renderHead(){
           <div class="mmc-welcome-card">
             <div class="mmc-avatar">${esc(initials||'?')}</div>
             <div>
-              <div class="mmc-welcome-name">Welcome back, ${esc(name)}! 👋</div>
+              <div class="mmc-welcome-name">${S.isTeacher ? `${(h=>h<12?'Morning':h<17?'Afternoon':'Evening')(new Date().getHours())}, ${esc((name||'').trim().split(/\s+/)[0])}` : `Welcome back, ${esc(name)}! 👋`}</div>
               <div class="mmc-welcome-role">Signed in as <b>${S.isTeacher?'Teacher':'Student'}</b></div>
             </div>
           </div>
@@ -2408,6 +2422,122 @@ function renderAuth(){
 }
 
 // ================= TEACHER =================
+function renderTeacherHome(){
+  const wrap=el('<div></div>');
+  const ts = (r)=> (r && r.submittedAt && r.submittedAt.seconds) ? r.submittedAt.seconds*1000 : null;
+  const inClass = (uid)=>{
+    if(S.showAllClasses) return true;
+    const p=S.profiles[uid]; if(!p) return false;
+    return !S.currentClassId || p.classId===S.currentClassId || !p.classId;
+  };
+  const roster = Object.keys(S.profiles||{}).filter(inClass);
+  const results = (S.results||[]).filter(r=>inClass(r.uid));
+  const tt = (S.ttAttempts||[]).filter(r=>inClass(r.uid));
+  const practice = (S.allSkillPracticeRecords||[]).filter(r=>inClass(r.uid));
+  const everything = results.concat(tt, practice);
+
+  const now=Date.now(), DAY=86400000;
+  const since=(ms)=>everything.filter(r=>{const t=ts(r); return t && (now-t)<=ms;});
+  const last24 = since(DAY), last7 = since(7*DAY), prev7 = everything.filter(r=>{
+    const t=ts(r); return t && (now-t)>7*DAY && (now-t)<=14*DAY;
+  });
+
+  const activeUids = new Set(last7.map(r=>r.uid));
+  const doneRecent = results.filter(r=>{const t=ts(r); return t && (now-t)<=DAY;}).length;
+  const scored = results.filter(r=>r.total);
+  const avgPct = scored.length ? Math.round(scored.reduce((s,r)=>s+r.score/r.total,0)/scored.length*100) : null;
+
+  // "After school" = anything submitted outside 8am–4pm on a weekday, or any weekend activity.
+  const afterHours = last7.filter(r=>{
+    const t=ts(r); if(!t) return false;
+    const d=new Date(t), h=d.getHours(), day=d.getDay();
+    return day===0 || day===6 || h<8 || h>=16;
+  });
+  const afterHoursNames = [...new Set(afterHours.map(r=>r.uid))]
+    .map(u=>(S.profiles[u]&&S.profiles[u].displayName)||'').filter(Boolean);
+
+  const greet = (h=>h<12?'Morning':h<17?'Afternoon':'Evening')(new Date().getHours());
+  const first = ((S.profile&&S.profile.displayName)||'').trim().split(/\s+/)[0] || 'there';
+  const className = S.showAllClasses ? 'All classes'
+    : ((S.classes||[]).find(c=>c.id===S.currentClassId)||{}).name || '';
+  const dateStr = new Date().toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'});
+
+  let lead;
+  if(!roster.length) lead = `No students yet. Add your class list and this page starts filling up.`;
+  else if(!last24.length && !last7.length) lead = `It's been quiet — nothing recorded in the past week. Setting a fresh task usually gets things moving again.`;
+  else if(!last24.length) lead = `Nothing since yesterday, though ${activeUids.size} student${activeUids.size===1?'':'s'} practised earlier this week.`;
+  else lead = `Your students have been busy — ${last24.length} thing${last24.length===1?'':'s'} finished in the last 24 hours.`;
+
+  const card=el(`<div class="mmc-card">
+    <div class="meta" style="letter-spacing:.09em;text-transform:uppercase;font-size:11px;font-weight:700;">${esc(dateStr)}${className?' · '+esc(className):''}</div>
+    <h3 style="font-size:24px;margin-bottom:6px;">${esc(greet)}, ${esc(first)}</h3>
+    <div class="meta" style="font-size:16px;margin-bottom:0;">${esc(lead)}</div>
+  </div>`);
+  wrap.appendChild(card);
+
+  if(roster.length){
+    const delta = last7.length - prev7.length;
+    const stats=el(`<div class="mmc-card">
+      <div class="mmc-row" style="gap:0;align-items:stretch;">
+        <div style="flex:1;min-width:120px;padding-right:20px;">
+          <div class="meta" style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:3px;">Finished today</div>
+          <div class="mmc-stat-num" style="font-size:27px;">${last24.length}</div>
+          ${delta!==0?`<div class="meta" style="font-size:12px;margin:2px 0 0;color:${delta>0?'#2E7D4F':'#8A6008'};font-weight:600;">${delta>0?'+':''}${delta} on last week</div>`:''}
+        </div>
+        <div style="flex:1;min-width:120px;padding:0 20px;border-left:1px solid #EEECE7;">
+          <div class="meta" style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:3px;">Active this week</div>
+          <div class="mmc-stat-num" style="font-size:27px;">${activeUids.size}<span style="font-size:16px;color:#8A8880;"> / ${roster.length}</span></div>
+        </div>
+        <div style="flex:1;min-width:120px;padding-left:20px;border-left:1px solid #EEECE7;">
+          <div class="meta" style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:3px;">Average score</div>
+          <div class="mmc-stat-num" style="font-size:27px;">${avgPct==null?'—':avgPct+'%'}</div>
+        </div>
+      </div>
+    </div>`);
+    wrap.appendChild(stats);
+  }
+
+  // Worth knowing — only surfaces items that are actually true right now.
+  const notes=[];
+  if(afterHoursNames.length){
+    const who = afterHoursNames.length===1 ? afterHoursNames[0]
+      : afterHoursNames.length===2 ? afterHoursNames.join(' and ')
+      : `${afterHoursNames[0]} and ${afterHoursNames.length-1} others`;
+    notes.push({k:'Off their own bat', good:true,
+      t:`${who} practised outside school hours this week. Nobody set it.`});
+  }
+  const quiet = roster.filter(u=>!activeUids.has(u));
+  if(quiet.length && roster.length){
+    const names = quiet.slice(0,2).map(u=>(S.profiles[u]&&S.profiles[u].displayName)||'').filter(Boolean);
+    notes.push({k:'Worth a look', good:false,
+      t:`${quiet.length} student${quiet.length===1?'':'s'} haven't practised this week${names.length?' — including '+names.join(' and '):''}.`});
+  }
+  const weak = (S.weeks||[]).length ? null : null;
+  if(scored.length>=3){
+    const sorted=[...scored].sort((a,b)=>(b.score/b.total)-(a.score/a.total));
+    const top=sorted[0], nm=(S.profiles[top.uid]&&S.profiles[top.uid].displayName);
+    if(nm) notes.push({k:'Best result', good:true,
+      t:`${nm} scored ${top.score} out of ${top.total} on ${esc(top.weekLabel||'their latest set')}.`});
+  }
+  if(notes.length){
+    const nc=el(`<div class="mmc-card">
+      <div class="meta" style="font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;">Worth knowing</div>
+      ${notes.map(n=>`<div style="border-left:2px solid ${n.good?'#2E7D4F':'#FF7A1A'};padding:2px 0 2px 14px;margin-top:14px;">
+        <div class="meta" style="font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;margin-bottom:2px;">${esc(n.k)}</div>
+        <div style="font-size:15px;">${esc(n.t)}</div></div>`).join('')}
+    </div>`);
+    wrap.appendChild(nc);
+  }
+
+  const acts=el(`<div class="mmc-row" style="margin-top:4px;">
+    <button class="mmc-btn gold" data-go="${roster.length?'ledger':'students'}">${roster.length?'Open gradebook':'Add students'}</button>
+    <button class="mmc-btn ghost" data-go="weeks">Set a new week</button>
+  </div>`);
+  acts.querySelectorAll('[data-go]').forEach(b=>{ b.onclick=()=>{ S.teacherTab=b.dataset.go; render(); }; });
+  wrap.appendChild(acts);
+  return wrap;
+}
+
 function renderTeacher(){
   if(S.viewingStudentDashboardUid){
     const uid=S.viewingStudentDashboardUid;
@@ -2428,14 +2558,17 @@ function renderTeacher(){
   }
   const wrap=el('<div></div>');
   wrap.appendChild(renderClassSwitcher());
-  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-t="weeks">Create Skills Practice Sets</button><button class="mmc-tab" data-t="ledger">Gradebook</button><button class="mmc-tab" data-t="students">Students</button><button class="mmc-tab" data-t="timetable">Times Tables</button><button class="mmc-tab" data-t="live">Racing Ground</button></div>`);
+  const pendingCount = (S.pendingTeacherRequests||[]).length;
+  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-t="home">Home</button><button class="mmc-tab" data-t="ledger">Gradebook</button><button class="mmc-tab" data-t="students">Students</button><button class="mmc-tab" data-t="teachers">Teachers${pendingCount?` (${pendingCount})`:''}</button><button class="mmc-tab" data-t="weeks">Practice sets</button><button class="mmc-tab" data-t="timetable">Times Tables</button><button class="mmc-tab" data-t="live">Racing Ground</button></div>`);
   tabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.t===S.teacherTab) b.classList.add('active');
     b.onclick=()=>{ S.teacherTab=b.dataset.t; render(); }; });
   wrap.appendChild(tabs);
   wrap.appendChild(
+    S.teacherTab==='home' ? renderTeacherHome() :
     S.teacherTab==='weeks' ? renderTeacherWeeks() :
     S.teacherTab==='ledger' ? renderLedger() :
-    S.teacherTab==='students' ? renderStudentsTab() :
+    S.teacherTab==='students' ? renderStudentsTab('students') :
+    S.teacherTab==='teachers' ? renderStudentsTab('teachers') :
     S.teacherTab==='timetable' ? renderTeacherTimetable() : renderTeacherLiveGame()
   );
   return wrap;
@@ -3209,8 +3342,11 @@ async function denyTeacherRequest(requestId, btnEl){
   if(btnEl){ btnEl.disabled=false; btnEl.textContent=originalText; }
   render();
 }
-function renderStudentsTab(){
+function renderStudentsTab(mode){
+  mode = mode || 'students';
   const wrap=el('<div></div>');
+
+  if(mode==='teachers'){
 
   if(S.inviteTeacherResult){
     const r=S.inviteTeacherResult;
@@ -3317,6 +3453,9 @@ function renderStudentsTab(){
       });
       wrap.appendChild(directoryCard);
     }
+  }
+
+  return wrap;
   }
 
   if(S.resetPasswordResult){
