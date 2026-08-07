@@ -1799,7 +1799,7 @@ function renderClassSwitcher(){
   const wrap=el('<div class="mmc-card" style="margin-bottom:14px;"></div>');
   const row=el('<div class="mmc-row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;"></div>');
   const left=el('<div class="mmc-row" style="align-items:center;gap:8px;"></div>');
-  left.appendChild(el('<span style="font-weight:700;font-size:13px;">🏫 Viewing:</span>'));
+  left.appendChild(el('<span style="font-weight:700;font-size:13px;">Viewing:</span>'));
   const select=el(`<select style="font-weight:700;padding:6px 10px;">
     ${S.classes.map(c=>`<option value="${c.id}" ${!S.showAllClasses && S.currentClassId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}
     <option value="__all__" ${S.showAllClasses?'selected':''}>All classes (combined)</option>
@@ -1818,7 +1818,7 @@ function renderClassSwitcher(){
   };
   right.appendChild(newBtn);
   if(!S.showAllClasses && S.currentClassId){
-    const renameBtn=el('<button class="mmc-btn ghost sm">✏️ Rename</button>');
+    const renameBtn=el('<button class="mmc-btn ghost sm">Rename</button>');
     renameBtn.onclick=async ()=>{
       const cur=S.classes.find(c=>c.id===S.currentClassId);
       const name=prompt('New name for this class:', cur? cur.name : '');
@@ -1860,7 +1860,7 @@ function loadScriptOnce(url){
 }
 async function generateLoginCardsPDF(students, btnId, idleLabel){
   btnId = btnId || 'mmc-bulk-pdf';
-  idleLabel = idleLabel || '🪪 Download Login Cards PDF';
+  idleLabel = idleLabel || 'Download Login Cards PDF';
   const btn=document.getElementById(btnId);
   const setBtnState=(text,disabled)=>{ if(btn){ btn.textContent=text; btn.disabled=disabled; } };
   setBtnState('Preparing…', true);
@@ -2256,7 +2256,7 @@ function renderTeacher(){
   }
   const wrap=el('<div></div>');
   wrap.appendChild(renderClassSwitcher());
-  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-t="weeks">Skills Practice</button><button class="mmc-tab" data-t="ledger">Gradebook</button><button class="mmc-tab" data-t="students">Students</button><button class="mmc-tab" data-t="timetable">Times Tables</button><button class="mmc-tab" data-t="live">🐎 Racing Ground</button></div>`);
+  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-t="weeks">Create Skills Practice Sets</button><button class="mmc-tab" data-t="ledger">Gradebook</button><button class="mmc-tab" data-t="students">Students</button><button class="mmc-tab" data-t="timetable">Times Tables</button><button class="mmc-tab" data-t="live">Racing Ground</button></div>`);
   tabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.t===S.teacherTab) b.classList.add('active');
     b.onclick=()=>{ S.teacherTab=b.dataset.t; render(); }; });
   wrap.appendChild(tabs);
@@ -2275,7 +2275,7 @@ function renderTeacherWeeks(){
   if(S.quickDeployDone){
     const banner=el(`<div class="mmc-card" style="background:#E7F9EE;border-color:#2E9E4F;margin-bottom:14px;">
       <div class="mmc-row" style="justify-content:space-between;align-items:center;">
-        <div><h3 style="margin:0;">✅ "${esc(S.quickDeployDone)}" deployed instantly</h3>
+        <div><h3 style="margin:0;">"${esc(S.quickDeployDone)}" deployed instantly</h3>
           <div class="meta">Support got Easy, Mainstream got Medium, Extension got Hard — no review needed, already live for students.</div></div>
         <button class="mmc-btn ghost sm" id="mmc-quick-dismiss">Dismiss</button>
       </div>
@@ -2340,7 +2340,7 @@ function renderTeacherWeeks(){
           ${STUDENT_GROUPS.map(g=>`<label style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:700;"><input type="checkbox" class="mmc-gen-group-cb" value="${g.key}"> ${g.emoji} ${g.label}</label>`).join('')}
         </div>
       </div>
-      <button class="mmc-btn gold" id="mmc-gen-btn">✨ Generate this week's 20 questions</button>
+      <button class="mmc-btn gold" id="mmc-gen-btn">Generate this week's 20 questions</button>
     </div>
   `);
   const allCb=form.querySelector('#mmc-gen-group-all');
@@ -2380,7 +2380,7 @@ function renderTeacherWeeks(){
   wrap.appendChild(form);
 
   const archivedCount = S.weeks.filter(w=>w.status==='archived').length;
-  const toggleBtn=el(`<button class="mmc-btn ghost" style="margin-bottom:14px;">${S.showArchivedWeeks? '◀ Back to active sets' : `📦 Archived Sets (${archivedCount})`}</button>`);
+  const toggleBtn=el(`<button class="mmc-btn ghost" style="margin-bottom:14px;">${S.showArchivedWeeks? '◀ Back to active sets' : `Archived Sets (${archivedCount})`}</button>`);
   toggleBtn.onclick=()=>{ S.showArchivedWeeks=!S.showArchivedWeeks; render(); };
   wrap.appendChild(toggleBtn);
 
@@ -2409,7 +2409,7 @@ function renderArchivedWeeksList(){
       <div class="mmc-card">
         <div class="mmc-row" style="justify-content:space-between;">
           <div>
-            <h3>${esc(week.label)} <span style="color:var(--ink-soft);font-size:12px;font-weight:700;">📦 ARCHIVED</span></h3>
+            <h3>${esc(week.label)} <span style="color:var(--ink-soft);font-size:12px;font-weight:700;">ARCHIVED</span></h3>
             <div class="meta">${esc(week.difficulty)} · ${(week.questions||[]).length} questions</div>
           </div>
           <div class="mmc-row">
@@ -2479,7 +2479,7 @@ function buildWeekControlPanel(week, isEditing, suffix){
     pubBtn.onclick=()=>publishWeek(week);
     btnRow.appendChild(pubBtn);
   }
-  const archiveBtn=el('<button class="mmc-btn ghost sm">📦 Archive</button>');
+  const archiveBtn=el('<button class="mmc-btn ghost sm">Archive</button>');
   archiveBtn.onclick=()=>archiveWeekAction(week);
   btnRow.appendChild(archiveBtn);
   const deleteBtn=el('<button class="mmc-btn danger sm">Delete</button>');
@@ -2518,7 +2518,7 @@ function renderWeekCard(week){
   const card=el(`
     <div class="mmc-card">
       <h3>${esc(week.label)} ${statusBadge}</h3>
-      <div class="meta" style="margin-bottom:10px;">${esc(week.difficulty)} · ${(week.questions||[]).length} questions · 👥 ${esc(groupText)}</div>
+      <div class="meta" style="margin-bottom:10px;">${esc(week.difficulty)} · ${(week.questions||[]).length} questions · ${esc(groupText)}</div>
     </div>
   `);
   card.appendChild(buildWeekControlPanel(week, isEditing, 'top'));
@@ -2701,7 +2701,7 @@ function renderLedgerSummary(){
     return !S.teacherEmails.map(e=>String(e).toLowerCase()).includes(email);
   });
 
-  const exportBtn=el('<button class="mmc-btn gold" style="margin-bottom:14px;">⬇ Export as CSV</button>');
+  const exportBtn=el('<button class="mmc-btn gold" style="margin-bottom:14px;">Export as CSV</button>');
   exportBtn.onclick=()=>exportCSV(pubWeeks, studentUids);
   wrap.appendChild(exportBtn);
 
@@ -2887,7 +2887,7 @@ function renderTeacherTimetable(){
   const wrap=el('<div></div>');
   const studentUids = classFilteredStudentUids().sort((a,b)=>(S.profiles[a].displayName||'').localeCompare(S.profiles[b].displayName||''));
 
-  const exportBtn=el('<button class="mmc-btn gold" style="margin-bottom:14px;">⬇ Export as CSV</button>');
+  const exportBtn=el('<button class="mmc-btn gold" style="margin-bottom:14px;">Export as CSV</button>');
   exportBtn.onclick=()=>exportTTCSV(studentUids);
   wrap.appendChild(exportBtn);
 
@@ -3017,7 +3017,7 @@ function renderStudentsTab(){
     const r=S.inviteTeacherResult;
     const banner=el(`
       <div class="mmc-card" style="background:#E7F9EE;border-color:#2E9E4F;margin-bottom:14px;">
-        <h3>✅ Invitation sent to ${esc(r.name||r.email)}</h3>
+        <h3>Invitation sent to ${esc(r.name||r.email)}</h3>
         <div class="meta">An email just went to <b>${esc(r.email)}</b> with a link to set up their own password. Once they do, they'll have their own completely separate teacher account — their own classes, students, and revision sets, with no visibility into yours (and you won't see theirs).</div>
         <button class="mmc-btn ghost sm" id="mmc-invite-dismiss" style="margin-top:10px;">Done</button>
       </div>
@@ -3028,7 +3028,7 @@ function renderStudentsTab(){
 
   const inviteCard=el(`
     <div class="mmc-card" style="margin-bottom:14px;">
-      <h3>👥 Invite a colleague as a teacher</h3>
+      <h3>Invite a colleague as a teacher</h3>
       <div class="meta">They get their own fully independent teacher account — completely separate classes, students, and revision sets. You'll never see their data, and they'll never see yours.</div>
       <div class="mmc-row" style="align-items:flex-end;">
         <div class="mmc-field" style="flex:1;min-width:160px;"><label>Their name</label>
@@ -3061,7 +3061,7 @@ function renderStudentsTab(){
       others.forEach(email=>{
         const row=el(`<div class="mmc-row" style="justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--paper-line);">
           <div>${esc(email)}</div>
-          <button class="mmc-btn danger sm" data-act="revoke">🚫 Revoke access</button>
+          <button class="mmc-btn danger sm" data-act="revoke">Revoke access</button>
         </div>`);
         row.querySelector('[data-act="revoke"]').onclick=()=>revokeTeacherAccess(email, row.querySelector('[data-act="revoke"]'));
         teachersCard.appendChild(row);
@@ -3074,21 +3074,21 @@ function renderStudentsTab(){
     const r=S.resetPasswordResult;
     const banner=el(`
       <div class="mmc-card" style="background:#FFF4E5;border-color:#E85C0A;margin-bottom:14px;">
-        <h3>🔑 New password for ${esc(r.displayName)}</h3>
+        <h3>New password for ${esc(r.displayName)}</h3>
         <div class="meta" style="color:var(--incorrect);font-weight:700;">Save or write this down now — it can't be shown again after you leave this page.</div>
         <div class="mmc-row" style="gap:16px;margin-top:6px;">
           <div><div class="label2">Username</div><code class="mmc-code">${esc(r.username)}</code></div>
           <div><div class="label2">New password</div><code class="mmc-code">${esc(r.password)}</code></div>
         </div>
         <div class="mmc-row" style="margin-top:10px;">
-          <button class="mmc-btn gold sm" id="mmc-reset-pdf">🪪 Download Login Card PDF</button>
+          <button class="mmc-btn gold sm" id="mmc-reset-pdf">Download Login Card PDF</button>
           <button class="mmc-btn ghost sm" id="mmc-reset-dismiss">Done</button>
         </div>
       </div>
     `);
     banner.querySelector('#mmc-reset-pdf').onclick=()=>generateLoginCardsPDF([
       { name:r.displayName, username:r.username, password:r.password, status:'ok' }
-    ], 'mmc-reset-pdf', '🪪 Download Login Card PDF');
+    ], 'mmc-reset-pdf', 'Download Login Card PDF');
     banner.querySelector('#mmc-reset-dismiss').onclick=()=>{ S.resetPasswordResult=null; render(); };
     wrap.appendChild(banner);
   }
@@ -3102,8 +3102,8 @@ function renderStudentsTab(){
           <tbody>${S.bulkResults.map(r=>`<tr><td>${esc(r.name)}</td><td><code class="mmc-code">${esc(r.username)}</code></td><td><code class="mmc-code">${esc(r.password||'—')}</code></td><td>${r.status==='ok'?'✓':'✗ '+esc(r.error||'failed')}</td></tr>`).join('')}</tbody>
         </table></div>
         <div class="mmc-row" style="margin-top:12px;">
-          <button class="mmc-btn gold" id="mmc-bulk-csv">⬇ Download credentials CSV</button>
-          <button class="mmc-btn gold" id="mmc-bulk-pdf">🪪 Download Login Cards PDF</button>
+          <button class="mmc-btn gold" id="mmc-bulk-csv">Download credentials CSV</button>
+          <button class="mmc-btn gold" id="mmc-bulk-pdf">Download Login Cards PDF</button>
           <button class="mmc-btn ghost" id="mmc-bulk-done">Done</button>
         </div>
       </div>
@@ -3134,7 +3134,7 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
         <input type="password" id="mmc-bulk-pass" placeholder="Your password">
       </div>
       ${S.authError? `<div class="mmc-autherr">${esc(S.authError)}</div>` : ''}
-      <button class="mmc-btn gold" id="mmc-bulk-go" ${S.bulkCreating?'disabled':''}>${S.bulkCreating? `Creating… (${S.bulkProgress||''})` : '✨ Create student accounts'}</button>
+      <button class="mmc-btn gold" id="mmc-bulk-go" ${S.bulkCreating?'disabled':''}>${S.bulkCreating? `Creating… (${S.bulkProgress||''})` : 'Create student accounts'}</button>
     </div>
   `);
   form.querySelector('#mmc-bulk-names').oninput=(e)=>{ S.bulkNamesText=e.target.value; };
@@ -3188,14 +3188,18 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
 
   const existing = Object.entries(S.profiles).filter(([uid,p])=>p.username && (S.showAllClasses || !p.classId || p.classId===S.currentClassId));
   if(existing.length){
-    const list=el('<div class="mmc-card"><h3>Existing student logins</h3><div class="meta">Passwords shown below reflect whatever is currently set — use "Reset Password" to issue a new one if needed.</div></div>');
+    const list=el('<div class="mmc-card"><h3>Student Management</h3><div class="meta">Passwords shown below reflect whatever is currently set — use "Reset Password" to issue a new one if needed.</div></div>');
     const ul=el('<div></div>');
     existing.sort((a,b)=>(a[1].displayName||'').localeCompare(b[1].displayName||'')).forEach(([uid,p])=>{
-      const row=el(`<div class="mmc-row" style="justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--paper-line);flex-wrap:wrap;">
-        <div>${esc(p.displayName)}</div>
-        <div class="mmc-row" style="gap:8px;align-items:center;">
-          <code class="mmc-code">${esc(p.username)}</code>
-          <code class="mmc-code" style="background:#FFF4E5;border-color:#E85C0A;">${p.currentPassword ? esc(p.currentPassword) : '— unknown (reset to set)'}</code>
+      const row=el(`<div style="padding:10px 0;border-bottom:1px solid var(--paper-line);">
+        <div class="mmc-row" style="justify-content:space-between;align-items:center;gap:10px;flex-wrap:nowrap;">
+          <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;">${esc(p.displayName)}</div>
+          <div class="mmc-row" style="gap:8px;align-items:center;flex-shrink:0;">
+            <code class="mmc-code">${esc(p.username)}</code>
+            <code class="mmc-code" style="background:#FFF4E5;border-color:#E85C0A;">${p.currentPassword ? esc(p.currentPassword) : '— unknown (reset to set)'}</code>
+          </div>
+        </div>
+        <div class="mmc-row" style="justify-content:flex-end;align-items:center;gap:8px;margin-top:6px;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px;">
           ${S.classes.length>1 ? `<select data-act="class" style="font-size:12px;padding:4px 8px;">
             ${S.classes.map(c=>`<option value="${c.id}" ${p.classId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}
           </select>` : ''}
@@ -3203,9 +3207,9 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
             <option value="">Unassigned</option>
             ${STUDENT_GROUPS.map(g=>`<option value="${g.key}" ${p.group===g.key?'selected':''}>${g.emoji} ${g.label}</option>`).join('')}
           </select>
-          <button class="mmc-btn ghost sm" data-act="dash">📊 Dashboard</button>
-          <button class="mmc-btn ghost sm" data-act="reset">🔑 Reset Password</button>
-          <button class="mmc-btn danger sm" data-act="delete">🗑️ Delete</button>
+          <button class="mmc-btn ghost sm" data-act="dash">Dashboard</button>
+          <button class="mmc-btn ghost sm" data-act="reset">Reset password</button>
+          <button class="mmc-btn danger sm" data-act="delete">Delete</button>
         </div>
       </div>`);
       row.querySelector('[data-act="dash"]').onclick=()=>{ S.viewingStudentDashboardUid=uid; render(); };
