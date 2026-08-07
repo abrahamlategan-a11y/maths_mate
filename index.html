@@ -3093,26 +3093,6 @@ function renderStudentsTab(){
     wrap.appendChild(banner);
   }
 
-  const migrateCard=el(`
-    <div class="mmc-card">
-      <div class="mmc-row" style="justify-content:space-between;">
-        <div><h3>Adopt pre-existing students</h3><div class="meta">One-off: pulls in any student accounts created before class isolation was added.</div></div>
-        <button class="mmc-btn ghost sm" id="mmc-migrate-btn">Run once</button>
-      </div>
-    </div>
-  `);
-  migrateCard.querySelector('#mmc-migrate-btn').onclick=async ()=>{
-    const btn=migrateCard.querySelector('#mmc-migrate-btn'); btn.disabled=true; btn.textContent='Working…';
-    try{
-      const snap=await getDocs(collection(db,'profiles'));
-      const legacy=snap.docs.filter(d=>!('teacherUid' in d.data()));
-      for(const d of legacy){ await updateDoc(doc(db,'profiles',d.id), {teacherUid:S.user.uid}); }
-      S.toast=`Adopted ${legacy.length} existing student${legacy.length===1?'':'s'} into your class.`;
-    }catch(e){ S.toast='Could not check for existing students — check your connection.'; }
-    render();
-  };
-  wrap.appendChild(migrateCard);
-
   if(S.bulkResults){
     const card=el(`
       <div class="mmc-card">
