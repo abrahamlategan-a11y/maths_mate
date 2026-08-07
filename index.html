@@ -1701,6 +1701,15 @@ function genTTQuestion(level, idx){
     const a=randInt(lo,hi), b=randInt(lo,hi);
     return { prompt:`${a} × ${b}`, answer:a*b, isDivision:false, level };
   }
+  // Division at hard level keeps the divisor within familiar times-tables territory (2-12,
+  // same as what's taught up through Year 4/5 tables) rather than the odd 13-15 divisors
+  // that made it feel too hard. The quotient ranges wide (2-50) so results genuinely vary —
+  // some easy quick wins (64 ÷ 8), some proper stretch (245 ÷ 5) — instead of every question
+  // being a big number.
+  if(level==='hard'){
+    const divisor=randInt(2,12), quotient=randInt(2,50); const dividend=divisor*quotient;
+    return { prompt:`${dividend} ÷ ${divisor}`, answer:quotient, isDivision:true, level };
+  }
   const divisor=randInt(lo,hi), quotient=randInt(lo,hi); const dividend=divisor*quotient;
   return { prompt:`${dividend} ÷ ${divisor}`, answer:quotient, isDivision:true, level };
 }
