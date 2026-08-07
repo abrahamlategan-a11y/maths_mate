@@ -207,6 +207,124 @@
   code.mmc-code { font-family:'IBM Plex Mono',monospace; background:var(--bg); border:1.5px solid var(--paper-line); padding:2px 6px; border-radius:6px; }
   .mmc-autherr { color:var(--incorrect); font-size:13px; font-weight:700; margin-bottom:10px; }
   @media (max-width:520px){ .mmc-head, .mmc-body { padding-left:16px; padding-right:16px; } }
+
+  /* ============================================================
+     TEACHER-SIDE FACELIFT (.mmc-pro)
+     Applied only when a teacher is signed in (see render()).
+     Everything here is an override of the classes above — no markup
+     or class names change, so every existing feature keeps working.
+     The student experience never receives this class and is unaffected.
+     ============================================================ */
+  #mmc.mmc-pro {
+    --paper-line:#E4E2DC; --ink-soft:#5C5A56;
+    --pro-mute:#8A8880; --pro-wash:#FAF9F7; --pro-line:#E4E2DC; --pro-soft:#EEECE7;
+    --pro-good:#2E7D4F; --pro-bad:#B3352F; --pro-warn:#8A6008;
+    border:1px solid var(--pro-line); border-radius:10px; box-shadow:none; max-width:1000px;
+  }
+  #mmc.mmc-pro .mmc-head {
+    background:var(--paper); color:var(--ink); border-bottom:1px solid var(--pro-line);
+    padding:22px 30px 18px;
+  }
+  #mmc.mmc-pro .mmc-head::before, #mmc.mmc-pro .mmc-head::after, #mmc.mmc-pro .mmc-head-deco { display:none; }
+  #mmc.mmc-pro .mmc-title {
+    font-family:'Nunito Sans',sans-serif; font-weight:700; font-size:19px; letter-spacing:-.02em;
+    text-align:left; margin:0;
+  }
+  #mmc.mmc-pro .mmc-title-plain, #mmc.mmc-pro .mmc-title-rainbow {
+    color:var(--ink); background:none; -webkit-text-fill-color:var(--ink); text-shadow:none;
+  }
+  #mmc.mmc-pro .mmc-sparkle, #mmc.mmc-pro .mmc-tagline { display:none; }
+  #mmc.mmc-pro .mmc-sub { color:var(--pro-mute); font-size:13px; }
+  #mmc.mmc-pro .mmc-signout-pill {
+    background:var(--paper); border:1px solid var(--pro-line); border-radius:6px; box-shadow:none;
+    font-family:'Nunito Sans',sans-serif; font-weight:600; font-size:13px; color:var(--ink); padding:7px 13px;
+  }
+  #mmc.mmc-pro .mmc-signout-pill:hover { border-color:var(--pro-mute); transform:none; }
+  #mmc.mmc-pro .mmc-head-bottom { margin-top:16px; gap:0; align-items:stretch; }
+  #mmc.mmc-pro .mmc-welcome-card {
+    background:none; border-radius:0; padding:0 20px 0 0; border-right:1px solid var(--pro-soft);
+  }
+  #mmc.mmc-pro .mmc-avatar {
+    background:var(--pro-wash); color:var(--ink); border:1px solid var(--pro-line);
+    font-family:'Nunito Sans',sans-serif; font-weight:700; font-size:13px; width:36px; height:36px;
+  }
+  #mmc.mmc-pro .mmc-welcome-name { color:var(--ink); font-size:14px; }
+  #mmc.mmc-pro .mmc-welcome-role { color:var(--pro-mute); }
+  #mmc.mmc-pro .mmc-welcome-role b { color:var(--ink-soft); }
+  #mmc.mmc-pro .mmc-stat-card {
+    background:none; border-radius:0; padding:0 20px; border-right:1px solid var(--pro-soft);
+    min-width:0; display:block;
+  }
+  #mmc.mmc-pro .mmc-head-bottom > :last-child { border-right:0; padding-right:0; }
+  #mmc.mmc-pro .mmc-stat-icon { display:none; }
+  #mmc.mmc-pro .mmc-stat-label { color:var(--pro-mute); font-size:12px; font-weight:600; display:block; margin-bottom:2px; }
+  #mmc.mmc-pro .mmc-stat-num {
+    color:var(--ink); font-family:'IBM Plex Mono',monospace; font-weight:500; font-size:24px;
+    letter-spacing:-.03em; font-variant-numeric:tabular-nums; display:block;
+  }
+  #mmc.mmc-pro .mmc-body { background:var(--pro-wash); padding:24px 30px 34px; }
+  #mmc.mmc-pro .mmc-card {
+    border:1px solid var(--pro-line); border-radius:6px; box-shadow:none; padding:22px 24px; margin-bottom:16px;
+  }
+  #mmc.mmc-pro .mmc-card:hover { transform:none; box-shadow:none; }
+  #mmc.mmc-pro .mmc-card h3 { font-family:'Nunito Sans',sans-serif; font-weight:700; font-size:18px; letter-spacing:-.015em; margin-bottom:5px; }
+  #mmc.mmc-pro .mmc-card .meta { color:var(--pro-mute); font-size:13.5px; font-weight:400; }
+  #mmc.mmc-pro .mmc-btn {
+    font-family:'Nunito Sans',sans-serif; font-weight:600; font-size:14px; padding:9px 16px;
+    border-radius:6px; border:1px solid var(--pro-line); background:var(--paper); color:var(--ink); box-shadow:none;
+  }
+  #mmc.mmc-pro .mmc-btn:hover { border-color:var(--pro-mute); transform:none; box-shadow:none; background:var(--paper); }
+  #mmc.mmc-pro .mmc-btn:active { transform:none; box-shadow:none; }
+  #mmc.mmc-pro .mmc-btn.gold { background:var(--ink); border-color:var(--ink); color:#fff; }
+  #mmc.mmc-pro .mmc-btn.gold:hover { background:#000; border-color:#000; }
+  #mmc.mmc-pro .mmc-btn.ghost { background:var(--paper); border:1px solid var(--pro-line); color:var(--ink); box-shadow:none; }
+  #mmc.mmc-pro .mmc-btn.danger { background:var(--paper); color:var(--pro-bad); border:1px solid #E8D5D3; box-shadow:none; }
+  #mmc.mmc-pro .mmc-btn.danger:hover { border-color:var(--pro-bad); background:var(--paper); }
+  #mmc.mmc-pro .mmc-btn.sm { padding:6px 12px; font-size:13px; border-radius:6px; box-shadow:none; }
+  #mmc.mmc-pro .mmc-tabs { gap:3px; margin-bottom:20px; border-bottom:1px solid var(--pro-line); }
+  #mmc.mmc-pro .mmc-tab {
+    background:transparent; border:1px solid transparent; border-radius:6px 6px 0 0; box-shadow:none;
+    font-family:'Nunito Sans',sans-serif; font-weight:600; font-size:13.5px; color:var(--pro-mute); padding:8px 14px;
+    margin-bottom:-1px;
+  }
+  #mmc.mmc-pro .mmc-tab:hover { transform:none; color:var(--ink); background:var(--paper); }
+  #mmc.mmc-pro .mmc-tab.active {
+    background:var(--ink); border-color:var(--ink); color:#fff; border-radius:6px; margin-bottom:0;
+  }
+  #mmc.mmc-pro .mmc-field label {
+    font-size:11px; font-weight:700; letter-spacing:.09em; color:var(--pro-mute);
+  }
+  #mmc.mmc-pro .mmc-field input[type=text], #mmc.mmc-pro .mmc-field input[type=email],
+  #mmc.mmc-pro .mmc-field input[type=password], #mmc.mmc-pro .mmc-field input[type=number],
+  #mmc.mmc-pro .mmc-field select {
+    border:1px solid var(--pro-line); border-radius:6px; font-weight:400;
+  }
+  #mmc.mmc-pro .mmc-field input:focus, #mmc.mmc-pro .mmc-field select:focus {
+    border-color:var(--ink); box-shadow:none;
+  }
+  #mmc.mmc-pro .mmc-ledger-wrap { border:1px solid var(--pro-line); border-radius:6px; }
+  #mmc.mmc-pro table.mmc-ledger { font-size:13.5px; }
+  #mmc.mmc-pro table.mmc-ledger th {
+    background:var(--pro-wash); font-family:'Nunito Sans',sans-serif; font-weight:700; font-size:11px;
+    letter-spacing:.08em; text-transform:uppercase; color:var(--pro-mute);
+    border-bottom:1px solid var(--pro-line);
+  }
+  #mmc.mmc-pro table.mmc-ledger td { border-bottom:1px solid var(--pro-soft); }
+  #mmc.mmc-pro table.mmc-ledger th:first-child { background:var(--pro-wash); }
+  #mmc.mmc-pro .mmc-cellscore { font-weight:500; }
+  #mmc.mmc-pro .mmc-cellscore.good { color:var(--pro-good); }
+  #mmc.mmc-pro .mmc-cellscore.mid { color:var(--pro-warn); }
+  #mmc.mmc-pro .mmc-cellscore.low { color:var(--pro-bad); }
+  #mmc.mmc-pro .mmc-stamp {
+    transform:none; border:1px solid var(--pro-line); border-radius:6px; box-shadow:none;
+    font-family:'Nunito Sans',sans-serif; background:var(--pro-wash) !important; color:var(--ink) !important;
+  }
+  #mmc.mmc-pro .mmc-stamp .score { font-weight:500; }
+  #mmc.mmc-pro .mmc-qedit { border:1px solid var(--pro-line); border-radius:6px; background:var(--pro-wash); }
+  #mmc.mmc-pro .mmc-qedit textarea, #mmc.mmc-pro .mmc-qedit input { border:1px solid var(--pro-line); border-radius:6px; }
+  #mmc.mmc-pro .mmc-toast { border:1px solid var(--pro-bad); border-radius:6px; box-shadow:none; font-weight:600; }
+  #mmc.mmc-pro code.mmc-code { border:1px solid var(--pro-line); background:var(--pro-wash); border-radius:4px; }
+  #mmc.mmc-pro .mmc-empty { color:var(--pro-mute); font-weight:400; }
 </style>
 </head>
 <body>
@@ -2139,6 +2257,10 @@ function render(){
   window.__mmcRenderCount = (window.__mmcRenderCount||0)+1;
   const root=document.getElementById('mmc');
   applyTheme();
+  // Teacher-side facelift: a single scope class swaps the whole teacher UI into the
+  // quieter "pro" styling. Students never get this class, so their playful styling is
+  // untouched — see the .mmc-pro block at the bottom of <style>.
+  root.classList.toggle('mmc-pro', !!(S.user && S.isTeacher));
   root.innerHTML='';
   root.appendChild(renderHead());
   const body=el('<div class="mmc-body"></div>');
