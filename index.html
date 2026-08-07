@@ -1740,6 +1740,96 @@ function genUsername(first,last,taken){
   return candidate;
 }
 function genPassword(){ return pick(PASSWORD_WORDS)+randInt(10,99); }
+// ---------- Classes (a teacher who runs more than one group of students) ----------
+let ensuringDefaultClass=false;
+async function ensureDefaultClass(){
+  if(S.classesEnsured || ensuringDefaultClass) return;
+  if(S.classes.length>0){ S.classesEnsured=true; return; }
+  ensuringDefaultClass=true;
+  try{
+    const ref=await addDoc(collection(db,'classes'), { name:'Class 1', teacherUid:S.user.uid, createdAt:serverTimestamp() });
+    // Backfill any students created before classes existed onto this new default —
+    // fetched fresh here (not from S.profiles) since that listener may not have loaded yet.
+    const existingStudents = await getDocs(query(collection(db,'profiles'), where('teacherUid','==',S.user.uid)));
+    for(const d of existingStudents.docs){
+      const data=d.data();
+      if(data.username && !data.classId){
+        try{ await updateDoc(doc(db,'profiles',d.id), {classId:ref.id}); }catch(e){}
+      }
+    }
+    S.currentClassId=ref.id;
+  }catch(e){ /* if this failed, S.classes is still empty next time and we'll retry */ }
+  S.classesEnsured=true;
+  ensuringDefaultClass=false;
+  render();
+}
+async function createClass(name){
+  name=(name||'').trim();
+  if(!name) return;
+  try{
+    const ref=await addDoc(collection(db,'classes'), { name, teacherUid:S.user.uid, createdAt:serverTimestamp() });
+    S.currentClassId=ref.id;
+  }catch(e){ S.toast='Could not create class — check your connection.'; render(); }
+}
+async function renameClass(classId, name){
+  name=(name||'').trim();
+  if(!name) return;
+  try{ await updateDoc(doc(db,'classes',classId), {name}); }
+  catch(e){ S.toast='Could not rename class — check your connection.'; render(); }
+}
+function currentClassLabel(){
+  if(S.showAllClasses) return 'All classes';
+  const c=S.classes.find(c=>c.id===S.currentClassId);
+  return c ? c.name : 'My class';
+}
+// Every student-listing view (Gradebook, Timetable analytics) should respect whichever
+// class the teacher currently has selected — students with no classId yet (e.g. created
+// before classes existed and not yet migrated) still show up rather than vanishing.
+function classFilteredStudentUids(){
+  return Object.keys(S.profiles).filter(uid=>{
+    const p=S.profiles[uid];
+    if(!p.username) return false;
+    return S.showAllClasses || !p.classId || p.classId===S.currentClassId;
+  });
+}
+function renderClassSwitcher(){
+  if(S.classes.length===0){
+    return el('<div class="mmc-card" style="margin-bottom:14px;"><div class="meta">Setting up your class…</div></div>');
+  }
+  const wrap=el('<div class="mmc-card" style="margin-bottom:14px;"></div>');
+  const row=el('<div class="mmc-row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;"></div>');
+  const left=el('<div class="mmc-row" style="align-items:center;gap:8px;"></div>');
+  left.appendChild(el('<span style="font-weight:700;font-size:13px;">🏫 Viewing:</span>'));
+  const select=el(`<select style="font-weight:700;padding:6px 10px;">
+    ${S.classes.map(c=>`<option value="${c.id}" ${!S.showAllClasses && S.currentClassId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}
+    <option value="__all__" ${S.showAllClasses?'selected':''}>All classes (combined)</option>
+  </select>`);
+  select.onchange=(e)=>{
+    if(e.target.value==='__all__'){ S.showAllClasses=true; } else { S.showAllClasses=false; S.currentClassId=e.target.value; }
+    render();
+  };
+  left.appendChild(select);
+  row.appendChild(left);
+  const right=el('<div class="mmc-row" style="gap:8px;"></div>');
+  const newBtn=el('<button class="mmc-btn ghost sm">+ New class</button>');
+  newBtn.onclick=async ()=>{
+    const name=prompt('Name for the new class (e.g. "5B" or "Year 4 Green"):');
+    if(name) await createClass(name);
+  };
+  right.appendChild(newBtn);
+  if(!S.showAllClasses && S.currentClassId){
+    const renameBtn=el('<button class="mmc-btn ghost sm">✏️ Rename</button>');
+    renameBtn.onclick=async ()=>{
+      const cur=S.classes.find(c=>c.id===S.currentClassId);
+      const name=prompt('New name for this class:', cur? cur.name : '');
+      if(name) await renameClass(S.currentClassId, name);
+    };
+    right.appendChild(renameBtn);
+  }
+  row.appendChild(right);
+  wrap.appendChild(row);
+  return wrap;
+}
 // ---------- Login card PDF layout (pure math — testable without the PDF/QR libraries themselves) ----------
 function computeCardLayout(n, opts){
   opts = opts || {};
@@ -1829,6 +1919,7 @@ const S = {
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
   quickDeployDone:null, resetPasswordResult:null,
+  classes:[], currentClassId:null, classesEnsured:false, showAllClasses:false,
   genForm:{ label:'', difficulty:'easy', strategy:'random' },
   activeWeekId:null, quiz:{}, toast:null,
   bulkCreating:false, bulkProgress:null, bulkResults:null, bulkNamesText:'', bulkPassword:'',
@@ -1861,9 +1952,15 @@ function clearSubs(){
 }
 function currentLiveRoom(){
   if(!S.liveGames || !S.liveGames.length) return null;
-  const active = S.liveGames.filter(g=>g.status==='lobby'||g.status==='active');
+  // Keep races scoped to whichever class is relevant right now — a teacher sees only the
+  // room for their currently-selected class (or everything, if "All classes" is active);
+  // a student sees only rooms for their own class. Rooms with no classId (created before
+  // this feature existed) stay visible to everyone as a safe fallback.
+  const myClassId = S.isTeacher ? (S.showAllClasses ? null : S.currentClassId) : (S.profile && S.profile.classId);
+  const visible = S.liveGames.filter(g => !g.classId || !myClassId || g.classId===myClassId);
+  const active = visible.filter(g=>g.status==='lobby'||g.status==='active');
   if(active.length) return active.slice().sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0))[0];
-  const ended = S.liveGames.filter(g=>g.status==='ended').slice().sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+  const ended = visible.filter(g=>g.status==='ended').slice().sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
   return ended[0] || null;
 }
 let liveParticipantsGen = 0;
@@ -1965,6 +2062,12 @@ function subscribeData(){
     unsubs.push(onSnapshot(query(collection(db,'profiles'), where('teacherUid','==',S.user.uid)), snap=>{ S.profiles={}; snap.docs.forEach(d=>S.profiles[d.id]=d.data()); render(); }, (err)=>{ S.toast='Profiles error: '+err.message; render(); }));
     unsubs.push(onSnapshot(query(collection(db,'ttAttempts'), where('teacherUid','==',S.user.uid)), snap=>{ S.ttAttempts=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, (err)=>{ S.toast='Timetable data error: '+err.message; render(); }));
     unsubs.push(onSnapshot(query(collection(db,'skillPractice'), where('teacherUid','==',S.user.uid)), snap=>{ S.allSkillPracticeRecords=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, (err)=>{ S.toast='Skill practice data error: '+err.message; render(); }));
+    unsubs.push(onSnapshot(query(collection(db,'classes'), where('teacherUid','==',S.user.uid)), snap=>{
+      S.classes=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
+      if(!S.currentClassId && S.classes.length) S.currentClassId=S.classes[0].id;
+      ensureDefaultClass();
+      render();
+    }, (err)=>{ S.toast='Classes error: '+err.message; render(); }));
     unsubs.push(onSnapshot(query(collection(db,'liveGames'), where('teacherUid','==',S.user.uid)), snap=>{
       S.liveGames=snap.docs.map(d=>({id:d.id,...d.data()})); ensureParticipantsSub(currentLiveRoom()?.id||null); ensureTeacherLiveTimer(); render();
     }, (err)=>{ S.toast='Racing Ground error: '+err.message; render(); }));
@@ -2145,6 +2248,7 @@ function renderTeacher(){
     return wrap;
   }
   const wrap=el('<div></div>');
+  wrap.appendChild(renderClassSwitcher());
   const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-t="weeks">Skills Practice</button><button class="mmc-tab" data-t="ledger">Gradebook</button><button class="mmc-tab" data-t="students">Students</button><button class="mmc-tab" data-t="timetable">Times Tables</button><button class="mmc-tab" data-t="live">🐎 Racing Ground</button></div>`);
   tabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.t===S.teacherTab) b.classList.add('active');
     b.onclick=()=>{ S.teacherTab=b.dataset.t; render(); }; });
@@ -2192,7 +2296,8 @@ function renderTeacherWeeks(){
       const pairs=[['support','easy'],['mainstream','medium'],['extension','hard']];
       for(const [group,difficulty] of pairs){
         await addDoc(collection(db,'weeks'), { label, difficulty, status:'published', createdAt:serverTimestamp(),
-          teacherUid:S.user.uid, questions:generateWeekQuestions(difficulty,'random'), targetGroups:[group] });
+          teacherUid:S.user.uid, questions:generateWeekQuestions(difficulty,'random'), targetGroups:[group],
+          classIds: S.showAllClasses ? [] : (S.currentClassId? [S.currentClassId] : []) });
       }
       S.quickDeployDone=label;
     }catch(e){ S.toast='Could not deploy — check your connection.'; }
@@ -2215,6 +2320,13 @@ function renderTeacherWeeks(){
             ${WORD_PROBLEM_STRATEGIES.map(s=>`<option value="${s.key}" ${S.genForm.strategy===s.key?'selected':''}>${esc(s.label)}</option>`).join('')}
           </select></div>
       </div>
+      ${S.classes.length>1 ? `
+      <div class="mmc-field"><label>Which class(es)?</label>
+        <div class="mmc-row" style="gap:14px;">
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:700;"><input type="checkbox" id="mmc-gen-class-all" checked> All classes</label>
+          ${S.classes.map(c=>`<label style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:700;"><input type="checkbox" class="mmc-gen-class-cb" value="${c.id}" ${!S.showAllClasses && c.id===S.currentClassId?'checked':''}> ${esc(c.name)}</label>`).join('')}
+        </div>
+      </div>` : ''}
       <div class="mmc-field"><label>Who is this for?</label>
         <div class="mmc-row" style="gap:14px;">
           <label style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:700;"><input type="checkbox" id="mmc-gen-group-all" checked> All students</label>
@@ -2231,13 +2343,26 @@ function renderTeacherWeeks(){
     if(cb.checked) allCb.checked=false;
     if(groupCbs.every(c=>!c.checked)) allCb.checked=true;
   });
+  const allClassCb=form.querySelector('#mmc-gen-class-all');
+  const classCbs=[...form.querySelectorAll('.mmc-gen-class-cb')];
+  if(allClassCb){
+    // If any specific class was pre-checked (matching the current view), reflect that in "All classes" too.
+    if(classCbs.some(cb=>cb.checked)) allClassCb.checked=false;
+    allClassCb.onchange=()=>{ if(allClassCb.checked) classCbs.forEach(cb=>cb.checked=false); };
+    classCbs.forEach(cb=>cb.onchange=()=>{
+      if(cb.checked) allClassCb.checked=false;
+      if(classCbs.every(c=>!c.checked)) allClassCb.checked=true;
+    });
+  }
   form.querySelector('#mmc-gen-btn').onclick=async ()=>{
     const label=form.querySelector('#mmc-gen-label').value.trim() || `Week ${S.weeks.length+1}`;
     const difficulty=form.querySelector('#mmc-gen-diff').value;
     const strategy=form.querySelector('#mmc-gen-strategy').value;
     const targetGroups = allCb.checked ? [] : groupCbs.filter(cb=>cb.checked).map(cb=>cb.value);
+    const classIds = !allClassCb ? (S.showAllClasses ? [] : (S.currentClassId?[S.currentClassId]:[]))
+      : (allClassCb.checked ? [] : classCbs.filter(cb=>cb.checked).map(cb=>cb.value));
     const weekData={ label, difficulty, status:'draft', createdAt:serverTimestamp(), teacherUid:S.user.uid,
-      questions:generateWeekQuestions(difficulty, strategy), targetGroups };
+      questions:generateWeekQuestions(difficulty, strategy), targetGroups, classIds };
     try{
       const ref=await addDoc(collection(db,'weeks'), weekData);
       S.editingDraftId=ref.id;
@@ -2564,7 +2689,7 @@ function renderGradebookDetail(){
 function renderLedgerSummary(){
   const wrap=el('<div></div>');
   const pubWeeks = S.weeks.filter(isWeekLive).sort((a,b)=> (a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
-  const studentUids = Object.keys(S.profiles).filter(uid=>{
+  const studentUids = classFilteredStudentUids().filter(uid=>{
     const email=(S.profiles[uid].email||'').toLowerCase();
     return !S.teacherEmails.map(e=>String(e).toLowerCase()).includes(email);
   });
@@ -2623,7 +2748,7 @@ function renderLedgerByWeek(){
 
   const week = pubWeeks.find(w=>w.id===S.gradebookWeekId);
   const qidToSlot={}; (week.questions||[]).forEach(q=>{ qidToSlot[q.id]=q.slot; });
-  const studentUids = Object.keys(S.profiles).sort((a,b)=>(S.profiles[a].displayName||'').localeCompare(S.profiles[b].displayName||''));
+  const studentUids = classFilteredStudentUids().sort((a,b)=>(S.profiles[a].displayName||'').localeCompare(S.profiles[b].displayName||''));
   if(studentUids.length===0){ wrap.appendChild(el('<div class="mmc-empty">No students yet.</div>')); return wrap; }
 
   const tableWrap=el('<div class="mmc-ledger-wrap"></div>');
@@ -2675,7 +2800,7 @@ function renderLedgerByQuestion(){
   const qidToSlotByWeek={};
   pubWeeks.forEach(w=>{ const m={}; (w.questions||[]).forEach(q=>{ m[q.id]=q.slot; }); qidToSlotByWeek[w.id]=m; });
 
-  const studentUids = Object.keys(S.profiles).sort((a,b)=>(S.profiles[a].displayName||'').localeCompare(S.profiles[b].displayName||''));
+  const studentUids = classFilteredStudentUids().sort((a,b)=>(S.profiles[a].displayName||'').localeCompare(S.profiles[b].displayName||''));
   if(studentUids.length===0){ wrap.appendChild(el('<div class="mmc-empty">No students yet.</div>')); return wrap; }
 
   const tableWrap=el('<div class="mmc-ledger-wrap"></div>');
@@ -2753,7 +2878,7 @@ function exportCSV(pubWeeks, studentUids){
 
 function renderTeacherTimetable(){
   const wrap=el('<div></div>');
-  const studentUids = Object.keys(S.profiles).sort((a,b)=>(S.profiles[a].displayName||'').localeCompare(S.profiles[b].displayName||''));
+  const studentUids = classFilteredStudentUids().sort((a,b)=>(S.profiles[a].displayName||'').localeCompare(S.profiles[b].displayName||''));
 
   const exportBtn=el('<button class="mmc-btn gold" style="margin-bottom:14px;">⬇ Export as CSV</button>');
   exportBtn.onclick=()=>exportTTCSV(studentUids);
@@ -2824,6 +2949,21 @@ async function resetStudentPassword(uid, displayName, btnEl){
     if(S.profiles[uid]) S.profiles[uid].currentPassword = res.data&&res.data.password;
   }catch(e){
     S.toast = 'Could not reset password: '+(e.message||'unknown error')+' — make sure the Cloud Function is deployed.';
+  }
+  if(btnEl){ btnEl.disabled=false; btnEl.textContent=originalText; }
+  render();
+}
+async function deleteStudentAccount(uid, displayName, btnEl){
+  const typed = prompt(`This permanently deletes ${displayName}'s login AND every result, attempt, and dashboard record they have — this cannot be undone.\n\nType their name exactly ("${displayName}") to confirm:`);
+  if(typed!==displayName) { if(typed!==null) alert('Name didn\'t match exactly — nothing was deleted.'); return; }
+  const originalText = btnEl ? btnEl.textContent : '';
+  if(btnEl){ btnEl.disabled=true; btnEl.textContent='Deleting…'; }
+  try{
+    const call = httpsCallable(functions, 'deleteStudent');
+    await call({ uid });
+    if(S.profiles[uid]) delete S.profiles[uid];
+  }catch(e){
+    S.toast = 'Could not delete student: '+(e.message||'unknown error')+' — make sure the Cloud Function is deployed.';
   }
   if(btnEl){ btnEl.disabled=false; btnEl.textContent=originalText; }
   render();
@@ -2944,7 +3084,7 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
         try{
           const cred=await createUserWithEmailAndPassword(auth,email,password);
           await updateProfile(cred.user,{displayName:fullName});
-          await setDoc(doc(db,'profiles',cred.user.uid),{displayName:fullName, username, email, createdByTeacher:true, teacherUid:S.user.uid, currentPassword:password});
+          await setDoc(doc(db,'profiles',cred.user.uid),{displayName:fullName, username, email, createdByTeacher:true, teacherUid:S.user.uid, currentPassword:password, classId: (S.showAllClasses? (S.classes[0]&&S.classes[0].id) : S.currentClassId) || null});
           await signInWithEmailAndPassword(auth,teacherEmail,teacherPass);
           S.bulkResults.push({name:fullName, username, password, status:'ok'});
           done=true;
@@ -2967,7 +3107,7 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
   };
   wrap.appendChild(form);
 
-  const existing = Object.entries(S.profiles).filter(([uid,p])=>p.username);
+  const existing = Object.entries(S.profiles).filter(([uid,p])=>p.username && (S.showAllClasses || !p.classId || p.classId===S.currentClassId));
   if(existing.length){
     const list=el('<div class="mmc-card"><h3>Existing student logins</h3><div class="meta">Passwords shown below reflect whatever is currently set — use "Reset Password" to issue a new one if needed.</div></div>');
     const ul=el('<div></div>');
@@ -2977,21 +3117,31 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
         <div class="mmc-row" style="gap:8px;align-items:center;">
           <code class="mmc-code">${esc(p.username)}</code>
           <code class="mmc-code" style="background:#FFF4E5;border-color:#E85C0A;">${p.currentPassword ? esc(p.currentPassword) : '— unknown (reset to set)'}</code>
+          ${S.classes.length>1 ? `<select data-act="class" style="font-size:12px;padding:4px 8px;">
+            ${S.classes.map(c=>`<option value="${c.id}" ${p.classId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}
+          </select>` : ''}
           <select data-act="group" style="font-size:12px;padding:4px 8px;">
             <option value="">Unassigned</option>
             ${STUDENT_GROUPS.map(g=>`<option value="${g.key}" ${p.group===g.key?'selected':''}>${g.emoji} ${g.label}</option>`).join('')}
           </select>
           <button class="mmc-btn ghost sm" data-act="dash">📊 Dashboard</button>
           <button class="mmc-btn ghost sm" data-act="reset">🔑 Reset Password</button>
+          <button class="mmc-btn danger sm" data-act="delete">🗑️ Delete</button>
         </div>
       </div>`);
       row.querySelector('[data-act="dash"]').onclick=()=>{ S.viewingStudentDashboardUid=uid; render(); };
+      const classSel=row.querySelector('[data-act="class"]');
+      if(classSel) classSel.onchange=async (e)=>{
+        try{ await updateDoc(doc(db,'profiles',uid), {classId:e.target.value}); }
+        catch(err){ S.toast='Could not move student — check your connection.'; render(); }
+      };
       row.querySelector('[data-act="group"]').onchange=async (e)=>{
         const val=e.target.value||null;
         try{ await updateDoc(doc(db,'profiles',uid), {group:val}); }
         catch(err){ S.toast='Could not update group — check your connection.'; render(); }
       };
       row.querySelector('[data-act="reset"]').onclick=()=>resetStudentPassword(uid, p.displayName, row.querySelector('[data-act="reset"]'));
+      row.querySelector('[data-act="delete"]').onclick=()=>deleteStudentAccount(uid, p.displayName, row.querySelector('[data-act="delete"]'));
       ul.appendChild(row);
     });
     list.appendChild(ul);
@@ -3048,6 +3198,7 @@ async function deleteWeekProgress(weekId){
 }
 function studentEffectiveGroup(){ return (S.profile && S.profile.group) || 'mainstream'; }
 function weekVisibleToMe(week){
+  if(week.classIds && week.classIds.length>0 && S.profile && S.profile.classId && !week.classIds.includes(S.profile.classId)) return false;
   if(!week.targetGroups || week.targetGroups.length===0) return true;
   return week.targetGroups.includes(studentEffectiveGroup());
 }
@@ -3431,7 +3582,8 @@ function renderTeacherLiveGame(){
     `);
     form.querySelector('#mmc-live-create').onclick=async ()=>{
       const level=form.querySelector('#mmc-live-level').value; S.liveGenForm.level=level;
-      try{ await addDoc(collection(db,'liveGames'), { teacherUid:S.user.uid, level, status:'lobby', createdAt:serverTimestamp(), durationSec:300 }); }
+      try{ await addDoc(collection(db,'liveGames'), { teacherUid:S.user.uid, level, status:'lobby', createdAt:serverTimestamp(), durationSec:300,
+        classId: S.showAllClasses ? null : S.currentClassId }); }
       catch(e){ S.toast='Could not create the room — check your connection.'; render(); }
     };
     wrap.appendChild(form);
