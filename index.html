@@ -371,6 +371,33 @@
     border-radius:6px; background:var(--paper); color:var(--ink);
   }
   #mmc.mmc-pro .mmc-classpick select:hover { border-color:var(--pro-mute); }
+  #mmc.mmc-pro .mmc-stu {
+    display:flex; align-items:center; gap:12px; padding:11px 0;
+    border-bottom:1px solid var(--pro-soft); flex-wrap:wrap;
+  }
+  #mmc.mmc-pro .mmc-stu:last-child { border-bottom:0; }
+  #mmc.mmc-pro .mmc-stu-name {
+    font-weight:600; font-size:15px; flex:1; min-width:120px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  #mmc.mmc-pro .mmc-stu-user, #mmc.mmc-pro .mmc-stu-pass {
+    font-family:'IBM Plex Mono',monospace; font-size:12.5px; font-weight:500;
+    background:var(--pro-wash); border:1px solid var(--pro-line); border-radius:4px;
+    padding:3px 8px; color:var(--slate); white-space:nowrap;
+  }
+  #mmc.mmc-pro .mmc-stu-pass.none {
+    background:transparent; border-style:dashed; color:var(--pro-mute);
+  }
+  #mmc.mmc-pro .mmc-stu-actions { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  #mmc.mmc-pro .mmc-stu-actions select {
+    font-family:'Nunito Sans',sans-serif; font-size:12.5px; font-weight:600; padding:5px 8px;
+    border:1px solid var(--pro-line); border-radius:6px; background:var(--paper); color:var(--ink);
+  }
+  #mmc.mmc-pro .mmc-stu-actions select:hover { border-color:var(--pro-mute); }
+  #mmc.mmc-pro .mmc-notice {
+    background:var(--paper) !important; border:1px solid var(--pro-line) !important;
+    border-left:3px solid var(--orange) !important;
+  }
 </style>
 </head>
 <body>
@@ -2117,7 +2144,7 @@ const S = {
   user:null, isTeacher:false, profile:null, teacherEmails:[],
   authMode:'login', authError:null, showSignup:false,
   weeks:[], results:[], profiles:{},
-  teacherTab:'home', weeksView:'create', editingDraftId:null, showArchivedWeeks:false,
+  teacherTab:'home', weeksView:'create', studentsView:'list', editingDraftId:null, showArchivedWeeks:false,
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
@@ -3753,7 +3780,7 @@ function renderStudentsTab(mode){
 
     if(S.pendingTeacherRequests.length>0){
       const pendingCard=el(`
-        <div class="mmc-card" style="margin-bottom:14px;background:#FFF4E5;border-color:#E85C0A;">
+        <div class="mmc-card mmc-notice" style="margin-bottom:14px;">
           <h3>Pending requests (${S.pendingTeacherRequests.length})</h3>
           <div class="meta">Someone asked for teacher access. Approving creates their account and emails them a link to set up a password — nothing happens until you decide.</div>
         </div>
@@ -3809,9 +3836,17 @@ function renderStudentsTab(mode){
 
   // Class management lives here now that the global banner is gone — Students
   // is where classes are actually populated, so it's the natural home for it.
-  const clsBar=el('<div class="mmc-row" style="justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;"></div>');
-  clsBar.appendChild(renderClassPicker());
-  const clsBtns=el('<div class="mmc-row" style="gap:8px;"></div>');
+  const sview = S.studentsView || 'list';
+  const stabs=el(`<div class="mmc-tabs" style="margin-bottom:14px;">
+    <button class="mmc-tab" data-sv="list">Students</button>
+    <button class="mmc-tab" data-sv="add">Add students</button>
+  </div>`);
+  stabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.sv===sview) b.classList.add('active');
+    b.onclick=()=>{ S.studentsView=b.dataset.sv; render(); }; });
+  const clsBar=el('<div class="mmc-row" style="justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;"></div>');
+  clsBar.appendChild(stabs);
+  const clsBtns=el('<div class="mmc-row" style="gap:8px;align-items:center;"></div>');
+  if(sview==='list') clsBtns.appendChild(renderClassPicker());
   const newCls=el('<button class="mmc-btn ghost sm">+ New class</button>');
   newCls.onclick=async ()=>{
     const name=prompt('Name for the new class (e.g. "5B" or "Year 4 Green"):');
@@ -3839,7 +3874,7 @@ function renderStudentsTab(mode){
   if(S.resetPasswordResult){
     const r=S.resetPasswordResult;
     const banner=el(`
-      <div class="mmc-card" style="background:#FFF4E5;border-color:#E85C0A;margin-bottom:14px;">
+      <div class="mmc-card mmc-notice" style="margin-bottom:14px;">
         <h3>New password for ${esc(r.displayName)}</h3>
         <div class="meta">You can find this again anytime in Student Management below.</div>
         <div class="mmc-row" style="gap:16px;margin-top:6px;">
@@ -3891,6 +3926,15 @@ function renderStudentsTab(mode){
     <div class="mmc-card">
       <h3>Add students from a class list</h3>
       <div class="meta">One name per line, e.g. "Susie Miller". Each student gets a unique username (like SusieM) and a random password (like donkey56) — shown once, right after you create them.</div>
+      <div class="mmc-field"><label>Add them to</label>
+        <div class="mmc-row" style="align-items:center;gap:8px;">
+          <select id="mmc-bulk-class" style="font-weight:600;min-width:180px;">
+            ${S.classes.map(c=>`<option value="${c.id}" ${!S.showAllClasses && c.id===S.currentClassId?'selected':''}>${esc(c.name)} · Year ${classYear(c)}</option>`).join('')}
+            <option value="__new__">+ A new class…</option>
+          </select>
+          <span class="meta" style="margin:0;" id="mmc-bulk-classnote"></span>
+        </div>
+      </div>
       <div class="mmc-field"><label>Class list</label>
         <textarea id="mmc-bulk-names" rows="8" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--paper-line);background:var(--paper);font-size:14px;" placeholder="Susie Miller
 Tom Nguyen
@@ -3904,7 +3948,26 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
     </div>
   `);
   form.querySelector('#mmc-bulk-names').oninput=(e)=>{ S.bulkNamesText=e.target.value; };
+  const bulkClassSel=form.querySelector('#mmc-bulk-class');
+  const bulkNote=form.querySelector('#mmc-bulk-classnote');
+  const syncBulkNote=()=>{
+    if(bulkNote) bulkNote.textContent = (bulkClassSel && bulkClassSel.value==='__new__')
+      ? "You'll be asked to name it." : '';
+  };
+  if(bulkClassSel){ bulkClassSel.onchange=syncBulkNote; syncBulkNote(); }
   form.querySelector('#mmc-bulk-go').onclick=async ()=>{
+    // If they chose "+ A new class", create it first and make it current, so
+    // every account created below lands in the right place.
+    if(bulkClassSel && bulkClassSel.value==='__new__'){
+      const nm=prompt('Name for the new class (e.g. "5B" or "Year 4 Green"):');
+      if(!nm) return;
+      const yr=prompt('Which year level? Enter 3, 4, 5 or 6.', String(DEFAULT_YEAR));
+      if(yr===null) return;
+      await createClass(nm, yr);
+      S.showAllClasses=false;
+    } else if(bulkClassSel){
+      S.showAllClasses=false; S.currentClassId=bulkClassSel.value;
+    }
     const namesText=form.querySelector('#mmc-bulk-names').value;
     const teacherPass=form.querySelector('#mmc-bulk-pass').value;
     const lines=namesText.split('\n').map(l=>l.trim()).filter(Boolean);
@@ -3950,7 +4013,9 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
     await handleAuthChange(auth.currentUser);
     render();
   };
-  wrap.appendChild(form);
+  if(sview==='add') wrap.appendChild(form);
+
+  if(sview!=='list') return wrap;
 
   const existing = Object.entries(S.profiles).filter(([uid,p])=>p.username && (S.showAllClasses || !p.classId || p.classId===S.currentClassId));
   if(existing.length){
@@ -3977,21 +4042,17 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
     list.appendChild(downloadRow);
     const ul=el('<div></div>');
     existing.sort((a,b)=>(a[1].displayName||'').localeCompare(b[1].displayName||'')).forEach(([uid,p])=>{
-      const row=el(`<div style="padding:10px 0;border-bottom:1px solid var(--paper-line);">
-        <div class="mmc-row" style="justify-content:space-between;align-items:center;gap:10px;flex-wrap:nowrap;">
-          <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;">${esc(p.displayName)}</div>
-          <div class="mmc-row" style="gap:8px;align-items:center;flex-shrink:0;">
-            <code class="mmc-code">${esc(p.username)}</code>
-            <code class="mmc-code" style="background:#FFF4E5;border-color:#E85C0A;">${p.currentPassword ? esc(p.currentPassword) : '— unknown (reset to set)'}</code>
-          </div>
-        </div>
-        <div class="mmc-row" style="justify-content:flex-end;align-items:center;gap:8px;margin-top:6px;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px;">
-          ${S.classes.length>1 ? `<select data-act="class" style="font-size:12px;padding:4px 8px;">
+      const row=el(`<div class="mmc-stu">
+        <div class="mmc-stu-name">${esc(p.displayName)}</div>
+        <code class="mmc-stu-user">${esc(p.username)}</code>
+        <code class="mmc-stu-pass${p.currentPassword?'':' none'}">${p.currentPassword ? esc(p.currentPassword) : 'not set'}</code>
+        <div class="mmc-stu-actions">
+          ${S.classes.length>1 ? `<select data-act="class">
             ${S.classes.map(c=>`<option value="${c.id}" ${p.classId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}
           </select>` : ''}
-          <select data-act="group" style="font-size:12px;padding:4px 8px;">
+          <select data-act="group">
             <option value="">Unassigned</option>
-            ${STUDENT_GROUPS.map(g=>`<option value="${g.key}" ${p.group===g.key?'selected':''}>${g.emoji} ${g.label}</option>`).join('')}
+            ${STUDENT_GROUPS.map(g=>`<option value="${g.key}" ${p.group===g.key?'selected':''}>${esc(g.label)}</option>`).join('')}
           </select>
           <button class="mmc-btn ghost sm" data-act="dash">Dashboard</button>
           <button class="mmc-btn ghost sm" data-act="reset">Reset password</button>
