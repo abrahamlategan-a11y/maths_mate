@@ -1922,7 +1922,8 @@ const S = {
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
   quickDeployDone:null, resetPasswordResult:null,
   classes:[], currentClassId:null, classesEnsured:false, showAllClasses:false, inviteTeacherResult:null,
-  allTeacherEmails:[], adminTeacherEmails:null,
+  allTeacherEmails:[], adminTeacherEmails:null, teacherRequestSubmitted:false,
+  pendingTeacherRequests:[], teacherDirectory:[],
   genForm:{ label:'', difficulty:'easy', strategy:'random' },
   activeWeekId:null, quiz:{}, toast:null,
   bulkCreating:false, bulkProgress:null, bulkResults:null, bulkNamesText:'', bulkPassword:'',
@@ -2077,6 +2078,17 @@ function subscribeData(){
       S.adminTeacherEmails=data.admins? data.admins.map(e=>String(e).toLowerCase()) : null;
       render();
     }, (err)=>{ /* not critical to app function — silent */ }));
+    // Both of these are admin-only per firestore.rules — a non-admin teacher's listener
+    // will simply get a permission error and stay empty, which is fine, since the UI
+    // that uses this data is itself gated behind isCurrentUserAdminTeacher().
+    unsubs.push(onSnapshot(query(collection(db,'teacherRequests'), where('status','==','pending')), snap=>{
+      S.pendingTeacherRequests=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.requestedAt?.seconds||0)-(b.requestedAt?.seconds||0));
+      render();
+    }, (err)=>{ /* not admin — silent */ }));
+    unsubs.push(onSnapshot(collection(db,'teacherDirectory'), snap=>{
+      S.teacherDirectory=snap.docs.map(d=>({uid:d.id,...d.data()})).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+      render();
+    }, (err)=>{ /* not admin — silent */ }));
     unsubs.push(onSnapshot(query(collection(db,'liveGames'), where('teacherUid','==',S.user.uid)), snap=>{
       S.liveGames=snap.docs.map(d=>({id:d.id,...d.data()})); ensureParticipantsSub(currentLiveRoom()?.id||null); ensureTeacherLiveTimer(); render();
     }, (err)=>{ S.toast='Racing Ground error: '+err.message; render(); }));
@@ -2201,38 +2213,72 @@ function renderAuth(){
   const wrap=el('<div></div>');
   const isSignup = S.showSignup;
 
+  if(isSignup){
+    if(S.teacherRequestSubmitted){
+      const done=el(`
+        <div class="mmc-card">
+          <h3>Request sent</h3>
+          <div class="meta">Thanks — your request is with the admin now. You'll get an email once it's approved, with a link to set up your password.</div>
+          <a href="#" id="mmc-req-back" style="display:inline-block;margin-top:10px;font-size:12.5px;color:var(--ink-soft);">← back to log in</a>
+        </div>
+      `);
+      done.querySelector('#mmc-req-back').onclick=(e)=>{ e.preventDefault(); S.showSignup=false; S.teacherRequestSubmitted=false; render(); };
+      wrap.appendChild(done);
+      return wrap;
+    }
+    const card=el(`
+      <div class="mmc-card">
+        <h3>Request teacher access</h3>
+        ${S.authError? `<div class="mmc-autherr">${esc(S.authError)}</div>` : ''}
+        <div class="meta">Every request is reviewed before an account is created — you'll get an email to set up your password once it's approved.</div>
+        <div class="mmc-field"><label>Your name</label><input type="text" id="mmc-a-name" placeholder="e.g. Priya Nair"></div>
+        <div class="mmc-field"><label>Your email</label><input type="email" id="mmc-a-email" placeholder="you@example.com"></div>
+        <button class="mmc-btn gold" id="mmc-a-go">Request access</button>
+      </div>
+    `);
+    card.querySelector('#mmc-a-go').onclick=async ()=>{
+      const name=card.querySelector('#mmc-a-name').value.trim();
+      const email=card.querySelector('#mmc-a-email').value.trim();
+      if(!name || !email || !email.includes('@')){ S.authError='Please fill in every field with a valid email.'; render(); return; }
+      const btn=card.querySelector('#mmc-a-go'); btn.disabled=true; btn.textContent='Sending…';
+      try{
+        const call = httpsCallable(functions, 'requestTeacherAccess');
+        await call({ name, email });
+        S.authError=null; S.teacherRequestSubmitted=true;
+      }catch(e){ S.authError = e.message || 'Could not send the request — check your connection.'; }
+      btn.disabled=false; btn.textContent='Request access';
+      render();
+    };
+    wrap.appendChild(card);
+    const toggle=el(`<a href="#" style="display:inline-block;margin-top:4px;font-size:12.5px;color:var(--ink-soft);">← back to log in</a>`);
+    toggle.onclick=(e)=>{ e.preventDefault(); S.showSignup=false; S.authError=null; render(); };
+    wrap.appendChild(toggle);
+    return wrap;
+  }
+
   const card=el(`
     <div class="mmc-card">
-      <h3>${isSignup? 'Set up a teacher account' : 'Log in'}</h3>
+      <h3>Log in</h3>
       ${S.authError? `<div class="mmc-autherr">${esc(S.authError)}</div>` : ''}
-      ${isSignup? `<div class="mmc-field"><label>Your name</label><input type="text" id="mmc-a-name" placeholder="e.g. Braam L."></div>` : ''}
-      <div class="mmc-field"><label>${isSignup? 'Your email' : 'Username (or teacher email)'}</label>
-        <input type="text" id="mmc-a-email" placeholder="${isSignup? 'you@example.com' : 'e.g. SusieM'}"></div>
-      <div class="mmc-field"><label>Password</label><input type="password" id="mmc-a-pass" placeholder="${isSignup? 'At least 6 characters' : 'Your password'}"></div>
-      <button class="mmc-btn gold" id="mmc-a-go">${isSignup? 'Create teacher account' : 'Log in'}</button>
+      <div class="mmc-field"><label>Username (or teacher email)</label>
+        <input type="text" id="mmc-a-email" placeholder="e.g. SusieM"></div>
+      <div class="mmc-field"><label>Password</label><input type="password" id="mmc-a-pass" placeholder="Your password"></div>
+      <button class="mmc-btn gold" id="mmc-a-go">Log in</button>
     </div>
   `);
   card.querySelector('#mmc-a-go').onclick=async ()=>{
     const raw=card.querySelector('#mmc-a-email').value.trim();
     const pass=card.querySelector('#mmc-a-pass').value;
-    const nameEl=card.querySelector('#mmc-a-name');
-    const name=nameEl? nameEl.value.trim() : '';
-    if(!raw || !pass || (isSignup && !name)){ S.authError='Please fill in every field.'; render(); return; }
+    if(!raw || !pass){ S.authError='Please fill in every field.'; render(); return; }
     try{
-      if(isSignup){
-        const cred=await createUserWithEmailAndPassword(auth,raw,pass);
-        await updateProfile(cred.user, {displayName:name});
-        await setDoc(doc(db,'profiles',cred.user.uid), {displayName:name, email:raw});
-      } else {
-        const email = raw.includes('@') ? raw : usernameToEmail(raw);
-        await signInWithEmailAndPassword(auth,email,pass);
-      }
+      const email = raw.includes('@') ? raw : usernameToEmail(raw);
+      await signInWithEmailAndPassword(auth,email,pass);
     }catch(e){ S.authError=friendlyAuthError(e.code); render(); }
   };
   wrap.appendChild(card);
 
-  const toggle=el(`<a href="#" style="display:inline-block;margin-top:4px;font-size:12.5px;color:var(--ink-soft);">${isSignup? '← back to log in' : "First time here as the teacher? Set up your account"}</a>`);
-  toggle.onclick=(e)=>{ e.preventDefault(); S.showSignup=!S.showSignup; S.authError=null; render(); };
+  const toggle=el(`<a href="#" style="display:inline-block;margin-top:4px;font-size:12.5px;color:var(--ink-soft);">Want to bring this to your class? Request teacher access</a>`);
+  toggle.onclick=(e)=>{ e.preventDefault(); S.showSignup=true; S.authError=null; render(); };
   wrap.appendChild(toggle);
   return wrap;
 }
@@ -3012,6 +3058,33 @@ async function revokeTeacherAccess(email, btnEl){
   if(btnEl){ btnEl.disabled=false; btnEl.textContent=originalText; }
   render();
 }
+async function approveTeacherRequest(requestId, email, btnEl){
+  const originalText = btnEl ? btnEl.textContent : '';
+  if(btnEl){ btnEl.disabled=true; btnEl.textContent='Approving…'; }
+  try{
+    const call = httpsCallable(functions, 'approveTeacherRequest');
+    await call({ requestId });
+    await sendPasswordResetEmail(auth, email);
+    S.toast = `Approved — ${email} will get an email to set up their password.`;
+  }catch(e){
+    S.toast = 'Could not approve: '+(e.message||'unknown error');
+  }
+  if(btnEl){ btnEl.disabled=false; btnEl.textContent=originalText; }
+  render();
+}
+async function denyTeacherRequest(requestId, btnEl){
+  if(!confirm('Deny this request? No account will be created.')) return;
+  const originalText = btnEl ? btnEl.textContent : '';
+  if(btnEl){ btnEl.disabled=true; btnEl.textContent='Denying…'; }
+  try{
+    const call = httpsCallable(functions, 'denyTeacherRequest');
+    await call({ requestId });
+  }catch(e){
+    S.toast = 'Could not deny: '+(e.message||'unknown error');
+  }
+  if(btnEl){ btnEl.disabled=false; btnEl.textContent=originalText; }
+  render();
+}
 function renderStudentsTab(){
   const wrap=el('<div></div>');
 
@@ -3051,24 +3124,57 @@ function renderStudentsTab(){
   const isAdmin = isCurrentUserAdminTeacher();
   if(isAdmin){
     wrap.appendChild(inviteCard);
-    const myEmail=(S.user&&S.user.email||'').toLowerCase();
-    const others=S.allTeacherEmails.filter(e=>e!==myEmail);
-    if(others.length>0){
-      const teachersCard=el(`
-        <div class="mmc-card" style="margin-bottom:14px;">
-          <h3>Current teachers</h3>
-          <div class="meta">You're the admin — you can revoke a colleague's access at any time. This signs them out immediately and blocks them from logging back in.</div>
+
+    if(S.pendingTeacherRequests.length>0){
+      const pendingCard=el(`
+        <div class="mmc-card" style="margin-bottom:14px;background:#FFF4E5;border-color:#E85C0A;">
+          <h3>Pending requests (${S.pendingTeacherRequests.length})</h3>
+          <div class="meta">Someone asked for teacher access. Approving creates their account and emails them a link to set up a password — nothing happens until you decide.</div>
         </div>
       `);
-      others.forEach(email=>{
-        const row=el(`<div class="mmc-row" style="justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--paper-line);">
-          <div>${esc(email)}</div>
-          <button class="mmc-btn danger sm" data-act="revoke">Revoke access</button>
+      S.pendingTeacherRequests.forEach(r=>{
+        const row=el(`<div class="mmc-row" style="justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--paper-line);flex-wrap:wrap;gap:8px;">
+          <div><b>${esc(r.name)}</b> <span class="meta">${esc(r.email)}</span></div>
+          <div class="mmc-row" style="gap:8px;">
+            <button class="mmc-btn gold sm" data-act="approve">Approve</button>
+            <button class="mmc-btn ghost sm" data-act="deny">Deny</button>
+          </div>
         </div>`);
-        row.querySelector('[data-act="revoke"]').onclick=()=>revokeTeacherAccess(email, row.querySelector('[data-act="revoke"]'));
-        teachersCard.appendChild(row);
+        row.querySelector('[data-act="approve"]').onclick=()=>approveTeacherRequest(r.id, r.email, row.querySelector('[data-act="approve"]'));
+        row.querySelector('[data-act="deny"]').onclick=()=>denyTeacherRequest(r.id, row.querySelector('[data-act="deny"]'));
+        pendingCard.appendChild(row);
       });
-      wrap.appendChild(teachersCard);
+      wrap.appendChild(pendingCard);
+    }
+
+    const activeDirectory = S.teacherDirectory.filter(t=>t.status==='active');
+    if(activeDirectory.length>0 || S.teacherDirectory.length>0){
+      const directoryCard=el(`
+        <div class="mmc-card" style="margin-bottom:14px;">
+          <h3>Teacher directory (${activeDirectory.length} active)</h3>
+          <div class="meta">Every teacher who's ever been approved here, active or revoked — this is your growth list. You can revoke anyone at any time.</div>
+          <button class="mmc-btn ghost sm" id="mmc-directory-csv" style="margin-top:8px;">Download directory CSV</button>
+        </div>
+      `);
+      directoryCard.querySelector('#mmc-directory-csv').onclick=()=>{
+        const rows=[['Name','Email','Status','Approved at'], ...S.teacherDirectory.map(t=>[t.name||'', t.email||'', t.status||'', t.approvedAt? new Date(t.approvedAt.seconds*1000).toLocaleDateString() : ''])];
+        const csv=rows.map(r=>r.map(c=>{ const s=String(c); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }).join(',')).join('\n');
+        const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob);
+        const a=document.createElement('a'); a.href=url; a.download='teacher-directory.csv';
+        document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      };
+      const myEmail=(S.user&&S.user.email||'').toLowerCase();
+      S.teacherDirectory.forEach(t=>{
+        const isSelf = (t.email||'').toLowerCase()===myEmail;
+        const row=el(`<div class="mmc-row" style="justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--paper-line);flex-wrap:wrap;gap:8px;">
+          <div><b>${esc(t.name||t.email)}</b> <span class="meta">${esc(t.email)}${t.status==='revoked'? ' · revoked' : ''}</span></div>
+          ${(!isSelf && t.status==='active') ? `<button class="mmc-btn danger sm" data-act="revoke">Revoke access</button>` : ''}
+        </div>`);
+        const revokeBtn=row.querySelector('[data-act="revoke"]');
+        if(revokeBtn) revokeBtn.onclick=()=>revokeTeacherAccess(t.email, revokeBtn);
+        directoryCard.appendChild(row);
+      });
+      wrap.appendChild(directoryCard);
     }
   }
 
@@ -4184,3 +4290,4 @@ render();
 </script>
 </body>
 </html>
+
