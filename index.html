@@ -3483,7 +3483,7 @@ function syncMyLiveSession(){
     if(S.myLive && S.myLive.gameId===room.id) return;
     if(S.myLive && S.myLive.timerHandle) clearInterval(S.myLive.timerHandle);
     S.myLive = { gameId:room.id, level:room.level, answering:true, qIndex:0, currentQ:genTTQuestion(room.level,0),
-      score:0, attempted:0, position:0, questionStartedAt:Date.now(), timerHandle:null };
+      score:0, attempted:0, position:0, questionStartedAt:Date.now(), timerHandle:null, typedValue:'' };
     startMyLiveTimer();
   }
 }
@@ -3533,18 +3533,27 @@ function renderMyLiveSession(){
     <div class="mmc-card" style="text-align:center;">
       <div style="font-family:'Baloo 2',sans-serif;font-size:36px;font-weight:700;margin-bottom:16px;">${esc(S.myLive.currentQ.prompt)} = ?</div>
       <div class="mmc-row" style="justify-content:center;">
-        <input type="text" id="mmc-live-input" autocomplete="off" style="width:120px;text-align:center;font-size:22px;padding:10px;border-radius:10px;border:2px solid var(--paper-line);">
+        <input type="text" id="mmc-live-input" autocomplete="off" inputmode="numeric" value="${esc(S.myLive.typedValue||'')}" style="width:120px;text-align:center;font-size:22px;padding:10px;border-radius:10px;border:2px solid var(--paper-line);">
         <button class="mmc-btn gold" id="mmc-live-submit">Go</button>
       </div>
     </div>
   `);
   const input=qbox.querySelector('#mmc-live-input');
-  const go=()=>{ if(!S.myLive.answering) return; const v=input.value; input.value=''; submitMyLiveAnswer(v); };
+  // The race track re-renders every time ANY player in the room answers a question (their
+  // score/position updates trigger a fresh snapshot for everyone). A raw <input> only keeps
+  // its typed value in the DOM, so without this it gets wiped mid-keystroke every time someone
+  // else in a busy race answers — persisting it in state and restoring focus after every
+  // render is what actually fixes that, on top of Enter already submitting.
+  input.oninput=(e)=>{ S.myLive.typedValue=e.target.value; };
+  const go=()=>{ if(!S.myLive.answering) return; const v=input.value; input.value=''; S.myLive.typedValue=''; submitMyLiveAnswer(v); };
   qbox.querySelector('#mmc-live-submit').onclick=go;
   input.addEventListener('keydown', e=>{ if(e.key==='Enter') go(); });
   wrap.appendChild(qbox);
   wrap.appendChild(renderRaceTrack(S.user.uid, true));
   wrap.appendChild(renderLiveLeaderboardCard('Live leaderboard', room||{}, false));
+  if(S.myLive.answering){
+    setTimeout(()=>{ const el2=document.getElementById('mmc-live-input'); if(el2){ el2.focus(); const len=el2.value.length; el2.setSelectionRange(len,len); } }, 0);
+  }
   return wrap;
 }
 function renderStudentLiveGame(){
