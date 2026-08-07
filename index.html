@@ -56,8 +56,9 @@
   }
   .mmc-signout-pill:hover { transform:translateY(-1px); }
   .mmc-title {
-    font-family:'Baloo 2',sans-serif; font-weight:800; font-size:clamp(30px,6vw,50px);
+    font-family:'Baloo 2',sans-serif; font-weight:800; font-size:clamp(38px,8vw,68px);
     margin:6px 0 2px; position:relative; z-index:1; letter-spacing:.2px; line-height:1;
+    text-align:center;
   }
   .mmc-title-plain { color:#fff; text-shadow:2px 3px 0 rgba(0,0,0,0.15); }
   .mmc-title-rainbow {
@@ -67,7 +68,7 @@
   .mmc-sparkle { position:relative; z-index:1; font-size:20px; display:inline-block; margin-left:4px; }
   .mmc-tagline {
     position:relative; z-index:1; color:#fff; font-family:'Baloo 2',sans-serif; font-weight:700;
-    font-size:clamp(15px,2.4vw,20px); margin:2px 0 8px;
+    font-size:clamp(15px,2.4vw,20px); margin:2px 0 8px; text-align:center;
   }
   .mmc-tagline .dot { color:var(--slime); }
   .mmc-tagline .dot.d2 { color:var(--yellow); }
@@ -497,12 +498,18 @@ function genShadedGrid(diff){
     explanation:`${n} out of ${total} squares are shaded — ${n}/${total} simplifies to ${correct}.`, svg:drawShadedGrid(size.rows,size.cols,n) };
 }
 function genDecimalPlace(diff){
-  const decDigits= diff==='easy'?1:2;
+  const placesByDiff = {
+    easy: ['tenths','hundredths'],
+    medium: ['tenths','hundredths','thousandths'],
+    hard: ['tenths','hundredths','thousandths','ten-thousandths'],
+  };
+  const places = placesByDiff[diff] || placesByDiff.easy;
+  const decDigits = places.length; // always generate enough decimal digits to cover every place this difficulty can ask about
   const whole=randInt(1, diff==='hard'?999:99);
   let dec=''; for(let i=0;i<decDigits;i++) dec+=randInt(0,9);
   const numStr=`${whole}.${dec}`;
-  const decPlaces=['tenths','hundredths']; const placeIdx=randInt(0,decDigits-1);
-  const placeName=decPlaces[placeIdx]; const digit=dec[placeIdx];
+  const placeIdx=randInt(0,places.length-1);
+  const placeName=places[placeIdx]; const digit=dec[placeIdx];
   return { prompt:`Which digit is in the ${placeName} place in ${numStr}?`, answer:digit,
     explanation:`In ${numStr}, the ${placeName} digit is ${digit}.` };
 }
@@ -1952,7 +1959,6 @@ function renderHead(){
       ${S.user ? `<button id="mmc-signout" class="mmc-signout-pill">↪ Sign out</button>` : ''}
       <div class="mmc-title"><span class="mmc-title-plain">Maths</span> <span class="mmc-title-rainbow">Mate</span><span class="mmc-sparkle">✨</span></div>
       <div class="mmc-tagline">Learn<span class="dot d1">.</span> Play<span class="dot d2">.</span> Improve<span class="dot d3">.</span></div>
-      <p class="mmc-sub">A fresh set of problems every week, instant feedback, and a passport that fills up as you go.</p>
       ${S.user ? `
         <div class="mmc-head-bottom">
           <div class="mmc-welcome-card">
