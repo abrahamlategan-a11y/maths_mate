@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Maths Mate</title>
+<title>Mathmentum</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito+Sans:wght@400;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap');
 
@@ -2128,7 +2128,7 @@ async function generateLoginCardsPDF(students, btnId, idleLabel){
       const {x,y}=pos;
       doc.setDrawColor(190); doc.setLineWidth(0.3); doc.rect(x,y,cardW,cardH);
       doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(30,30,30);
-      doc.text('Maths Mate Login', x+5, y+8);
+      doc.text('Mathmentum Login', x+5, y+8);
       doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(20,20,20);
       doc.text(String(s.name).slice(0,26), x+5, y+16);
       doc.setFontSize(9);
@@ -2138,11 +2138,11 @@ async function generateLoginCardsPDF(students, btnId, idleLabel){
       doc.setTextColor(20,20,20); doc.setFont('helvetica','bold'); doc.text(String(s.password), x+28, y+32);
       if(qrDataUrl){
         doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(130,130,130);
-        doc.text('Scan to open Maths Mate', x+5, y+cardH-6);
+        doc.text('Scan to open Mathmentum', x+5, y+cardH-6);
         doc.addImage(qrDataUrl, 'PNG', x+cardW-24, y+cardH-24, 19, 19);
       }
     });
-    doc.save('maths-mate-login-cards.pdf');
+    doc.save('mathmentum-login-cards.pdf');
   }catch(e){
     S.toast='Something went wrong building the PDF — check the browser console for details.';
   }
@@ -2429,7 +2429,7 @@ function renderHead(){
         <span style="top:40%;left:28%;font-size:18px;">−</span>
       </div>
       ${S.user ? `<button id="mmc-signout" class="mmc-signout-pill">↪ Sign out</button>` : ''}
-      <div class="mmc-title"><span class="mmc-title-plain">Maths</span> <span class="mmc-title-rainbow">Mate</span><span class="mmc-sparkle">✨</span></div>
+      <div class="mmc-title"><span class="mmc-title-plain">Math</span><span class="mmc-title-rainbow">mentum</span><span class="mmc-sparkle">✨</span></div>
       <div class="mmc-tagline">Learn<span class="dot d1">.</span> Play<span class="dot d2">.</span> Improve<span class="dot d3">.</span></div>
       ${S.user ? `
         <div class="mmc-head-bottom">
@@ -3773,7 +3773,7 @@ function renderStudentsTab(mode){
   const shareUrl = `${window.location.origin}${window.location.pathname}?ref=${encodeURIComponent(myEmailForShare)}`;
   const shareCard=el(`
     <div class="mmc-card" style="margin-bottom:14px;">
-      <h3>Share Maths Mate</h3>
+      <h3>Share Mathmentum</h3>
       <div class="meta">Know a teacher who'd love this? Send them your link below — when they request access, it'll be tagged as coming from you.</div>
       <div class="mmc-row" style="align-items:center;gap:8px;margin-top:8px;">
         <code class="mmc-code" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(shareUrl)}</code>
