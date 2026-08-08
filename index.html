@@ -181,7 +181,7 @@
   .mmc-frac { display:inline-flex; flex-direction:column; align-items:center; vertical-align:middle; font-family:'IBM Plex Mono',monospace; font-weight:700; }
   .mmc-frac .num, .mmc-frac .den { padding:2px 8px; line-height:1.25; }
   .mmc-frac .line { width:100%; height:0; border-top:2.5px solid var(--ink); margin:1px 0; }
-  .mmc-frac input { width:48px; text-align:center; font-size:18px; padding:5px 2px; border-radius:7px; border:2px solid var(--paper-line); font-family:'IBM Plex Mono',monospace; font-weight:700; }
+  .mmc-frac input { width:66px; text-align:center; font-size:18px; padding:5px 2px; border-radius:7px; border:2px solid var(--paper-line); font-family:'IBM Plex Mono',monospace; font-weight:700; }
   .mmc-frac input:focus { outline:none; border-color:var(--purple); }
   /* Mixed numbers: a taller whole-number box to the left of a stacked fraction,
      vertically centred on the fraction bar so it reads as one value. */
@@ -198,6 +198,10 @@
   .mmc-mixed input.wholebox:focus { outline:none; border-color:var(--purple); }
   .mmc-choice-btn .mmc-mixed { font-size:15px; gap:5px; }
   .mmc-choice-btn .mmc-mixed .whole { font-size:17px; padding:0 3px; }
+  .mmc-symbtn { display:flex; flex-direction:column; align-items:center; line-height:1.1; gap:1px; }
+  .mmc-symbtn .sym { font-size:24px; font-weight:800; font-family:'IBM Plex Mono',monospace; }
+  .mmc-symbtn .wrd { font-size:11.5px; font-weight:700; letter-spacing:.01em; }
+  .mmc-cmpgap { font-size:28px; font-weight:800; color:var(--ink-soft); }
   .mmc-choice-btn .mmc-frac { font-size:15px; }
   .mmc-choice-btn .mmc-frac .num, .mmc-choice-btn .mmc-frac .den { padding:1px 4px; }
 
@@ -1016,12 +1020,12 @@ function genAngle(diff){
   }
   // hard: classify three angles at once — right (90°) shows up now and then, but never twice
   // in the same question, since a repeated identical value is a giveaway rather than a real test.
-  const nonRightCats=['acute','obtuse','reflex'];
-  const includeRight = Math.random()<0.45;
-  const rightSlot = includeRight ? randInt(0,2) : -1;
+  // Always three DIFFERENT categories — repeating a type wastes one of the
+  // three slots and makes the question easier than intended.
+  const cats = shuffleArr(['acute','obtuse','reflex','right']).slice(0,3);
   const items=[];
   for(let i=0;i<3;i++){
-    const cat = i===rightSlot ? 'right' : pick(nonRightCats);
+    const cat = cats[i];
     let deg;
     if(cat==='acute') deg=randInt(1,89);
     else if(cat==='right') deg=90;
@@ -1979,9 +1983,14 @@ function genCompareFractions(diff){
   }
   const ans = Math.abs(a.v-b.v)<1e-9 ? 'equal to' : (a.v<b.v ? 'less than' : 'more than');
   return {
-    prompt:`Is`, compareLead:true,
+    prompt:`Choose the correct sign:`, compareLead:true,
     leftNum:a.n, leftDen:a.d, rightNum:b.n, rightDen:b.d,
-    inputType:'choice', choices:['less than','more than','equal to'], answer:ans,
+    inputType:'choice',
+    // Symbol on the button, words underneath — the pairing is what teaches
+    // students which sign means what.
+    choices:['less than','equal to','more than'],
+    choiceSymbols:{'less than':'<','equal to':'=','more than':'>'},
+    answer:ans,
     explanation:`${a.n}/${a.d} = ${(a.v).toFixed(3)} and ${b.n}/${b.d} = ${(b.v).toFixed(3)}, so ${a.n}/${a.d} is ${ans} ${b.n}/${b.d}.`,
     subskill: a.d===b.d ? 'same_denominator' : (Math.abs(a.v-b.v)<1e-9 ? 'equivalent' : 'different_denominator')
   };
@@ -2053,6 +2062,91 @@ function genMixedImproper(diff){
     answer:`${improperNum}/${den}`,
     subskill:'mixed_to_improper',
     explanation:`${whole} × ${den} = ${whole*den}, plus ${num} = ${improperNum}, so ${whole} ${num}/${den} = ${improperNum}/${den}.`
+  };
+}
+
+
+// ---------- Q23 CHANCE AND PROBABILITY ----------
+const CHANCE_CTX=[
+  {thing:'counter', place:'a bag', verb:'Picking'},
+  {thing:'marble',  place:'a jar',  verb:'Drawing'},
+  {thing:'block',   place:'a box',  verb:'Choosing'},
+  {thing:'card',    place:'a pile', verb:'Turning over'},
+];
+const CHANCE_COLOURS=['red','blue','yellow','green','purple','orange'];
+function genProbability(diff){
+  if(diff==='easy'){
+    // Likelihood language from a described situation.
+    const c=pick(CHANCE_CTX);
+    const cols=shuffleArr(CHANCE_COLOURS).slice(0,2);
+    const kind=pick(['certain','impossible','likely','unlikely','even chance']);
+    let a,b,target,ans;
+    if(kind==='certain'){ a=randInt(5,10); b=0; target=cols[0]; ans='certain'; }
+    else if(kind==='impossible'){ a=randInt(5,10); b=0; target=cols[1]; ans='impossible'; }
+    else if(kind==='likely'){ a=randInt(7,9); b=randInt(1,2); target=cols[0]; ans='likely'; }
+    else if(kind==='unlikely'){ a=randInt(1,2); b=randInt(7,9); target=cols[0]; ans='unlikely'; }
+    else { a=randInt(3,6); b=a; target=cols[0]; ans='even chance'; }
+    const plural=(n,w)=> `${n} ${w}${n===1?'':'s'}`;
+    const cap=(t)=> t.charAt(0).toUpperCase()+t.slice(1);
+    const desc = b===0
+      ? `${cap(c.place)} contains ${plural(a, cols[0]+' '+c.thing)}.`
+      : `${cap(c.place)} contains ${plural(a, cols[0]+' '+c.thing)} and ${plural(b, cols[1]+' '+c.thing)}.`;
+    return {
+      prompt:`${desc}\n${c.verb} a ${target} ${c.thing} is:`,
+      inputType:'choice',
+      choices:['impossible','unlikely','even chance','likely','certain'],
+      answer:ans,
+      explanation:`There ${b===0&&target===cols[1]?'are none of those':'is a '+ans+' chance'}, so the answer is "${ans}".`,
+      subskill:'probability_language'
+    };
+  }
+  if(diff==='medium'){
+    // Compare outcomes across a spinner, dice or counters.
+    const mode=pick(['spinner','counters','dice']);
+    const cols=shuffleArr(CHANCE_COLOURS).slice(0,3);
+    if(mode==='dice'){
+      const ask=pick([
+        {q:'rolling a number greater than 4', a:'2 out of 6'},
+        {q:'rolling an even number', a:'3 out of 6'},
+        {q:'rolling a 1', a:'1 out of 6'},
+      ]);
+      const other=pick([{q:'rolling an odd number',a:'3 out of 6'},{q:'rolling a 6',a:'1 out of 6'}]);
+      const A=parseInt(ask.a), B=parseInt(other.a);
+      const ansTxt = A===B ? 'They are equally likely' : (A>B? ask.q : other.q);
+      return {
+        prompt:`A fair six-sided dice is rolled. Which is more likely?`,
+        inputType:'choice',
+        choices:shuffleArr([ask.q, other.q, 'They are equally likely']),
+        answer: ansTxt.charAt(0).toUpperCase()===ansTxt.charAt(0)? ansTxt : ansTxt,
+        explanation:`${ask.q}: ${ask.a}. ${other.q}: ${other.a}.`,
+        subskill:'compare_likelihood'
+      };
+    }
+    const counts=[randInt(1,4),randInt(5,9),randInt(1,4)];
+    const label = mode==='spinner' ? 'A spinner has' : 'A bag contains';
+    const unit = mode==='spinner' ? 'sections' : 'counters';
+    const maxI=counts.indexOf(Math.max(...counts)), minI=counts.indexOf(Math.min(...counts));
+    const askMost=Math.random()<0.5;
+    return {
+      prompt:`${label} ${counts.map((n,i)=>`${n} ${cols[i]}`).join(', ')} ${unit}.\nWhich colour are you ${askMost?'most':'least'} likely to get?`,
+      inputType:'choice', choices:shuffleArr(cols.slice()),
+      answer: askMost? cols[maxI] : cols[minI],
+      explanation:`${cols[maxI]} has the most (${counts[maxI]}) and ${cols[minI]} the fewest (${counts[minI]}).`,
+      subskill:'compare_likelihood'
+    };
+  }
+  // hard: numerical probability as a fraction
+  const cols=shuffleArr(CHANCE_COLOURS).slice(0,3);
+  const counts=[randInt(2,5),randInt(2,5),randInt(2,5)];
+  const total=counts.reduce((a,b)=>a+b,0);
+  const i=randInt(0,2);
+  return {
+    prompt:`A bag contains ${counts.map((n,k)=>`${n} ${cols[k]}`).join(', ')} counters.\nWhat is the probability of choosing ${cols[i]}?`,
+    inputType:'mixed', wantWhole:false,
+    ansNum:counts[i], ansDen:total,
+    answer:`${counts[i]}/${total}`,
+    explanation:`There are ${counts[i]} ${cols[i]} counters out of ${total} altogether, so the probability is ${counts[i]}/${total}.`,
+    subskill:'numerical_probability'
   };
 }
 
@@ -2237,8 +2331,8 @@ const SLOTS=[
   {skill:'ANGLES',           title:'Angles',                       gen:genAngle},
   {skill:'FRACTION_OF',      title:'Fraction of a collection',     gen:genFractionOf},
   {skill:'MISSING_NUMBER',   title:'Missing number equations',     gen:genMissingNumber},
-  {skill:'MIXED_IMPROPER',   title:'Mixed and improper fractions', gen:genFractionSimplify},
-  {skill:'PROBABILITY',      title:'Chance and probability',       gen:genFracHalf},
+  {skill:'MIXED_IMPROPER',   title:'Mixed and improper fractions', gen:genMixedImproper},
+  {skill:'PROBABILITY',      title:'Chance and probability',       gen:genProbability},
   {skill:'STATISTICS',       title:'Data and averages',            gen:genStatistics},
 ];
 function buildQuestion(slotIdx, diff, strategyKey){
@@ -2257,7 +2351,7 @@ function buildQuestion(slotIdx, diff, strategyKey){
     // Inline-box questions (partitioning, sequences, powers-of-ten). These MUST be
     // whitelisted here — anything not listed is silently dropped before the
     // question is saved, which leaves the renderer with nothing to draw.
-    compareLead:!!q.compareLead, fracOfLead:!!q.fracOfLead,
+    compareLead:!!q.compareLead, fracOfLead:!!q.fracOfLead, choiceSymbols:q.choiceSymbols||null,
     leftNum:q.leftNum!=null?q.leftNum:null, leftDen:q.leftDen!=null?q.leftDen:null,
     rightNum:q.rightNum!=null?q.rightNum:null, rightDen:q.rightDen!=null?q.rightDen:null,
     ansNum:q.ansNum!=null?q.ansNum:null, ansDen:q.ansDen!=null?q.ansDen:null,
@@ -3040,8 +3134,8 @@ function formatScheduledAt(ts){
 // students always see a proper stacked fraction instead of "3/4" as plain text.
 function fracPromptHTML(q){
   if(q.compareLead && q.leftNum!=null){
-    return `<div class="mmc-frac-eq" style="margin-top:10px;">${fracHTML(q.leftNum,q.leftDen)}
-      <span>less than, more than, or equal to</span>${fracHTML(q.rightNum,q.rightDen)}<span>?</span></div>`;
+    return `<div class="mmc-frac-eq" style="margin-top:10px;gap:18px;">${fracHTML(q.leftNum,q.leftDen)}
+      <span class="mmc-cmpgap">?</span>${fracHTML(q.rightNum,q.rightDen)}</div>`;
   }
   if(q.fracOfLead && q.fracNum!=null){
     return `<div class="mmc-frac-eq" style="margin-top:10px;">${fracHTML(q.fracNum,q.fracDen)}
@@ -5742,7 +5836,9 @@ function renderQuestionBody(q, st, onCheck, headerHTML){
     }
     const choiceRow=el('<div class="mmc-choices"></div>');
     (q.choices||[]).forEach(c=>{
-      const label = q.renderFractionChoices ? fracChoiceHTML(c) : esc(c);
+      const label = q.choiceSymbols && q.choiceSymbols[c]
+        ? `<span class="mmc-symbtn"><span class="sym">${esc(q.choiceSymbols[c])}</span><span class="wrd">${esc(c)}</span></span>`
+        : (q.renderFractionChoices ? fracChoiceHTML(c) : esc(c));
       const b=el(`<button type="button" class="mmc-choice-btn ${st.given===c?'selected':''}" ${st.checked?'disabled':''}>${label}</button>`);
       b.onclick=()=>{ if(st.checked) return; st.given=c; render(); };
       choiceRow.appendChild(b);
