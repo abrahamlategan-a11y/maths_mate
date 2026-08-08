@@ -1606,14 +1606,19 @@ function genPartition(diff){
 // ---------- Q2 NUMBER PATTERNS ----------
 // Constant step only. Direction, step size, missing position and start all vary.
 function genSequenceV2(diff){
-  const stepPool = diff==='easy' ? [2,3,5,10]
-    : diff==='medium' ? [20,25,50,100,200]
-    : [75,125,250,650,1500,375];
+  const stepPool = diff==='easy' ? [2,5,10]
+    : diff==='medium' ? [20,25,50,100]
+    : [25,50,75,125,150,250];
   const step=pick(stepPool);
   const up = Math.random()<0.5;
-  const startMax = diff==='easy'?60: diff==='medium'?900:9000;
+  // Starting values kept modest so the challenge is spotting the interval,
+  // not managing large-number arithmetic.
+  const startMax = diff==='easy'?40: diff==='medium'?400:1200;
   let start=randInt(1, startMax);
-  if(diff!=='easy') start = Math.round(start/step)*step + randInt(0,1)*Math.floor(step/2);
+  // Align the start to the step so the run reads cleanly (200, 225, 250...).
+  // Hard occasionally offsets it, which is where the extra challenge belongs.
+  if(diff==='medium') start = Math.max(step, Math.round(start/step)*step);
+  if(diff==='hard') start = Math.max(step, Math.round(start/step)*step + (Math.random()<0.35 ? Math.floor(step/2) : 0));
   const n=5;
   const seq=[];
   for(let i=0;i<n;i++) seq.push(start + (up?1:-1)*step*i);
@@ -1870,14 +1875,14 @@ function genFractionOf(diff){
   if(diff==='easy'){
     const den=pick([2,3,4]); const q=pick([4,5,6,7,8,10]);
     const total=den*q;
-    return { prompt:`What is 1/${den} of ${total}?`, answer:String(q),
+    return { prompt:`What is`, fracOfLead:true, answer:String(q),
       fracNum:1, fracDen:den, ofTotal:total,
       explanation:`${total} ÷ ${den} = ${q}` };
   }
   if(diff==='medium'){
     const den=pick([2,3,4,5,6,8,10]); const q=randInt(3,9);
     const total=den*q;
-    return { prompt:`What is 1/${den} of ${total}?`, answer:String(q),
+    return { prompt:`What is`, fracOfLead:true, answer:String(q),
       fracNum:1, fracDen:den, ofTotal:total,
       explanation:`${total} ÷ ${den} = ${q}` };
   }
@@ -1887,7 +1892,7 @@ function genFractionOf(diff){
   if(!cands.length) return genFractionOf(diff);
   const num=pick(cands); const q=randInt(3,9);
   const total=den*q;
-  return { prompt:`What is ${num}/${den} of ${total}?`, answer:String(num*q),
+  return { prompt:`What is`, fracOfLead:true, answer:String(num*q),
     fracNum:num, fracDen:den, ofTotal:total,
     explanation:`${total} ÷ ${den} = ${q}, then ${q} × ${num} = ${num*q}` };
 }
@@ -1944,6 +1949,77 @@ function genMissingNumber(diff){
   return { prompt, answer:String(answer), explanation:`${rhsText} = ${rhs}, so the missing number is ${answer}.` };
 }
 
+
+
+// ---------- Q10 COMPARING FRACTIONS ----------
+// Two real fractions compared against each other. 1/2 is only ever one of the
+// pair by chance, never the fixed benchmark it used to be.
+function genCompareFractions(diff){
+  const mk=(n,d)=>({n,d,v:n/d});
+  let a,b;
+  if(diff==='easy'){
+    const pool=[[1,2],[1,3],[2,3],[1,4],[3,4],[1,5],[2,5],[4,5],[1,10]];
+    const p1=pick(pool); let p2=pick(pool);
+    let g=0; while(p2[0]===p1[0] && p2[1]===p1[1] && g++<20) p2=pick(pool);
+    a=mk(p1[0],p1[1]); b=mk(p2[0],p2[1]);
+  } else if(diff==='medium'){
+    const dens=[3,4,5,6,8,10];
+    const d1=pick(dens); let d2=pick(dens.filter(x=>x!==d1));
+    a=mk(randInt(1,d1-1),d1); b=mk(randInt(1,d2-1),d2);
+  } else {
+    // Equivalent or near-equivalent pairs: 3/6 vs 4/8, 14/20 vs 8/10, 6/10 vs 3/5
+    if(Math.random()<0.45){
+      const n=randInt(1,4), d=randInt(n+1,6), k1=randInt(2,4), k2=randInt(2,4);
+      a=mk(n*k1,d*k1); b=mk(n*k2,d*k2);
+      if(a.n===b.n && a.d===b.d) b=mk(n*(k2+1), d*(k2+1));
+    } else {
+      const d1=pick([6,8,9,10,12,20]), d2=pick([5,6,8,10,12,20]);
+      a=mk(randInt(1,d1-1),d1); b=mk(randInt(1,d2-1),d2);
+    }
+  }
+  const ans = Math.abs(a.v-b.v)<1e-9 ? 'equal to' : (a.v<b.v ? 'less than' : 'more than');
+  return {
+    prompt:`Is`, compareLead:true,
+    leftNum:a.n, leftDen:a.d, rightNum:b.n, rightDen:b.d,
+    inputType:'choice', choices:['less than','more than','equal to'], answer:ans,
+    explanation:`${a.n}/${a.d} = ${(a.v).toFixed(3)} and ${b.n}/${b.d} = ${(b.v).toFixed(3)}, so ${a.n}/${a.d} is ${ans} ${b.n}/${b.d}.`,
+    subskill: a.d===b.d ? 'same_denominator' : (Math.abs(a.v-b.v)<1e-9 ? 'equivalent' : 'different_denominator')
+  };
+}
+
+// ---------- Q12 FRACTIONS <-> DECIMALS ----------
+function genFracDec(diff){
+  const toDecimal = Math.random()<0.5;
+  let num, den, dec;
+  if(diff==='easy'){
+    const pool=[[1,2,0.5],[1,4,0.25],[3,4,0.75],[1,10,0.1],[3,10,0.3],[7,10,0.7],[1,5,0.2],[2,5,0.4]];
+    const p=pick(pool); num=p[0]; den=p[1]; dec=p[2];
+  } else if(diff==='medium'){
+    den=100; num=randInt(2,99); dec=Math.round(num)/100;
+  } else {
+    if(Math.random()<0.5){ den=100; num=randInt(11,99); dec=num/100; }
+    else { den=1000; num=randInt(101,999); dec=num/1000; }
+  }
+  dec=Math.round(dec*1000)/1000;
+  if(toDecimal){
+    return {
+      prompt:`Write this fraction as a decimal.`,
+      showFracNum:num, showFracDen:den,
+      answer:String(dec),
+      explanation:`${num}/${den} = ${dec}`,
+      subskill:'fraction_to_decimal'
+    };
+  }
+  return {
+    prompt:`Write this decimal as a fraction.`,
+    inputType:'mixed', wantWhole:false,
+    mixedLead:String(dec),
+    ansNum:num, ansDen:den,
+    answer:`${num}/${den}`,
+    explanation:`${dec} = ${num}/${den}`,
+    subskill:'decimal_to_fraction'
+  };
+}
 
 // ---------- Q22 IMPROPER FRACTION <-> MIXED NUMBER ----------
 function genMixedImproper(diff){
@@ -2149,9 +2225,9 @@ const SLOTS=[
   {skill:'SUBTRACTION',      title:'Subtraction',                  gen:genSubtractionV2},
   {skill:'MULTIPLICATION',   title:'Multiplication',               gen:genMultiplicationV2},
   {skill:'DIVISION',         title:'Division',                     gen:genDivisionV2},
-  {skill:'COMPARE_FRACTION', title:'Comparing fractions',          gen:genFracHalf},
+  {skill:'COMPARE_FRACTION', title:'Comparing fractions',          gen:genCompareFractions},
   {skill:'VISUAL_FRACTION',  title:'Visual fractions',             gen:genShadedGrid},
-  {skill:'FRAC_DEC',         title:'Fractions and decimals',       gen:genDecimalPlace},
+  {skill:'FRAC_DEC',         title:'Fractions and decimals',       gen:genFracDec},
   {skill:'ORDER_DECIMAL',    title:'Ordering decimals',            gen:genOrderDecimals},
   {skill:'COINS',            title:'Australian coins',             gen:genCoins},
   {skill:'AREA_PERIMETER',   title:'Area and perimeter',           gen:genArea},
@@ -2181,6 +2257,9 @@ function buildQuestion(slotIdx, diff, strategyKey){
     // Inline-box questions (partitioning, sequences, powers-of-ten). These MUST be
     // whitelisted here — anything not listed is silently dropped before the
     // question is saved, which leaves the renderer with nothing to draw.
+    compareLead:!!q.compareLead, fracOfLead:!!q.fracOfLead,
+    leftNum:q.leftNum!=null?q.leftNum:null, leftDen:q.leftDen!=null?q.leftDen:null,
+    rightNum:q.rightNum!=null?q.rightNum:null, rightDen:q.rightDen!=null?q.rightDen:null,
     ansNum:q.ansNum!=null?q.ansNum:null, ansDen:q.ansDen!=null?q.ansDen:null,
     wantWhole:q.wantWhole!==false, requireSimplest:!!q.requireSimplest,
     requireMixedForm:!!q.requireMixedForm, mixedLead:q.mixedLead||null,
@@ -2956,6 +3035,23 @@ function formatScheduledAt(ts){
   const ms = ts.seconds!=null ? ts.seconds*1000 : (ts instanceof Date ? ts.getTime() : null);
   if(ms==null) return '';
   return new Date(ms).toLocaleString(undefined, {weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit'});
+}
+// Renders any fraction that belongs to the QUESTION rather than the answer, so
+// students always see a proper stacked fraction instead of "3/4" as plain text.
+function fracPromptHTML(q){
+  if(q.compareLead && q.leftNum!=null){
+    return `<div class="mmc-frac-eq" style="margin-top:10px;">${fracHTML(q.leftNum,q.leftDen)}
+      <span>less than, more than, or equal to</span>${fracHTML(q.rightNum,q.rightDen)}<span>?</span></div>`;
+  }
+  if(q.fracOfLead && q.fracNum!=null){
+    return `<div class="mmc-frac-eq" style="margin-top:10px;">${fracHTML(q.fracNum,q.fracDen)}
+      <span>of ${esc(q.ofTotal)}?</span></div>`;
+  }
+  // Question shows a value and the answer is typed elsewhere (e.g. fraction -> decimal).
+  if(q.showFracNum!=null && q.inputType!=='mixed'){
+    return `<div class="mmc-frac-eq" style="margin-top:10px;">${mixedHTML(q.showWhole, q.showFracNum, q.showFracDen)}</div>`;
+  }
+  return '';
 }
 function fracHTML(num,den){ return `<span class="mmc-frac"><span class="num">${esc(num)}</span><span class="line"></span><span class="den">${esc(den)}</span></span>`; }
 // Mixed number for display: whole part left of a stacked fraction. Omitting the
@@ -5634,6 +5730,7 @@ function renderQuestionBody(q, st, onCheck, headerHTML){
       ${headerHTML}
       ${q.svg ? `<div class="mmc-qsvg">${q.svg}</div>` : ''}
       <div class="qtext">${esc(q.prompt)}</div>
+      ${fracPromptHTML(q)}
     </div>
   `);
   function doCheck(){ if(st.checked) return; st.checked=true; st.correct=gradeQuestion(q, st.given); render(); onCheck(); }
