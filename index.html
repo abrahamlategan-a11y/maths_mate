@@ -198,6 +198,10 @@
   .mmc-mixed input.wholebox:focus { outline:none; border-color:var(--purple); }
   .mmc-choice-btn .mmc-mixed { font-size:15px; gap:5px; }
   .mmc-choice-btn .mmc-mixed .whole { font-size:17px; padding:0 3px; }
+  .mmc-nudge {
+    margin-top:8px; padding-top:8px; border-top:1.5px dashed rgba(0,0,0,.15);
+    font-size:14px; font-weight:700; color:var(--orange-deep);
+  }
   .mmc-symbtn { display:flex; flex-direction:column; align-items:center; line-height:1.1; gap:1px; }
   .mmc-symbtn .sym { font-size:24px; font-weight:800; font-family:'IBM Plex Mono',monospace; }
   .mmc-symbtn .wrd { font-size:11.5px; font-weight:700; letter-spacing:.01em; }
@@ -1022,7 +1026,10 @@ function genAngle(diff){
   // in the same question, since a repeated identical value is a giveaway rather than a real test.
   // Always three DIFFERENT categories — repeating a type wastes one of the
   // three slots and makes the question easier than intended.
-  const cats = shuffleArr(['acute','obtuse','reflex','right']).slice(0,3);
+  // 'straight' joins the pool some of the time — it's a named type students are
+  // expected to know, and it shouldn't only ever appear at Easy.
+  const pool = Math.random()<0.4 ? ['acute','obtuse','reflex','right','straight'] : ['acute','obtuse','reflex','right'];
+  const cats = shuffleArr(pool).slice(0,3);
   const items=[];
   for(let i=0;i<3;i++){
     const cat = cats[i];
@@ -1030,10 +1037,11 @@ function genAngle(diff){
     if(cat==='acute') deg=randInt(1,89);
     else if(cat==='right') deg=90;
     else if(cat==='obtuse') deg=randInt(91,179);
+    else if(cat==='straight') deg=180;
     else deg=randInt(181,359);
     items.push({deg, correct:cat});
   }
-  return { prompt:`Classify each angle: acute, right, obtuse or reflex?`, inputType:'classify', items,
+  return { prompt:`Classify each angle.`, inputType:'classify', items,
     answer: items.map(it=>it.correct).join(','),
     explanation: items.map(it=>`${it.deg}° is ${it.correct}`).join('; ') };
 }
@@ -3132,6 +3140,24 @@ function formatScheduledAt(ts){
 }
 // Renders any fraction that belongs to the QUESTION rather than the answer, so
 // students always see a proper stacked fraction instead of "3/4" as plain text.
+// A correct answer can still be a teaching moment. When simplification isn't the
+// assessed skill we mark the answer right, but tell the student what they could
+// have done — and record a flag so the feedback page can spot a pattern of it.
+function answerFlags(q, given){
+  const flags=[];
+  if(q.inputType==='mixed' && given && !q.requireSimplest){
+    const n=Number(given.num), d=Number(given.den);
+    if(isFinite(n)&&isFinite(d)&&d!==0&&n!==0&&!isSimplest(n,d)) flags.push('could_simplify');
+  }
+  return flags;
+}
+function nudgeText(q, given){
+  if(!given) return '';
+  const n=Number(given.num), d=Number(given.den);
+  if(!isFinite(n)||!isFinite(d)||d===0) return '';
+  const [sn,sd]=simplifyFrac(n,d);
+  return `Remember to simplify — ${n}/${d} can be written as ${sn}/${sd}.`;
+}
 function fracPromptHTML(q){
   if(q.compareLead && q.leftNum!=null){
     return `<div class="mmc-frac-eq" style="margin-top:10px;gap:18px;">${fracHTML(q.leftNum,q.leftDen)}
@@ -3565,6 +3591,22 @@ function renderTeacherHome(){
     if(cw && cw.total>=Math.max(4,roster.length)) notes.push({score:90, k:'Sticking point', good:false,
       t:cw.title+' — the class is at '+Math.round(cw.recentAccuracy*100)+'% and it is the weakest topic going.'});
   } catch(e){}
+
+  // Repeated unsimplified-but-correct answers. The marks look fine and the habit
+  // is invisible in the gradebook, so it only surfaces via these flags.
+  const simplifyCounts={};
+  results.forEach(r=>{
+    (r.answers||[]).forEach(a=>{
+      if((a.flags||[]).indexOf('could_simplify')!==-1) simplifyCounts[r.uid]=(simplifyCounts[r.uid]||0)+1;
+    });
+  });
+  const simplifyKids=Object.keys(simplifyCounts).filter(u=>simplifyCounts[u]>=3);
+  if(simplifyKids.length){
+    const names=simplifyKids.map(nameOf).filter(Boolean);
+    notes.push({score:58, k:'Worth a reminder', good:false,
+      t: (simplifyKids.length===1 && names.length) ? `${names[0]} keeps leaving fractions unsimplified.`
+        : `${simplifyKids.length} students keep leaving fractions unsimplified.`});
+  }
 
   if(afterHoursNames.length){
     notes.push({score:55+afterHoursNames.length, k:'Nobody asked them to', good:true,
@@ -5827,7 +5869,8 @@ function renderQuestionBody(q, st, onCheck, headerHTML){
       ${fracPromptHTML(q)}
     </div>
   `);
-  function doCheck(){ if(st.checked) return; st.checked=true; st.correct=gradeQuestion(q, st.given); render(); onCheck(); }
+  function doCheck(){ if(st.checked) return; st.checked=true; st.correct=gradeQuestion(q, st.given);
+    st.flags=answerFlags(q, st.given); render(); onCheck(); }
 
   if(q.inputType==='choice'){
     if(q.renderFractionChoices && q.givenNum!=null){
@@ -5921,7 +5964,7 @@ function renderQuestionBody(q, st, onCheck, headerHTML){
         </div>
       `);
       const choiceRow=row.querySelector('.mmc-choices');
-      ['acute','right','obtuse','reflex'].forEach(label=>{
+      ['acute','right','obtuse','straight','reflex'].forEach(label=>{
         const selected = st.given[i]===label;
         const b=el(`<button type="button" class="mmc-choice-btn${selected?' selected':''}" ${st.checked?'disabled':''}>${label[0].toUpperCase()+label.slice(1)}</button>`);
         b.onclick=()=>{ if(st.checked) return; st.given[i]=label; render(); };
@@ -6030,7 +6073,8 @@ function renderQuestionBody(q, st, onCheck, headerHTML){
     const correctText = q.inputType==='coins' ? `Try a different combination adding up to ${fmtCents(q.targetCents)}.`
       : q.inputType==='classify' ? `The answers were: ${(q.items||[]).map(it=>`${it.deg}° = ${it.correct}`).join(', ')}.`
       : `The answer was ${esc(q.answer)}.`;
-    const fb=el(`<div class="mmc-feedback ${st.correct?'ok':'no'}">${st.correct? '✓ Correct!' : `✗ Not quite. ${correctText}`}${q.explanation? ' — '+esc(q.explanation):''}</div>`);
+    const nudge = (st.correct && (st.flags||[]).indexOf('could_simplify')!==-1) ? nudgeText(q, st.given) : '';
+    const fb=el(`<div class="mmc-feedback ${st.correct?'ok':'no'}">${st.correct? '✓ Correct!' : `✗ Not quite. ${correctText}`}${q.explanation? ' — '+esc(q.explanation):''}${nudge? `<div class="mmc-nudge">${esc(nudge)}</div>`:''}</div>`);
     qbox.appendChild(fb);
   }
   return qbox;
@@ -6053,7 +6097,7 @@ function renderQuizTaking(week){
   finishBtn.onclick=async ()=>{
     const score=week.questions.filter(q=>S.quiz[q.id].correct).length;
     const total=week.questions.length;
-    const answers=week.questions.map(q=>({ qId:q.id, given:S.quiz[q.id].given, correct:S.quiz[q.id].correct }));
+    const answers=week.questions.map(q=>({ qId:q.id, given:S.quiz[q.id].given, correct:S.quiz[q.id].correct, flags:S.quiz[q.id].flags||[] }));
     try{
       await setDoc(doc(db,'results', `${S.user.uid}_${week.id}`), {
         uid:S.user.uid, studentName:S.profile? S.profile.displayName : S.user.email, studentEmail:S.user.email,
