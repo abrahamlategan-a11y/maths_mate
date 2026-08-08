@@ -183,6 +183,21 @@
   .mmc-frac .line { width:100%; height:0; border-top:2.5px solid var(--ink); margin:1px 0; }
   .mmc-frac input { width:48px; text-align:center; font-size:18px; padding:5px 2px; border-radius:7px; border:2px solid var(--paper-line); font-family:'IBM Plex Mono',monospace; font-weight:700; }
   .mmc-frac input:focus { outline:none; border-color:var(--purple); }
+  /* Mixed numbers: a taller whole-number box to the left of a stacked fraction,
+     vertically centred on the fraction bar so it reads as one value. */
+  .mmc-mixed { display:inline-flex; align-items:center; gap:8px; vertical-align:middle; }
+  .mmc-mixed .whole {
+    font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:26px; line-height:1;
+    padding:2px 6px;
+  }
+  .mmc-mixed input.wholebox {
+    width:62px; height:58px; text-align:center; font-size:24px; font-weight:700;
+    font-family:'IBM Plex Mono',monospace; border:2px solid var(--paper-line);
+    border-radius:9px; padding:4px;
+  }
+  .mmc-mixed input.wholebox:focus { outline:none; border-color:var(--purple); }
+  .mmc-choice-btn .mmc-mixed { font-size:15px; gap:5px; }
+  .mmc-choice-btn .mmc-mixed .whole { font-size:17px; padding:0 3px; }
   .mmc-choice-btn .mmc-frac { font-size:15px; }
   .mmc-choice-btn .mmc-frac .num, .mmc-choice-btn .mmc-frac .den { padding:1px 4px; }
 
@@ -1929,6 +1944,42 @@ function genMissingNumber(diff){
   return { prompt, answer:String(answer), explanation:`${rhsText} = ${rhs}, so the missing number is ${answer}.` };
 }
 
+
+// ---------- Q22 IMPROPER FRACTION <-> MIXED NUMBER ----------
+function genMixedImproper(diff){
+  const dens = diff==='easy' ? [2,3,4]
+    : diff==='medium' ? [2,3,4,5,6,8,10]
+    : [5,6,7,8,9,10,12];
+  const den=pick(dens);
+  const whole = diff==='easy' ? randInt(1,3) : diff==='medium' ? randInt(2,5) : randInt(3,7);
+  // The fractional part is always shown in simplest form — presenting "3 4/10"
+  // in the question itself would model sloppy notation even though the maths holds.
+  const coprime=[]; for(let n=1;n<den;n++) if(gcd2(n,den)===1) coprime.push(n);
+  const num = coprime.length ? pick(coprime) : randInt(1,den-1);
+  const improperNum = whole*den + num;
+  const toMixed = Math.random()<0.5;
+  if(toMixed){
+    return {
+      prompt:`Write this improper fraction as a mixed number.`,
+      inputType:'mixed', wantWhole:true, requireMixedForm:true,
+      mixedLead:null, showFracNum:improperNum, showFracDen:den,
+      ansNum:improperNum, ansDen:den,
+      answer:`${whole} ${num}/${den}`,
+      subskill:'improper_to_mixed',
+      explanation:`${improperNum} ÷ ${den} = ${whole} remainder ${num}, so ${improperNum}/${den} = ${whole} ${num}/${den}.`
+    };
+  }
+  return {
+    prompt:`Write this mixed number as an improper fraction.`,
+    inputType:'mixed', wantWhole:false,
+    mixedLead:null, showWhole:whole, showFracNum:num, showFracDen:den,
+    ansNum:improperNum, ansDen:den,
+    answer:`${improperNum}/${den}`,
+    subskill:'mixed_to_improper',
+    explanation:`${whole} × ${den} = ${whole*den}, plus ${num} = ${improperNum}, so ${whole} ${num}/${den} = ${improperNum}/${den}.`
+  };
+}
+
 // ---------- Q24 STATISTICS / DATA ----------
 const STAT_CONTEXTS=[
   {label:'Favourite pets', cats:['Dogs','Cats','Fish','Birds','Rabbits']},
@@ -2130,6 +2181,12 @@ function buildQuestion(slotIdx, diff, strategyKey){
     // Inline-box questions (partitioning, sequences, powers-of-ten). These MUST be
     // whitelisted here — anything not listed is silently dropped before the
     // question is saved, which leaves the renderer with nothing to draw.
+    ansNum:q.ansNum!=null?q.ansNum:null, ansDen:q.ansDen!=null?q.ansDen:null,
+    wantWhole:q.wantWhole!==false, requireSimplest:!!q.requireSimplest,
+    requireMixedForm:!!q.requireMixedForm, mixedLead:q.mixedLead||null,
+    showWhole:q.showWhole!=null?q.showWhole:null,
+    showFracNum:q.showFracNum!=null?q.showFracNum:null,
+    showFracDen:q.showFracDen!=null?q.showFracDen:null,
     parts:q.parts||null, partsLead:q.partsLead||null, partsJoin:q.partsJoin||null,
     partsTail:q.partsTail||null,
     fracNum:q.fracNum!=null?q.fracNum:null, fracDen:q.fracDen!=null?q.fracDen:null,
@@ -2174,6 +2231,21 @@ function gradeQuestion(q, given){
     const got=Array.isArray(given)?given:[];
     if(got.length!==want.length) return false;
     return want.every((w,i)=> normalize(w)===normalize(got[i]));
+  }
+  if(q.inputType==='mixed'){
+    const g=given||{};
+    const num=Number(g.num), den=Number(g.den);
+    const whole = String(g.whole||'').trim()===''? 0 : Number(g.whole);
+    if(!isFinite(num)||!isFinite(den)||den===0||!isFinite(whole)) return false;
+    // Compare as a single improper value so 2 3/4, 11/4 and 22/8 all match when
+    // simplification isn't the skill being assessed.
+    const gotNum = whole*den + num, gotDen = den;
+    const wantNum = Number(q.ansNum), wantDen = Number(q.ansDen);
+    if(!isFinite(wantNum)||!isFinite(wantDen)) return false;
+    if(gotNum*wantDen !== wantNum*gotDen) return false;
+    if(q.requireSimplest && !isSimplest(num,den)) return false;
+    if(q.requireMixedForm && whole===0 && num>=den) return false;
+    return true;
   }
   if(q.inputType==='multi'){
     const want=String(q.answer).split(',').map(normalize).sort();
@@ -2886,6 +2958,22 @@ function formatScheduledAt(ts){
   return new Date(ms).toLocaleString(undefined, {weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit'});
 }
 function fracHTML(num,den){ return `<span class="mmc-frac"><span class="num">${esc(num)}</span><span class="line"></span><span class="den">${esc(den)}</span></span>`; }
+// Mixed number for display: whole part left of a stacked fraction. Omitting the
+// whole part falls back to a plain fraction, so one helper serves both.
+function mixedHTML(whole,num,den){
+  if(whole==null || whole==='' ) return fracHTML(num,den);
+  return `<span class="mmc-mixed"><span class="whole">${esc(whole)}</span>${fracHTML(num,den)}</span>`;
+}
+// Shared fraction maths used across Q10/Q11/Q12/Q17/Q22/Q23.
+function gcd2(a,b){ a=Math.abs(a); b=Math.abs(b); while(b){ const t=b; b=a%b; a=t; } return a||1; }
+function simplifyFrac(n,d){ const g=gcd2(n,d); return [n/g, d/g]; }
+function isSimplest(n,d){ return gcd2(n,d)===1; }
+// True when the student's fraction equals the target, simplified or not.
+function fracEquivalent(givenNum,givenDen,wantNum,wantDen){
+  const a=Number(givenNum), b=Number(givenDen), c=Number(wantNum), d=Number(wantDen);
+  if(!isFinite(a)||!isFinite(b)||!isFinite(c)||!isFinite(d)||b===0||d===0) return false;
+  return a*d === c*b;
+}
 function fracChoiceHTML(c){
   const m=String(c).match(/^(-?\d+)\/(-?\d+)$/);
   return m ? fracHTML(m[1],m[2]) : esc(c);
@@ -4812,6 +4900,8 @@ function initQuizState(week){
     ? {given:new Array((q.items||[]).length).fill(''), checked:false, correct:false}
     : q.inputType==='parts'
     ? {given:new Array((q.parts||[]).length).fill(''), checked:false, correct:false}
+    : q.inputType==='mixed'
+    ? {given:{whole:'',num:'',den:''}, checked:false, correct:false}
     : q.inputType==='multi'
     ? {given:[], checked:false, correct:false}
     : {given: q.inputType==='coins' ? [] : '', checked:false, correct:false});
@@ -5471,6 +5561,8 @@ function startSkillPractice(slot){
     ? {given:new Array((q.items||[]).length).fill(''), checked:false, correct:false}
     : q.inputType==='parts'
     ? {given:new Array((q.parts||[]).length).fill(''), checked:false, correct:false}
+    : q.inputType==='mixed'
+    ? {given:{whole:'',num:'',den:''}, checked:false, correct:false}
     : q.inputType==='multi'
     ? {given:[], checked:false, correct:false}
     : {given: q.inputType==='coins' ? [] : '', checked:false, correct:false});
@@ -5562,6 +5654,33 @@ function renderQuestionBody(q, st, onCheck, headerHTML){
     const checkBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" ${st.checked||!st.given?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
     checkBtn.onclick=doCheck;
     qbox.appendChild(checkBtn);
+  } else if(q.inputType==='mixed'){
+    // Whole-number box (optional) plus numerator/denominator stacked to its right.
+    // Also used for plain fractions by setting wantWhole:false.
+    const wantWhole = q.wantWhole!==false;
+    const g=st.given||{};
+    const shownVal = (q.showFracNum!=null)
+      ? mixedHTML(q.showWhole, q.showFracNum, q.showFracDen)
+      : (q.mixedLead ? `<span style="font-family:'IBM Plex Mono',monospace;">${esc(q.mixedLead)}</span>` : '');
+    const row=el(`<div class="mmc-frac-eq" style="margin:14px 0 16px;">
+      ${shownVal ? shownVal+'<span>=</span>' : ''}
+      <span class="mmc-mixed">
+        ${wantWhole ? `<input type="text" class="wholebox" data-f="whole" inputmode="numeric" value="${esc(g.whole||'')}" ${st.checked?'disabled':''}>` : ''}
+        <span class="mmc-frac">
+          <input type="text" data-f="num" inputmode="numeric" value="${esc(g.num||'')}" ${st.checked?'disabled':''}>
+          <span class="line"></span>
+          <input type="text" data-f="den" inputmode="numeric" value="${esc(g.den||'')}" ${st.checked?'disabled':''}>
+        </span>
+      </span>
+    </div>`);
+    row.querySelectorAll('[data-f]').forEach(inp=>{
+      inp.oninput=(e)=>{ st.given=Object.assign({}, st.given, {[e.target.dataset.f]: e.target.value}); };
+    });
+    qbox.appendChild(row);
+    const ready=()=> String((st.given||{}).num||'').trim()!=='' && String((st.given||{}).den||'').trim()!=='';
+    const mb=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" ${st.checked?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
+    mb.onclick=()=>{ if(!ready()) return; doCheck(); };
+    qbox.appendChild(mb);
   } else if(q.inputType==='parts'){
     // Inline answer boxes rendered in the shape of the question itself, so a
     // partitioning question looks like  823 = [ ] + [ ] + [ ]  rather than one
