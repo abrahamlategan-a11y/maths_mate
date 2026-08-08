@@ -1608,8 +1608,8 @@ function genSequenceV2(diff){
   return {
     prompt:`Fill in the missing number.`,
     inputType:'parts',
-    partsLead: shown.slice(0,missIdx).map(v=>v).join(',  ') + (missIdx?',':''),
-    partsTail: shown.slice(missIdx+1).join(',  '),
+    partsLead: missIdx ? shown.slice(0,missIdx).join(',  ')+',' : '',
+    partsTail: (missIdx<shown.length-1 ? ',  '+shown.slice(missIdx+1).join(',  ') : ''),
     parts:[{}],
     seqBefore: shown.slice(0,missIdx),
     seqAfter: shown.slice(missIdx+1),
@@ -2126,7 +2126,14 @@ function buildQuestion(slotIdx, diff, strategyKey){
     items:q.items||null, minCoins:q.minCoins!=null?q.minCoins:null,
     strategyKey:q.strategyKey||null, strategyLabel:q.strategyLabel||null,
     givenNum:q.givenNum!=null?q.givenNum:null, givenDen:q.givenDen!=null?q.givenDen:null,
-    targetDen:q.targetDen!=null?q.targetDen:null, renderFractionChoices:q.renderFractionChoices||false };
+    targetDen:q.targetDen!=null?q.targetDen:null, renderFractionChoices:q.renderFractionChoices||false,
+    // Inline-box questions (partitioning, sequences, powers-of-ten). These MUST be
+    // whitelisted here — anything not listed is silently dropped before the
+    // question is saved, which leaves the renderer with nothing to draw.
+    parts:q.parts||null, partsLead:q.partsLead||null, partsJoin:q.partsJoin||null,
+    partsTail:q.partsTail||null,
+    fracNum:q.fracNum!=null?q.fracNum:null, fracDen:q.fracDen!=null?q.fracDen:null,
+    ofTotal:q.ofTotal!=null?q.ofTotal:null };
 }
 function generateWeekQuestions(diff, strategyKey){ return SLOTS.map((s,i)=>buildQuestion(i,diff,strategyKey)); }
 
@@ -3790,7 +3797,7 @@ function renderQuestionEditor(week){
     catch(e){ S.toast='Could not save changes — check your connection.'; render(); }
   }
   (week.questions||[]).forEach((q,i)=>{
-    const isStructured = !!(q.svg || q.inputType==='choice' || q.inputType==='coins' || q.inputType==='order' || q.inputType==='fracEasy' || q.inputType==='fracHard' || q.inputType==='classify');
+    const isStructured = !!(q.svg || q.inputType==='choice' || q.inputType==='coins' || q.inputType==='order' || q.inputType==='fracEasy' || q.inputType==='fracHard' || q.inputType==='classify' || q.inputType==='parts' || q.inputType==='multi');
     const row=el(`
       <div class="mmc-qedit">
         <div class="idx">Q${i+1} — ${esc(q.title||'Question')}${q.strategyLabel?` (${esc(q.strategyLabel)})`:''}</div>
@@ -3812,6 +3819,12 @@ function renderQuestionEditor(week){
         ` : q.inputType==='fracHard' ? `
           <div class="label2">Fraction to simplify</div>
           <div class="meta" style="margin-bottom:8px;">${esc(q.givenNum)}/${esc(q.givenDen)} → ${esc(q.answer)} — use Regenerate for different numbers.</div>
+        ` : q.inputType==='parts' ? `
+          <div class="label2">Answer boxes</div>
+          <div class="meta" style="margin-bottom:8px;">${esc(q.partsLead||'')} ${(q.parts||[]).map(p=>p.label?`[${esc(p.label)}]`:'[ ]').join(' '+esc(q.partsJoin||'')+' ')} ${esc(q.partsTail||'')} &nbsp;→&nbsp; ${esc(String(q.answer).split(',').join(' , '))}</div>
+        ` : q.inputType==='multi' ? `
+          <div class="label2">Select all that apply</div>
+          <div class="meta" style="margin-bottom:8px;">Options: ${(q.choices||[]).map(esc).join(', ')} &nbsp;→&nbsp; correct: ${esc(String(q.answer).split(',').join(', '))}</div>
         ` : q.inputType==='classify' ? `
           <div class="label2">Angles to classify</div>
           <div class="meta" style="margin-bottom:8px;">${(q.items||[]).map(it=>`${esc(it.deg)}° = ${esc(it.correct)}`).join(', ')} — use Regenerate for different angles.</div>
