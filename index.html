@@ -206,6 +206,21 @@
   .mmc-cellscore.low { color:var(--incorrect); }
   code.mmc-code { font-family:'IBM Plex Mono',monospace; background:var(--bg); border:1.5px solid var(--paper-line); padding:2px 6px; border-radius:6px; }
   .mmc-autherr { color:var(--incorrect); font-size:13px; font-weight:700; margin-bottom:10px; }
+  /* Inline answer boxes: the question keeps its mathematical shape and the
+     student types into the gaps, instead of formatting a whole line themselves. */
+  .mmc-partsrow { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:14px 0 16px; }
+  .mmc-partslead { font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:600; }
+  .mmc-partsjoin { font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:700; color:var(--ink-soft); }
+  .mmc-partscell { display:flex; flex-direction:column; align-items:center; gap:3px; }
+  .mmc-partslabel { font-size:11px; font-weight:800; letter-spacing:.04em; color:var(--ink-soft); text-transform:uppercase; }
+  .mmc-partsbox {
+    width:118px; padding:10px 10px; font-size:19px; font-weight:700; text-align:center;
+    font-family:'IBM Plex Mono',monospace; border:2.5px solid var(--ink); border-radius:10px;
+    background:var(--paper); color:var(--ink); box-shadow:2px 2px 0 var(--ink);
+  }
+  .mmc-partsbox:focus { outline:none; border-color:var(--slime-deep); box-shadow:2px 2px 0 var(--slime-deep); }
+  .mmc-partsbox:disabled { background:var(--bg); box-shadow:none; }
+  @media (max-width:520px){ .mmc-partsbox { width:88px; font-size:17px; } .mmc-partslead { font-size:19px; } }
   @media (max-width:520px){ .mmc-head, .mmc-body { padding-left:16px; padding-right:16px; } }
 
   /* ============================================================
@@ -719,12 +734,48 @@ function genDecimalPlace(diff){
     explanation:`In ${numStr}, the ${placeName} digit is ${digit}.` };
 }
 function genOrderDecimals(diff){
-  const decDigits= diff==='easy'?1:2; let s=new Set();
-  while(s.size<4){ const whole=randInt(1,9); let dec=''; for(let i=0;i<decDigits;i++) dec+=randInt(0,9); s.add(parseFloat(`${whole}.${dec}`)); }
-  const arr=shuffleArr([...s]); const sorted=[...s].sort((a,b)=>a-b);
-  return { prompt:`Tap the decimals in ascending order (smallest first).`, items:arr.map(String), answer:sorted.join(','),
-    explanation:`Ascending order: ${sorted.join(', ')}`, inputType:'order', checkType:'numlist' };
+  // The "trick" deliberately changes between sets so students can't pattern-match:
+  // sometimes trailing zeros, sometimes differing decimal lengths, sometimes a
+  // whole number mixed in, sometimes the same digits with the point moved.
+  let vals=[];
+  if(diff==='easy'){
+    const s=new Set();
+    while(s.size<4) s.add(randInt(10,49)/10);   // ones and tenths only
+    vals=[...s];
+  } else if(diff==='medium'){
+    const base=randInt(2,8);
+    const s=new Set([base, base+randInt(1,4)/10, base+randInt(11,49)/100, base+randInt(111,499)/1000]);
+    while(s.size<4) s.add(randInt(1,9)+randInt(1,9)/10);
+    vals=[...s].slice(0,4);
+  } else {
+    const trick=pick(['trailingZeros','movePoint','mixedLengths','wholeMixed']);
+    const b=randInt(2,8), t=randInt(1,9);
+    if(trick==='trailingZeros'){
+      const core=b+t/10;
+      vals=[core, b+t/10+randInt(1,9)/100, b+randInt(1,9)/10, b];
+    } else if(trick==='movePoint'){
+      const d=randInt(2,9), e=randInt(1,9);
+      vals=[d+e/10, (d*10)+e, (d+e/10)/10, d+e/100];
+    } else if(trick==='mixedLengths'){
+      vals=[b+t/10, b+t/100, b+t/1000, b+(t+1)/10];
+    } else {
+      vals=[b, b+t/10, b+t/100, b-1+randInt(5,9)/10];
+    }
+  }
+  vals=[...new Set(vals.map(v=>Math.round(v*1000)/1000))];
+  while(vals.length<4){ const v=Math.round((randInt(1,9)+randInt(0,99)/100)*1000)/1000; if(vals.indexOf(v)===-1) vals.push(v); }
+  vals=vals.slice(0,4);
+  const asc=Math.random()<0.5;
+  const sorted=[...vals].sort((a,b)=>asc?a-b:b-a);
+  let shown=shuffleArr(vals);
+  let g=0; while(shown.join()===sorted.join() && g++<20) shown=shuffleArr(vals);
+  const clue = diff==='hard' ? '' : (asc?' (smallest to biggest)':' (biggest to smallest)');
+  return { prompt:`Tap the decimals in ${asc?'ascending':'descending'} order${clue}.`,
+    items:shown.map(String), answer:sorted.join(','),
+    explanation:`${asc?'Ascending':'Descending'} order: ${sorted.join(', ')}`,
+    inputType:'order', checkType:'numlist' };
 }
+
 const DENOMS=[{v:5,l:'5c'},{v:10,l:'10c'},{v:20,l:'20c'},{v:50,l:'50c'},{v:100,l:'$1'},{v:200,l:'$2'},{v:500,l:'$5'},{v:1000,l:'$10'},{v:2000,l:'$20'}];
 function fmtCents(c){ return c>=100 ? '$'+(c/100).toFixed(2) : c+'c'; }
 function buildCoinsQuestion(target, promptText, explanationText, requireMinimal){
@@ -1527,10 +1578,12 @@ function genPartition(diff){
                               : formatGrouped(num);
   const fmt=(v)=> v>=1 ? formatGrouped(v) : String(v);
   return {
-    prompt:`Complete the partitioning: ${shown} = ${parts.map(()=>'_____').join(' + ')}`,
-    answer: parts.map(fmt).join(' + '),
-    checkType:'partition',
-    parts: parts.map(fmt),
+    prompt:`Complete the partitioning.`,
+    inputType:'parts',
+    partsLead:`${shown} =`,
+    partsJoin:'+',
+    parts: parts.map(()=>({})),
+    answer: parts.map(fmt).join(','),
     explanation:`${shown} = ${parts.map(fmt).join(' + ')}`
   };
 }
@@ -1553,7 +1606,13 @@ function genSequenceV2(diff){
   const missIdx=randInt(0,n-1);
   const shown=seq.map((v,i)=> i===missIdx ? '?' : formatGrouped(v));
   return {
-    prompt:`Fill in the missing number: ${shown.join(', ')}`,
+    prompt:`Fill in the missing number.`,
+    inputType:'parts',
+    partsLead: shown.slice(0,missIdx).map(v=>v).join(',  ') + (missIdx?',':''),
+    partsTail: shown.slice(missIdx+1).join(',  '),
+    parts:[{}],
+    seqBefore: shown.slice(0,missIdx),
+    seqAfter: shown.slice(missIdx+1),
     answer:String(seq[missIdx]),
     explanation:`The pattern ${up?'increases':'decreases'} by ${formatGrouped(step)} each time, so the missing number is ${formatGrouped(seq[missIdx])}.`
   };
@@ -1583,14 +1642,35 @@ function genRoundingV2(diff){
 // ---------- Q4 ORDERING WHOLE NUMBERS ----------
 // Four deliberately confusable numbers built from the same digit pool.
 function genOrderingV2(diff){
+  // The four numbers must be genuinely confusable: they share a leading prefix
+  // and differ only in the last few digits, so ordering them needs real
+  // place-value attention rather than a glance at the first digit.
   const len = diff==='easy'?randInt(3,4) : diff==='medium'?randInt(4,5) : randInt(5,6);
-  const digits=[]; while(digits.length<len) digits.push(randInt(digits.length===0?1:0,9));
-  const set=new Set();
-  let guard=0;
-  while(set.size<4 && guard++<200){
-    const d=shuffleArr(digits);
-    if(d[0]===0) continue;
-    set.add(parseInt(d.join(''),10));
+  // Short numbers permute every digit (345 / 354 / 435 / 453). Longer ones keep
+  // a fixed prefix and permute the tail, which is where the confusion lives.
+  const prefixLen = len<=4 ? 0 : len-3;
+  const tailLen = len - prefixLen;
+  const prefix=[]; 
+  if(prefixLen){ prefix.push(randInt(1,9)); for(let i=1;i<prefixLen;i++) prefix.push(randInt(0,9)); }
+  // A shared pool of tail digits, permuted differently for each number, so the
+  // options look near-identical (34 506 / 34 650 / 34 560 / 35 406).
+  const tailDigits=[];
+  while(tailDigits.length<tailLen){
+    const d=randInt(0,9);
+    // Distinct digits give more permutations, so four unique numbers are reachable.
+    if(tailDigits.indexOf(d)===-1 || tailDigits.length>=8) tailDigits.push(d);
+  }
+  const set=new Set(); let guard=0;
+  while(set.size<4 && guard++<400){
+    let pre=prefix.slice();
+    // Occasionally nudge one prefix digit so they aren't all literally identical.
+    if(Math.random()<0.3 && prefixLen>0){
+      const k=randInt(0,prefixLen-1);
+      pre[k]=Math.min(9, Math.max(k===0?1:0, pre[k]+pick([-1,1])));
+    }
+    const t=shuffleArr(tailDigits);
+    if(!prefixLen && t[0]===0) continue;   // no leading zero when permuting all digits
+    set.add(parseInt(pre.join('')+t.join(''),10));
   }
   while(set.size<4) set.add(randInt(Math.pow(10,len-1), Math.pow(10,len)-1));
   const nums=[...set].slice(0,4);
@@ -1693,7 +1773,13 @@ function genPowersOfTen(diff, op){
   let base;
   if(diff==='easy') base=randInt(2,99);
   else if(diff==='medium') base=pick([randInt(100,999), randInt(1,9)*100+randInt(0,9), randInt(1000,9999)]);
-  else base=pick([ (randInt(1,9)+randInt(1,9)/10), (randInt(1,99)/100), (randInt(10,99)/10) ]);
+  else {
+    // Hard is explicitly the decimal level, so guarantee a fractional part.
+    base=pick([ randInt(1,9)+randInt(1,9)/10, randInt(1,99)/100, randInt(11,99)/10 ]);
+    base=Math.round(base*100)/100;
+    if(Number.isInteger(base)) base += randInt(1,9)/10;
+    base=Math.round(base*100)/100;
+  }
   const round2=(v)=> Math.round(v*1e6)/1e6;
   const factors=[10,100,1000];
   const parts=factors.map(f=>({
@@ -1701,10 +1787,10 @@ function genPowersOfTen(diff, op){
     answer:String(round2(mult? base*f : base/f))
   }));
   return {
-    prompt:`Work out all three: ${parts.map(p=>p.prompt).join('   ')}`,
-    inputType:'multi3', parts,
+    prompt:`Work out all three.`,
+    inputType:'parts',
+    parts: parts.map(p=>({label:p.prompt})),
     answer:parts.map(p=>p.answer).join(','),
-    checkType:'multi3',
     explanation:parts.map(p=>`${p.prompt} = ${p.answer}`).join('; '),
     subskill:(mult?'mult':'div')+'_powers_of_ten'+(diff==='hard'?'_decimal':'')
   };
@@ -1990,9 +2076,17 @@ function skillOfQuestion(q){
 // already created, so all three difficulty variants published together share
 // the same rotation and a class sees the same family.
 function rotationIndex(){
-  try { return (S.weeks||[]).filter(w=>w.status!=='archived').length; }
-  catch(e){ return 0; }
+  // Counts sets EVER created, including archived ones. Using only live weeks
+  // meant archiving an old set shifted every future week in the cycle, which
+  // could skip the powers-of-ten variant for a whole term or repeat it twice
+  // running. Falls back to 0 so generation never depends on state being loaded.
+  try {
+    if(S.rotationOverride==='powers') return 2;
+    if(S.rotationOverride==='normal') return 0;
+    return (S.weeks||[]).length;
+  } catch(e){ return 0; }
 }
+function isPowersSet(idx){ return (idx==null? rotationIndex() : idx) % 3 === 2; }
 
 const SLOTS=[
   {skill:'PARTITION',        title:'Partitioning',                 gen:genPartition},
@@ -2066,6 +2160,19 @@ function gradeQuestion(q, given){
   if(q.checkType==='numset'){ const gi=new Set(parseNumList(given)), an=new Set(parseNumList(q.answer));
     if(gi.size!==an.size) return false; for(const v of an) if(!gi.has(v)) return false; return true; }
   if(q.inputType==='choice'){ return normalize(given)===normalize(q.answer); }
+  if(q.inputType==='parts'){
+    // Every box must be right for the question to count. Order is fixed for
+    // partitioning (largest place first) and for the three powers-of-ten parts.
+    const want=String(q.answer).split(',');
+    const got=Array.isArray(given)?given:[];
+    if(got.length!==want.length) return false;
+    return want.every((w,i)=> normalize(w)===normalize(got[i]));
+  }
+  if(q.inputType==='multi'){
+    const want=String(q.answer).split(',').map(normalize).sort();
+    const got=(Array.isArray(given)?given:[]).map(normalize).sort();
+    return want.length===got.length && want.every((w,i)=>w===got[i]);
+  }
   if(q.inputType==='classify'){
     const gm = Array.isArray(given) ? given.join(',') : String(given);
     return gm === q.answer;
@@ -3431,7 +3538,13 @@ function renderTeacherWeeks(){
               <input type="text" id="mmc-gen-label" placeholder="e.g. Week 6" value="${esc(S.genForm.label)}"></div>
             <div class="mmc-field" id="mmc-diff-wrap" style="flex:1;min-width:110px;margin-bottom:0;"><label>Difficulty</label>
               <select id="mmc-gen-diff">${['easy','medium','hard'].map(d=>`<option value="${d}" ${S.genForm.difficulty===d?'selected':''}>${d[0].toUpperCase()+d.slice(1)}</option>`).join('')}</select></div>
-            <div class="mmc-field" style="flex:2;min-width:180px;margin-bottom:0;"><label>Word problem (Q20)</label>
+            <div class="mmc-field" style="flex:2;min-width:180px;margin-bottom:0;"><label>Q8 / Q9 variant</label>
+              <select id="mmc-gen-rot">
+                <option value="">Auto (every 3rd set)</option>
+                <option value="powers">Force &times;10 / &divide;10</option>
+                <option value="normal">Force normal</option>
+              </select></div>
+            <div class="mmc-field" style="display:none;"><label>Word problem (Q20)</label>
               <select id="mmc-gen-strategy">
                 <option value="random" ${S.genForm.strategy==='random'?'selected':''}>Random each time</option>
                 ${WORD_PROBLEM_STRATEGIES.map(s=>`<option value="${s.key}" ${S.genForm.strategy===s.key?'selected':''}>${esc(s.label)}</option>`).join('')}
@@ -3484,6 +3597,11 @@ function renderTeacherWeeks(){
     const label=form.querySelector('#mmc-gen-label').value.trim() || `Week ${S.weeks.length+1}`;
     const difficulty=form.querySelector('#mmc-gen-diff').value;
     const strategy=form.querySelector('#mmc-gen-strategy').value;
+    // Lets a teacher force the Q8/Q9 powers-of-ten variant instead of waiting
+    // for the automatic rotation. Cleared straight after generating so it never
+    // silently sticks for later sets.
+    const rotSel=form.querySelector('#mmc-gen-rot');
+    S.rotationOverride = rotSel ? (rotSel.value||null) : null;
     const targetGroups = allCb.checked ? [] : groupCbs.filter(cb=>cb.checked).map(cb=>cb.value);
     const classIds = !allClassCb ? (S.showAllClasses ? [] : (S.currentClassId?[S.currentClassId]:[]))
       : (allClassCb.checked ? [] : classCbs.filter(cb=>cb.checked).map(cb=>cb.value));
@@ -3498,6 +3616,7 @@ function renderTeacherWeeks(){
       questions:generateWeekQuestions(difficulty, strategy), targetGroups, classIds };
     try{
       const ref=await addDoc(collection(db,'weeks'), weekData);
+      S.rotationOverride=null;
       S.editingDraftId=ref.id;
       S.weeksView='list';  // jump to the set you just made, ready to review
       S.genForm={label:'',difficulty:'easy',strategy:'random'};
@@ -4678,6 +4797,10 @@ function initQuizState(week){
     ? {given:'', pool:shuffleArr(q.items||[]), placed:[], checked:false, correct:false}
     : q.inputType==='classify'
     ? {given:new Array((q.items||[]).length).fill(''), checked:false, correct:false}
+    : q.inputType==='parts'
+    ? {given:new Array((q.parts||[]).length).fill(''), checked:false, correct:false}
+    : q.inputType==='multi'
+    ? {given:[], checked:false, correct:false}
     : {given: q.inputType==='coins' ? [] : '', checked:false, correct:false});
 }
 function progressMatchesWeek(progress, week){
@@ -5333,6 +5456,10 @@ function startSkillPractice(slot){
     ? {given:'', pool:shuffleArr(q.items||[]), placed:[], checked:false, correct:false}
     : q.inputType==='classify'
     ? {given:new Array((q.items||[]).length).fill(''), checked:false, correct:false}
+    : q.inputType==='parts'
+    ? {given:new Array((q.parts||[]).length).fill(''), checked:false, correct:false}
+    : q.inputType==='multi'
+    ? {given:[], checked:false, correct:false}
     : {given: q.inputType==='coins' ? [] : '', checked:false, correct:false});
   S.skillSession={ slot, title: SLOTS[slot-1] ? SLOTS[slot-1].title : `Skill ${slot}`, difficulty, questions, quiz, index:0, finished:false };
   render();
@@ -5422,6 +5549,43 @@ function renderQuestionBody(q, st, onCheck, headerHTML){
     const checkBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" ${st.checked||!st.given?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
     checkBtn.onclick=doCheck;
     qbox.appendChild(checkBtn);
+  } else if(q.inputType==='parts'){
+    // Inline answer boxes rendered in the shape of the question itself, so a
+    // partitioning question looks like  823 = [ ] + [ ] + [ ]  rather than one
+    // long text field the student has to format by hand.
+    const row=el('<div class="mmc-partsrow"></div>');
+    if(q.partsLead) row.appendChild(el(`<span class="mmc-partslead">${esc(q.partsLead)}</span>`));
+    (q.parts||[]).forEach((pt,i)=>{
+      if(i>0 && q.partsJoin) row.appendChild(el(`<span class="mmc-partsjoin">${esc(q.partsJoin)}</span>`));
+      const cell=el('<span class="mmc-partscell"></span>');
+      if(pt.label) cell.appendChild(el(`<span class="mmc-partslabel">${esc(pt.label)}</span>`));
+      const inp=el(`<input type="text" class="mmc-partsbox" value="${esc(st.given[i]||'')}" ${st.checked?'disabled':''} inputmode="decimal">`);
+      inp.oninput=(e)=>{ st.given[i]=e.target.value; };
+      cell.appendChild(inp);
+      row.appendChild(cell);
+    });
+    if(q.partsTail) row.appendChild(el(`<span class="mmc-partslead">${esc(q.partsTail)}</span>`));
+    qbox.appendChild(row);
+    const allFilled=()=> (q.parts||[]).every((_,i)=>String(st.given[i]||'').trim()!=='');
+    const pb=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" ${st.checked?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
+    pb.onclick=()=>{ if(!allFilled()) return; doCheck(); };
+    qbox.appendChild(pb);
+  } else if(q.inputType==='multi'){
+    const choiceRow=el('<div class="mmc-choices"></div>');
+    (q.choices||[]).forEach(c=>{
+      const on=(st.given||[]).indexOf(c)!==-1;
+      const b=el(`<button type="button" class="mmc-choice-btn ${on?'selected':''}" ${st.checked?'disabled':''}>${esc(c)}</button>`);
+      b.onclick=()=>{ if(st.checked) return;
+        const arr=st.given||[]; const i=arr.indexOf(c);
+        if(i===-1) arr.push(c); else arr.splice(i,1);
+        st.given=arr; render(); };
+      choiceRow.appendChild(b);
+    });
+    qbox.appendChild(el('<div class="meta" style="margin-bottom:6px;">Select all that apply.</div>'));
+    qbox.appendChild(choiceRow);
+    const mb=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" ${st.checked||!(st.given||[]).length?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
+    mb.onclick=doCheck;
+    qbox.appendChild(mb);
   } else if(q.inputType==='classify'){
     const rows=el('<div></div>');
     (q.items||[]).forEach((it,i)=>{
