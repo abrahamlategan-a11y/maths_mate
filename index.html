@@ -1491,31 +1491,118 @@ function genWordProblem(diff, strategyKey){
   return q;
 }
 
+// ============================================================
+// SKILL REGISTRY & YEAR PLANS
+// ------------------------------------------------------------
+// Questions are identified by a STABLE SKILL CODE, not by their position in
+// the week. Position (slot) is presentational only. This matters because
+// different year levels have different question sets — without stable codes,
+// Year 3's slot 5 and Year 6's slot 5 would be merged into one "skill" by the
+// gradebook and the student dashboard, silently mixing unrelated data.
+//
+// Codes here are PERMANENT. Never rename or reuse one: historical results
+// reference them. To retire a skill, remove it from the year plans and leave
+// its entry in place.
+// ============================================================
+const SKILLS = {
+  PARTITION:        { title:'Partitioning' },
+  SEQUENCE:         { title:'Number patterns' },
+  ROUNDING:         { title:'Rounding' },
+  ORDER_WHOLE:      { title:'Ordering whole numbers' },
+  FACTORS:          { title:'Factors' },
+  ADDITION:         { title:'Addition' },
+  SUBTRACTION:      { title:'Subtraction' },
+  MULTIPLICATION:   { title:'Multiplication' },
+  DIVISION:         { title:'Division' },
+  COMPARE_FRACTION: { title:'Comparing fractions' },
+  VISUAL_FRACTION:  { title:'Visual fractions' },
+  FRAC_DEC:         { title:'Fractions and decimals' },
+  ORDER_DECIMAL:    { title:'Ordering decimals' },
+  COINS:            { title:'Australian coins' },
+  AREA_PERIMETER:   { title:'Area and perimeter' },
+  TIME:             { title:'Time' },
+  SIMPLIFY_FRACTION:{ title:'Simplifying fractions' },
+  METRIC_CONVERT:   { title:'Metric conversions' },
+  ANGLES:           { title:'Angles' },
+  FRACTION_OF:      { title:'Fraction of a collection' },
+  MISSING_NUMBER:   { title:'Missing number equations' },
+  MIXED_IMPROPER:   { title:'Mixed and improper fractions' },
+  PROBABILITY:      { title:'Chance and probability' },
+  STATISTICS:       { title:'Data and averages' },
+  // Retired — kept so historical results still resolve to a sensible title.
+  PLACE_VALUE:      { title:'Place value', retired:true },
+  DECIMAL_PLACE:    { title:'Decimal place value', retired:true },
+  WORD_PROBLEM:     { title:'Word problems', retired:true },
+};
+
+// Which skills each year level gets, in the order they appear in the week.
+const YEAR_PLANS = {
+  4: ['PARTITION','SEQUENCE','ROUNDING','ORDER_WHOLE','FACTORS','ADDITION','SUBTRACTION',
+      'MULTIPLICATION','DIVISION','COMPARE_FRACTION','VISUAL_FRACTION','FRAC_DEC',
+      'ORDER_DECIMAL','COINS','AREA_PERIMETER','TIME','SIMPLIFY_FRACTION','METRIC_CONVERT',
+      'ANGLES','FRACTION_OF','MISSING_NUMBER','MIXED_IMPROPER','PROBABILITY','STATISTICS'],
+};
+
+// Weeks generated before skill codes existed carry only a slot number. Every
+// such week is Year 4 under the ORIGINAL 20-question layout, so this maps them
+// onto their true skills and keeps historical tracking intact.
+const LEGACY_SLOT_SKILLS = ['PLACE_VALUE','SEQUENCE','ROUNDING','ORDER_WHOLE','FACTORS',
+  'ADDITION','SUBTRACTION','MULTIPLICATION','DIVISION','COMPARE_FRACTION','VISUAL_FRACTION',
+  'DECIMAL_PLACE','ORDER_DECIMAL','COINS','AREA_PERIMETER','TIME','SIMPLIFY_FRACTION',
+  'METRIC_CONVERT','ANGLES','WORD_PROBLEM'];
+
+function planForYear(year){
+  return YEAR_PLANS[year] || YEAR_PLANS[4];
+}
+function skillTitle(code){
+  return (SKILLS[code] && SKILLS[code].title) || code || 'Unknown';
+}
+// Resolve a question to its skill code, tolerating pre-skill-code data.
+function skillOfQuestion(q){
+  if(!q) return null;
+  if(q.skill) return q.skill;
+  if(q.slot && LEGACY_SLOT_SKILLS[q.slot-1]) return LEGACY_SLOT_SKILLS[q.slot-1];
+  return null;
+}
+
+// Some skills rotate between question families across sets (Q8/Q9 swap to
+// powers-of-ten every third set; Q16 cycles clock / am-pm / duration). The
+// rotation index is derived from how many non-archived weeks the teacher has
+// already created, so all three difficulty variants published together share
+// the same rotation and a class sees the same family.
+function rotationIndex(){
+  try { return (S.weeks||[]).filter(w=>w.status!=='archived').length; }
+  catch(e){ return 0; }
+}
+
 const SLOTS=[
-  {title:'Place value', gen:genPlaceValue},
-  {title:'Number sequences', gen:genSequence},
-  {title:'Rounding', gen:genRounding},
-  {title:'Ordering numbers', gen:genOrdering},
-  {title:'Factors', gen:genFactors},
-  {title:'Addition', gen:genAddition},
-  {title:'Subtraction', gen:genSubtraction},
-  {title:'Multiplication', gen:genMultiplication},
-  {title:'Division', gen:genDivision},
-  {title:'Fractions vs 1/2', gen:genFracHalf},
-  {title:'Shaded grid (hundredths)', gen:genShadedGrid},
-  {title:'Decimal place value', gen:genDecimalPlace},
-  {title:'Ordering decimals', gen:genOrderDecimals},
-  {title:'Coins', gen:genCoins},
-  {title:'Area', gen:genArea},
-  {title:'Telling time', gen:genClock},
-  {title:'Simplify a fraction', gen:genFractionSimplify},
-  {title:'Unit conversion', gen:genConversion},
-  {title:'Angle types', gen:genAngle},
-  {title:'Word problem', gen:(diff,strategyKey)=>genWordProblem(diff,strategyKey)},
+  {skill:'PLACE_VALUE', title:'Place value', gen:genPlaceValue},
+  {skill:'SEQUENCE', title:'Number sequences', gen:genSequence},
+  {skill:'ROUNDING', title:'Rounding', gen:genRounding},
+  {skill:'ORDER_WHOLE', title:'Ordering numbers', gen:genOrdering},
+  {skill:'FACTORS', title:'Factors', gen:genFactors},
+  {skill:'ADDITION', title:'Addition', gen:genAddition},
+  {skill:'SUBTRACTION', title:'Subtraction', gen:genSubtraction},
+  {skill:'MULTIPLICATION', title:'Multiplication', gen:genMultiplication},
+  {skill:'DIVISION', title:'Division', gen:genDivision},
+  {skill:'COMPARE_FRACTION', title:'Fractions vs 1/2', gen:genFracHalf},
+  {skill:'VISUAL_FRACTION', title:'Shaded grid (hundredths)', gen:genShadedGrid},
+  {skill:'DECIMAL_PLACE', title:'Decimal place value', gen:genDecimalPlace},
+  {skill:'ORDER_DECIMAL', title:'Ordering decimals', gen:genOrderDecimals},
+  {skill:'COINS', title:'Coins', gen:genCoins},
+  {skill:'AREA_PERIMETER', title:'Area', gen:genArea},
+  {skill:'TIME', title:'Telling time', gen:genClock},
+  {skill:'SIMPLIFY_FRACTION', title:'Simplify a fraction', gen:genFractionSimplify},
+  {skill:'METRIC_CONVERT', title:'Unit conversion', gen:genConversion},
+  {skill:'ANGLES', title:'Angle types', gen:genAngle},
+  {skill:'WORD_PROBLEM', title:'Word problem', gen:(diff,strategyKey)=>genWordProblem(diff,strategyKey)},
 ];
 function buildQuestion(slotIdx, diff, strategyKey){
   const slot=SLOTS[slotIdx]; const q=slot.gen(diff, strategyKey);
-  return { id:uid('q'), slot:slotIdx+1, title:slot.title, prompt:q.prompt,
+  return { id:uid('q'), slot:slotIdx+1, title:slot.title,
+    skill: slot.skill || LEGACY_SLOT_SKILLS[slotIdx] || null,
+    subskill: q.subskill || null,
+    prompt:q.prompt,
     answer:q.answer!=null?String(q.answer):null, explanation:q.explanation||'',
     inputType:q.inputType||'text', choices:q.choices||null, svg:q.svg||null,
     checkType:q.checkType||null, targetCents:q.targetCents!=null?q.targetCents:null, coins:q.coins||null,
@@ -1629,30 +1716,36 @@ function computeSkillStats(results, weeks, skillPracticeRecords){
   results = results || []; weeks = weeks || []; skillPracticeRecords = skillPracticeRecords || [];
   const weekById = {};
   weeks.forEach(w=>{ weekById[w.id]=w; });
-  const bySlot = {};
-  for(let s=1;s<=20;s++) bySlot[s]=[];
+  // Keyed by SKILL CODE, not slot position, so a skill keeps its identity even
+  // when it sits at a different position in a different year level's plan.
+  const bySkill = {};
+  const touch = (code)=>{ if(code && !bySkill[code]) bySkill[code]=[]; return code; };
 
   results.forEach(rec=>{
     const week = weekById[rec.weekId];
     if(!week) return;
-    const qidToSlot={};
-    (week.questions||[]).forEach(q=>{ qidToSlot[q.id]=q.slot; });
+    const qidToSkill={}, qidToSlot={};
+    (week.questions||[]).forEach(q=>{ qidToSkill[q.id]=skillOfQuestion(q); qidToSlot[q.id]=q.slot; });
     const ts = rec.submittedAt && rec.submittedAt.seconds ? rec.submittedAt.seconds : 0;
     (rec.answers||[]).forEach(a=>{
-      const slot=qidToSlot[a.qId];
-      if(slot && bySlot[slot]) bySlot[slot].push({ correct: !!a.correct, ts });
+      const code=qidToSkill[a.qId];
+      if(!code) return;
+      touch(code);
+      bySkill[code].push({ correct: !!a.correct, ts, slot: qidToSlot[a.qId] });
     });
   });
   skillPracticeRecords.forEach(rec=>{
-    const slot=rec.slot;
-    if(!slot || !bySlot[slot]) return;
+    // Practice records store a slot; resolve it via the same legacy mapping.
+    const code = rec.skill || (rec.slot ? LEGACY_SLOT_SKILLS[rec.slot-1] : null);
+    if(!code) return;
+    touch(code);
     const ts = rec.submittedAt && rec.submittedAt.seconds ? rec.submittedAt.seconds : 0;
-    (rec.answers||[]).forEach(a=>{ bySlot[slot].push({ correct: !!a.correct, ts }); });
+    (rec.answers||[]).forEach(a=>{ bySkill[code].push({ correct: !!a.correct, ts, slot: rec.slot }); });
   });
 
   const out=[];
-  for(let s=1;s<=20;s++){
-    const attempts = bySlot[s].slice().sort((a,b)=>a.ts-b.ts);
+  Object.keys(bySkill).forEach(code=>{
+    const attempts = bySkill[code].slice().sort((a,b)=>a.ts-b.ts);
     const total = attempts.length;
     const correctCount = attempts.filter(a=>a.correct).length;
     const overallAccuracy = total? correctCount/total : 0;
@@ -1676,9 +1769,11 @@ function computeSkillStats(results, weeks, skillPracticeRecords){
 
     const concernScore = (1-recentAccuracy)*0.5 + (1-overallAccuracy)*0.25 + (trend==='declining'?0.15:0) + (1-consistency)*0.10;
 
-    out.push({ slot:s, title: (SLOTS[s-1] ? SLOTS[s-1].title : `Skill ${s}`),
+    // `slot` is kept for backward compatibility with anything still reading it,
+    // but `skill` is the real identity from here on.
+    out.push({ skill:code, slot: attempts[0] && attempts[0].slot, title: skillTitle(code),
       total, correctCount, overallAccuracy, recentAccuracy, trend, consistency, concernScore });
-  }
+  });
   return out;
 }
 function pickStrengthsAndWeaknesses(skillStats){
