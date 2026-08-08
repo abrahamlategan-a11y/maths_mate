@@ -202,6 +202,29 @@
     margin-top:8px; padding-top:8px; border-top:1.5px dashed rgba(0,0,0,.15);
     font-size:14px; font-weight:700; color:var(--orange-deep);
   }
+  .mmc-quiz-q .qtext { white-space:pre-line; }
+  /* Coin tray: coins sit slightly scattered and overlap a little, like real
+     change on a desk. Selected coins lift and gain a ring. */
+  .mmc-cointray {
+    display:flex; flex-wrap:wrap; align-items:center; gap:6px 4px;
+    padding:14px 12px; margin:12px 0 8px;
+    background:#FBF7EC; border:2px dashed var(--paper-line); border-radius:14px;
+  }
+  .mmc-coin {
+    background:none; border:none; padding:2px; cursor:pointer; line-height:0;
+    border-radius:50%; transition:filter .12s, box-shadow .12s;
+    filter:drop-shadow(1px 2px 1px rgba(0,0,0,.22));
+  }
+  .mmc-coin:hover:not(:disabled) { filter:drop-shadow(2px 3px 2px rgba(0,0,0,.3)); }
+  .mmc-coin.selected { box-shadow:0 0 0 4px var(--slime-deep); }
+  .mmc-coin:disabled { cursor:default; opacity:.85; }
+  .mmc-cointotal {
+    display:inline-flex; align-items:center; gap:12px; font-size:16px; font-weight:700;
+    border:2.5px solid var(--ink); border-radius:11px; padding:8px 14px; margin-top:4px;
+    background:var(--paper); box-shadow:2px 2px 0 var(--ink);
+  }
+  .mmc-cointotal.hit { background:#EAF7EE; border-color:var(--correct); box-shadow:2px 2px 0 var(--correct); }
+  .mmc-cointotal .tgt { font-size:13px; font-weight:700; color:var(--ink-soft); }
   .mmc-hint {
     font-size:13.5px; font-weight:700; color:var(--purple-deep);
     background:#F5F1FF; border-left:3px solid var(--purple);
@@ -724,19 +747,26 @@ function genShadedGrid(diff){
       explanation:`${n} out of 100 squares are shaded, so the fraction is ${n}/100.`, svg:drawShadedGrid(10,10,n) };
   }
   if(diff==='medium'){
+    // No simplification at Medium — the skill is reading the fraction the visual
+    // shows, so the DIRECT fraction is the correct answer.
     const size=pick(GRID_SIZES); const total=size.rows*size.cols;
-    let n=randInt(2,total-2);
-    if(gcd(n,total)<2){ n = total%2===0 ? total-2 : total-3; } // ensure it's reducible, so there's a real unsimplified form to offer as a decoy
-    const correct=fracStr(n,total);
-    const raw=`${n}/${total}`;
+    const n=randInt(2,total-2);
+    const correct=`${n}/${total}`;
     const seen=new Set([correct]); const decoys=[];
-    if(raw!==correct){ seen.add(raw); decoys.push(raw); } // the obvious unsimplified answer — kept as an option, but wrong
-    const candidates=[total-n, n+size.cols, n-size.cols, n+1, n-1, n+size.rows, n-size.rows].filter(x=>x>0&&x<total&&x!==n);
-    for(const c of shuffleArr(candidates)){ const f=fracStr(c,total); if(!seen.has(f)){ seen.add(f); decoys.push(f); if(decoys.length>=3) break; } }
-    while(decoys.length<3){ const c=randInt(1,total-1); const f=fracStr(c,total); if(!seen.has(f)){ seen.add(f); decoys.push(f); } }
+    // Plausible misreads: counting the unshaded part, off-by-a-row, off-by-one,
+    // and inverting the fraction.
+    const candidates=[total-n, n+size.cols, n-size.cols, n+1, n-1];
+    for(const c of shuffleArr(candidates)){
+      if(c<=0||c>=total||c===n) continue;
+      const f=`${c}/${total}`; if(!seen.has(f)){ seen.add(f); decoys.push(f); if(decoys.length>=3) break; }
+    }
+    if(decoys.length<3){ const inv=`${total}/${n}`; if(!seen.has(inv)){ seen.add(inv); decoys.push(inv); } }
+    while(decoys.length<3){ const c=randInt(1,total-1); const f=`${c}/${total}`; if(!seen.has(f)){ seen.add(f); decoys.push(f); } }
     const choices=shuffleArr([correct,...decoys.slice(0,3)]);
-    return { prompt:`What fraction of the grid is shaded? Give your answer in simplest form.`, answer:correct, inputType:'choice', choices,
-      explanation:`${n} out of ${total} squares are shaded — ${n}/${total} simplifies to ${correct}.`, svg:drawShadedGrid(size.rows,size.cols,n) };
+    return { prompt:`What fraction of the grid is shaded?`, answer:correct, inputType:'choice', choices,
+      renderFractionChoices:true,
+      explanation:`${n} of the ${total} parts are shaded, so the fraction is ${n}/${total}.`,
+      svg:drawShadedGrid(size.rows,size.cols,n), subskill:'read_visual_fraction' };
   }
   // hard: multiple choice, correct answer is the simplified fraction
   const pool=GRID_SIZES.filter(s=>s.rows*s.cols>=20);
@@ -815,17 +845,72 @@ function genOrderDecimals(diff){
 
 const DENOMS=[{v:5,l:'5c'},{v:10,l:'10c'},{v:20,l:'20c'},{v:50,l:'50c'},{v:100,l:'$1'},{v:200,l:'$2'},{v:500,l:'$5'},{v:1000,l:'$10'},{v:2000,l:'$20'}];
 function fmtCents(c){ return c>=100 ? '$'+(c/100).toFixed(2) : c+'c'; }
-function buildCoinsQuestion(target, promptText, explanationText, requireMinimal){
-  let remaining=target; const solution=[];
-  for(let i=DENOMS.length-1;i>=0;i--){ while(remaining>=DENOMS[i].v){ solution.push(DENOMS[i]); remaining-=DENOMS[i].v; } }
-  const decoyCount = solution.length>=8 ? randInt(1,2) : randInt(2,4);
-  const decoys=[]; for(let i=0;i<decoyCount;i++) decoys.push(pick(DENOMS));
-  const coins=[...solution,...decoys].map((c,i)=>({v:c.v,l:c.l,id:'c'+i}));
-  for(let i=coins.length-1;i>0;i--){ const j=randInt(0,i); [coins[i],coins[j]]=[coins[j],coins[i]]; }
-  const q={ prompt:promptText, inputType:'coins', targetCents:target, coins, explanation:explanationText };
-  if(requireMinimal) q.minCoins=solution.length;
-  return q;
+
+// ---------- AUSTRALIAN COIN GRAPHICS ----------
+// Drawn to relative scale with the real colours: silver for 5c-50c, gold for
+// $1/$2, and the 50c as a dodecagon. Sizes are proportional to the real coins
+// so students build a physical sense of them, not just a label to read.
+const AUD_COINS=[
+  {v:5,   l:'5c',  r:19, gold:false, shape:'circle'},
+  {v:10,  l:'10c', r:22, gold:false, shape:'circle'},
+  {v:20,  l:'20c', r:26, gold:false, shape:'circle'},
+  {v:50,  l:'50c', r:29, gold:false, shape:'dodecagon'},
+  {v:100, l:'$1',  r:23, gold:true,  shape:'circle'},
+  {v:200, l:'$2',  r:20, gold:true,  shape:'circle'},
+];
+function coinByValue(v){ return AUD_COINS.find(c=>c.v===v) || AUD_COINS[0]; }
+function coinSVG(v){
+  const c=coinByValue(v);
+  const size=c.r*2+6, cx=size/2, cy=size/2;
+  const face = c.gold ? '#E3B341' : '#C9CDD2';
+  const edge = c.gold ? '#A87C16' : '#8A9099';
+  const inner= c.gold ? '#EFCB69' : '#DDE1E6';
+  let body;
+  if(c.shape==='dodecagon'){
+    const pts=[]; for(let i=0;i<12;i++){ const a=(i*30-90)*Math.PI/180;
+      pts.push(`${(cx+c.r*Math.cos(a)).toFixed(1)},${(cy+c.r*Math.sin(a)).toFixed(1)}`); }
+    body=`<polygon points="${pts.join(' ')}" fill="${face}" stroke="${edge}" stroke-width="2"/>`;
+  } else {
+    body=`<circle cx="${cx}" cy="${cy}" r="${c.r}" fill="${face}" stroke="${edge}" stroke-width="2"/>`;
+  }
+  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" aria-label="${c.l}">
+    ${body}
+    <circle cx="${cx}" cy="${cy}" r="${c.r-5}" fill="${inner}" stroke="${edge}" stroke-width="0.8" opacity="0.75"/>
+    <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central"
+      font-family="'IBM Plex Mono',monospace" font-weight="700"
+      font-size="${c.v>=100?14:13}" fill="#3A3226">${c.l}</text>
+  </svg>`;
 }
+// Fewest-coins solution for an amount, using coins only.
+function minimalCoins(cents){
+  let rem=cents; const out=[];
+  for(let i=AUD_COINS.length-1;i>=0;i--){
+    while(rem>=AUD_COINS[i].v){ out.push(AUD_COINS[i].v); rem-=AUD_COINS[i].v; }
+  }
+  return rem===0 ? out : null;
+}
+
+function buildCoinsQuestion(target, promptText, explanationText, opts){
+  opts = opts || {};
+  const solution = minimalCoins(target) || [];
+  // Always offer extra coins that aren't needed, so selecting everything on the
+  // table is never the answer.
+  const extras=[];
+  const extraCount = randInt(3,5);
+  for(let i=0;i<extraCount;i++) extras.push(pick(AUD_COINS).v);
+  const coins=[...solution, ...extras].map((v,i)=>{
+    const c=coinByValue(v);
+    return {v, l:c.l, id:'c'+i,
+      // Small random offsets so the coins look scattered on a table rather than
+      // sorted into a neat row.
+      dx: randInt(-6,6), dy: randInt(-7,7), rot: randInt(-14,14)};
+  });
+  for(let i=coins.length-1;i>0;i--){ const j=randInt(0,i); [coins[i],coins[j]]=[coins[j],coins[i]]; }
+  return { prompt:promptText, inputType:'coins', targetCents:target, coins,
+    explanation:explanationText, minCoins:solution.length,
+    showRunningTotal: !!opts.runningTotal, coinsSubskill:opts.subskill||'make_amount' };
+}
+
 function joinWithAnd(parts){
   if(parts.length===1) return parts[0];
   if(parts.length===2) return `${parts[0]} and ${parts[1]}`;
@@ -839,26 +924,47 @@ const PURCHASE_ITEMS=[
   {name:'a sticker pack', range:[100,250]}, {name:'a yoyo', range:[300,600]},
 ];
 function genCoins(diff){
-  if(diff!=='hard'){
-    const range = diff==='easy'?[100,300]:[200,600];
-    const target=Math.round(randInt(range[0],range[1])/5)*5;
-    return buildCoinsQuestion(target, `Select coins that add up to exactly ${fmtCents(target)}.`,
-      `Any combination of the coins shown that adds up to ${fmtCents(target)} is correct.`);
+  if(diff==='easy'){
+    // Amounts reachable with a handful of coins; running total shown.
+    let target;
+    do { target = Math.round(randInt(60,395)/5)*5; } while(!minimalCoins(target) || minimalCoins(target).length>4);
+    return buildCoinsQuestion(target,
+      `Use the fewest coins possible to make exactly ${fmtCents(target)}.`,
+      `${fmtCents(target)} needs ${minimalCoins(target).length} coins: ${minimalCoins(target).map(v=>coinByValue(v).l).join(' + ')}.`,
+      {runningTotal:true, subskill:'make_amount_with_total'});
   }
-  const itemCount=pick([2,3]);
+  if(diff==='medium'){
+    let target;
+    do { target = Math.round(randInt(105,895)/5)*5; } while(!minimalCoins(target) || minimalCoins(target).length>6);
+    return buildCoinsQuestion(target,
+      `Use the fewest coins possible to make exactly ${fmtCents(target)}.`,
+      `${fmtCents(target)} needs ${minimalCoins(target).length} coins: ${minimalCoins(target).map(v=>coinByValue(v).l).join(' + ')}.`,
+      {runningTotal:false, subskill:'make_amount_no_total'});
+  }
+  // hard: work out the change first, then make it with the fewest coins.
+  // Payment amounts must be what someone would realistically hand over.
+  const itemCount=pick([1,2]);
   const chosenItems=shuffleArr(PURCHASE_ITEMS).slice(0,itemCount).map(it=>({
     name:it.name, price:Math.round(randInt(it.range[0],it.range[1])/5)*5
   }));
   const total=chosenItems.reduce((s,it)=>s+it.price,0);
-  const payOptions=[500,1000,2000].filter(p=>p>total);
-  const payment = payOptions.length? pick(payOptions) : total + Math.round(randInt(100,500)/5)*5;
+  // Realistic payments: the next whole dollar, next $5, or next $10 — never
+  // an amount nobody would hand over.
+  const candidates=[
+    Math.ceil(total/100)*100,
+    Math.ceil(total/500)*500,
+    Math.ceil(total/1000)*1000,
+  ].filter(p=>p>total && p-total<=500 && minimalCoins(p-total));
+  if(!candidates.length) return genCoins('hard');
+  const payment=pick(candidates);
   const change=payment-total;
   const itemList=joinWithAnd(chosenItems.map(it=>`${it.name} for ${fmtCents(it.price)}`));
   return buildCoinsQuestion(change,
-    `I bought ${itemList}, and paid with a ${fmtCents(payment)} note. Click the smallest number of notes and/or coins I will receive as change.`,
-    `Total cost: ${chosenItems.map(it=>fmtCents(it.price)).join(' + ')} = ${fmtCents(total)}. Change = ${fmtCents(payment)} − ${fmtCents(total)} = ${fmtCents(change)}.`,
-    true);
+    `I bought ${itemList} and paid with ${fmtCents(payment)}. Choose the fewest coins for my change.`,
+    `${fmtCents(payment)} − ${fmtCents(total)} = ${fmtCents(change)} change, which is ${minimalCoins(change).length} coins: ${minimalCoins(change).map(v=>coinByValue(v).l).join(' + ')}.`,
+    {runningTotal:false, subskill:'calculate_change'});
 }
+
 function genLShapeDims(lo,hi){
   const W=randInt(lo,hi), H=randInt(lo,hi);
   const nw=randInt(1,Math.max(1,Math.floor(W/2)));
@@ -885,10 +991,22 @@ function buildAPChoices(area, perim, unit){
   return { correct, choices: shuffleArr([correct, ...decoys.slice(0,3)]) };
 }
 const REAL_WORLD_RECT_CONTEXTS=[
-  {obj:'a book cover', unit:'cm'}, {obj:'a laptop screen', unit:'cm'}, {obj:'a phone screen', unit:'cm'},
-  {obj:'a picture frame', unit:'cm'}, {obj:'a whiteboard', unit:'cm'}, {obj:'a placemat', unit:'cm'},
-  {obj:'a sports field', unit:'m'}, {obj:'a tennis court', unit:'m'}, {obj:'a swimming pool', unit:'m'},
-  {obj:'a garden bed', unit:'m'}, {obj:'a rug', unit:'m'}, {obj:'a classroom floor', unit:'m'},
+  // Each object carries its OWN dimension range. Sharing one range across every
+  // context produced nonsense like a 52 cm phone screen and a 3 m sports field.
+  {obj:'a book cover',      unit:'cm', lo:14, hi:30},
+  {obj:'a laptop screen',   unit:'cm', lo:22, hi:36},
+  {obj:'a phone screen',    unit:'cm', lo:6,  hi:16},
+  {obj:'a picture frame',   unit:'cm', lo:15, hi:45},
+  {obj:'a whiteboard',      unit:'cm', lo:60, hi:120},
+  {obj:'a placemat',        unit:'cm', lo:20, hi:45},
+  {obj:'a postcard',        unit:'cm', lo:10, hi:18},
+  {obj:'a sports field',    unit:'m',  lo:45, hi:100},
+  {obj:'a tennis court',    unit:'m',  lo:11, hi:24},
+  {obj:'a swimming pool',   unit:'m',  lo:10, hi:50},
+  {obj:'a garden bed',      unit:'m',  lo:2,  hi:8},
+  {obj:'a rug',             unit:'m',  lo:2,  hi:4},
+  {obj:'a classroom floor', unit:'m',  lo:6,  hi:12},
+  {obj:'a car park space',  unit:'m',  lo:3,  hi:6},
 ];
 function genArea(diff){
   if(diff==='easy'){
@@ -906,9 +1024,10 @@ function genArea(diff){
       svg:drawLShape(s) };
   }
   const ctx=pick(REAL_WORLD_RECT_CONTEXTS);
-  const [lo,hi]=ctx.unit==='m'?[3,40]:[10,90];
-  let length=randInt(lo,hi), width=randInt(lo,hi);
+  let length=randInt(ctx.lo,ctx.hi), width=randInt(ctx.lo,ctx.hi);
   if(width>length){ [length,width]=[width,length]; }
+  // Keep the proportions believable — nothing is 8 times longer than it is wide.
+  if(length > width*3) width = Math.max(ctx.lo, Math.round(length/randInt(2,3)));
   const area=length*width, perim=2*(length+width);
   const {correct,choices}=buildAPChoices(area,perim,ctx.unit);
   const sentence=`${ctx.obj.charAt(0).toUpperCase()+ctx.obj.slice(1)} measures ${length} ${ctx.unit} by ${width} ${ctx.unit}. What are its area and perimeter?`;
@@ -991,7 +1110,10 @@ function genFractionSimplify(diff){
   // deliberately varied so not every one is a brain-teaser.
   const primeNum = Math.random()<0.35;
   let n1,d1,k;
-  if(primeNum){ n1=pick([7,11,13,17,19]); d1=pick([2,3,4,5]); k=pick([3,4,5]); }
+  if(primeNum){
+    // n1 must stay below d1 — 13/2 is improper and belongs in Q22, not here.
+    n1=pick([7,11,13]); d1=pick([n1+2, n1+4, n1*2, n1+6]); k=pick([2,3,4,5]);
+  }
   else { const f=pickSimplifiedFraction(NICE_DENOMS_MED); n1=f.n1; d1=f.d1; k=randInt(2,6); }
   const n0=n1*k, d0=d1*k;
   return { prompt:`Simplify this fraction to its lowest terms.`,
@@ -1828,7 +1950,13 @@ function genPowersOfTen(diff, op){
   const mult = op==='mult';
   let base;
   if(diff==='easy') base=randInt(2,99);
-  else if(diff==='medium') base=pick([randInt(100,999), randInt(1,9)*100+randInt(0,9), randInt(1000,9999)]);
+  else if(diff==='medium'){
+    // Division by 1000 must still give a whole number at Medium — decimals are
+    // explicitly the Hard band — so the base is always a multiple of 1000.
+    base = mult ? pick([randInt(1,9)*100, randInt(1,9)*1000, randInt(11,99)*100])
+                : randInt(1,9)*1000 + randInt(0,9)*1000;
+    if(!mult && base%1000!==0) base = Math.max(1000, Math.round(base/1000)*1000);
+  }
   else {
     // Hard is explicitly the decimal level, so guarantee a fractional part.
     base=pick([ randInt(1,9)+randInt(1,9)/10, randInt(1,99)/100, randInt(11,99)/10 ]);
@@ -1966,7 +2094,9 @@ function genMissingNumber(diff){
   if(rhsOp==='-'){ const x=randInt(60,200), y=randInt(10,x-10); rhs=x-y; rhsText=`${x} − ${y}`; }
   else if(rhsOp==='×'){ const x=randInt(3,12), y=randInt(3,12); rhs=x*y; rhsText=`${x} × ${y}`; }
   else { const y=randInt(2,12), q=randInt(2,12); rhs=q; rhsText=`${y*q} ÷ ${y}`; }
-  const lhsOp=pick(['+','-','×','÷']);
+  // The two sides must use DIFFERENT operations, otherwise "8 × ? = 10 × 8" is a
+  // spot-the-pattern exercise rather than two-step reasoning.
+  const lhsOp=pick(['+','-','×','÷'].filter(o=>o!==rhsOp));
   let prompt, answer;
   if(lhsOp==='×'){
     const f=pick([2,3,4,5,6,8].filter(n=>rhs%n===0));
@@ -2163,7 +2293,9 @@ function genMixedImproper(diff){
     : diff==='medium' ? [2,3,4,5,6,8,10]
     : [5,6,7,8,9,10,12];
   const den=pick(dens);
-  const whole = diff==='easy' ? randInt(1,3) : diff==='medium' ? randInt(2,5) : randInt(3,7);
+  // Easy is always "1 and a bit" — one whole plus a remainder is the first step
+  // in understanding the conversion, before multiple wholes are introduced.
+  const whole = diff==='easy' ? 1 : diff==='medium' ? randInt(2,5) : randInt(3,7);
   // The fractional part is always shown in simplest form — presenting "3 4/10"
   // in the question itself would model sloppy notation even though the maths holds.
   const coprime=[]; for(let n=1;n<den;n++) if(gcd2(n,den)===1) coprime.push(n);
@@ -2494,7 +2626,7 @@ function buildQuestion(slotIdx, diff, strategyKey){
     // Inline-box questions (partitioning, sequences, powers-of-ten). These MUST be
     // whitelisted here — anything not listed is silently dropped before the
     // question is saved, which leaves the renderer with nothing to draw.
-    hint:q.hint||null, compareLead:!!q.compareLead, fracOfLead:!!q.fracOfLead, choiceSymbols:q.choiceSymbols||null,
+    hint:q.hint||null, showRunningTotal:!!q.showRunningTotal, coinsSubskill:q.coinsSubskill||null, compareLead:!!q.compareLead, fracOfLead:!!q.fracOfLead, choiceSymbols:q.choiceSymbols||null,
     leftNum:q.leftNum!=null?q.leftNum:null, leftDen:q.leftDen!=null?q.leftDen:null,
     rightNum:q.rightNum!=null?q.rightNum:null, rightDen:q.rightDen!=null?q.rightDen:null,
     ansNum:q.ansNum!=null?q.ansNum:null, ansDen:q.ansDen!=null?q.ansDen:null,
@@ -6150,14 +6282,26 @@ function renderQuestionBody(q, st, onCheck, headerHTML){
     checkBtn.onclick=()=>{ sync(); doCheck(); };
     qbox.appendChild(checkBtn);
   } else if(q.inputType==='coins'){
-    const coinRow=el('<div class="mmc-choices"></div>');
+    // Real coin graphics, scattered on a "table" rather than sorted into a row,
+    // so students identify coins by sight the way they would in a shop.
+    const tray=el('<div class="mmc-cointray"></div>');
     (q.coins||[]).forEach(c=>{
       const sel=st.given.includes(c.id);
-      const b=el(`<button type="button" class="mmc-coin-chip ${sel?'selected':''}" ${st.checked?'disabled':''}>${esc(c.l)}</button>`);
+      const b=el(`<button type="button" class="mmc-coin ${sel?'selected':''}" ${st.checked?'disabled':''}
+        style="transform:translate(${c.dx||0}px,${c.dy||0}px) rotate(${c.rot||0}deg);" aria-label="${esc(c.l)}">${coinSVG(c.v)}</button>`);
       b.onclick=()=>{ if(st.checked) return; st.given = sel ? st.given.filter(id=>id!==c.id) : [...st.given, c.id]; render(); };
-      coinRow.appendChild(b);
+      tray.appendChild(b);
     });
-    qbox.appendChild(coinRow);
+    qbox.appendChild(tray);
+    const chosen=(q.coins||[]).filter(c=>st.given.includes(c.id));
+    const runTotal=chosen.reduce((t,c)=>t+c.v,0);
+    if(q.showRunningTotal){
+      const cls = runTotal===q.targetCents ? ' hit' : '';
+      qbox.appendChild(el(`<div class="mmc-cointotal${cls}">Total so far: <b>${fmtCents(runTotal)}</b>
+        <span class="tgt">Target ${fmtCents(q.targetCents)}</span></div>`));
+    } else {
+      qbox.appendChild(el(`<div class="meta" style="margin-top:6px;">${chosen.length} coin${chosen.length===1?'':'s'} selected.</div>`));
+    }
     const checkBtn=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" ${st.checked||st.given.length===0?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
     checkBtn.onclick=doCheck;
     qbox.appendChild(checkBtn);
