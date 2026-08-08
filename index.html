@@ -202,6 +202,11 @@
     margin-top:8px; padding-top:8px; border-top:1.5px dashed rgba(0,0,0,.15);
     font-size:14px; font-weight:700; color:var(--orange-deep);
   }
+  .mmc-hint {
+    font-size:13.5px; font-weight:700; color:var(--purple-deep);
+    background:#F5F1FF; border-left:3px solid var(--purple);
+    padding:7px 11px; border-radius:0 8px 8px 0; margin:8px 0 4px; display:inline-block;
+  }
   .mmc-symbtn { display:flex; flex-direction:column; align-items:center; line-height:1.1; gap:1px; }
   .mmc-symbtn .sym { font-size:24px; font-weight:800; font-family:'IBM Plex Mono',monospace; }
   .mmc-symbtn .wrd { font-size:11.5px; font-weight:700; letter-spacing:.01em; }
@@ -554,7 +559,7 @@ function drawShapePair(s1,s2){
   inner+=`<text x="${offset2+w2/2}" y="-6" font-size="14" text-anchor="middle" fill="#2B2620" font-family="IBM Plex Mono, monospace" font-weight="600">B</text>`;
   return svgWrap(`<g transform="translate(4,${topPad})">${inner}</g>`, w1+gap+w2+8, maxH+topPad+8);
 }
-function drawClock(hour,minute){
+function drawClock(hour,minute,minorTicks){
   const cx=100, cy=100, r=90;
   const minuteAngle = minute*6, hourAngle=(hour%12)*30 + minute*0.5;
   function pt(deg,len){ const rad=(deg-90)*Math.PI/180; return [cx+len*Math.cos(rad), cy+len*Math.sin(rad)]; }
@@ -562,6 +567,15 @@ function drawClock(hour,minute){
   let ticks='';
   for(let i=0;i<12;i++){ const [x1,y1]=pt(i*30,80), [x2,y2]=pt(i*30,88);
     ticks+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#2B2620" stroke-width="2"/>`; }
+  // Medium difficulty gets fine minute markers between the hour positions, so
+  // students can read any time without having to count in fives unaided.
+  if(minorTicks){
+    for(let i=0;i<60;i++){
+      if(i%5===0) continue;
+      const [x1,y1]=pt(i*6,84), [x2,y2]=pt(i*6,88);
+      ticks+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#2B2620" stroke-width="1"/>`;
+    }
+  }
   return svgWrap(`<circle cx="${cx}" cy="${cy}" r="${r}" fill="#fff" stroke="#2B2620" stroke-width="3"/>${ticks}
     <line x1="${cx}" y1="${cy}" x2="${hx}" y2="${hy}" stroke="#2B2620" stroke-width="5" stroke-linecap="round"/>
     <line x1="${cx}" y1="${cy}" x2="${mx}" y2="${my}" stroke="#2B2620" stroke-width="3" stroke-linecap="round"/>
@@ -946,15 +960,18 @@ function pickSimplifiedFraction(denomPool){
 }
 function genFractionSimplify(diff){
   if(diff==='easy'){
+    // Easy is deliberately a single halving step — no unrelated division facts.
     const {n1,d1}=pickSimplifiedFraction(NICE_DENOMS_EASY);
-    const k=randInt(2,6); const n0=n1*k, d0=d1*k;
-    return { prompt:`Fill in the missing numerator to complete the equivalent fraction.`, answer:String(n1),
+    const k=2; const n0=n1*k, d0=d1*k;
+    return { prompt:`Fill in the missing numerator to complete the equivalent fraction.`,
+      hint:'Whatever you do to the top, you must also do to the bottom.', answer:String(n1),
       inputType:'fracEasy', givenNum:n0, givenDen:d0, targetDen:d1,
       explanation:`${n0}/${d0} simplifies by dividing top and bottom by ${k}: ${n0}÷${k} = ${n1}, ${d0}÷${k} = ${d1}.` };
   }
   if(diff==='medium'){
     const {n1,d1}=pickSimplifiedFraction(NICE_DENOMS_MED);
     const k=randInt(2,5); const n0=n1*k, d0=d1*k;
+    const hint='Whatever you do to the top, you must also do to the bottom.';
     const correct=`${n1}/${d1}`;
     const seen=new Set([correct]); const decoys=[];
     const raw=`${n0}/${d0}`; if(raw!==correct){ seen.add(raw); decoys.push(raw); }
@@ -966,13 +983,20 @@ function genFractionSimplify(diff){
       if(!seen.has(f)){ seen.add(f); decoys.push(f); }
     }
     const choices=shuffleArr([correct, ...decoys.slice(0,3)]);
-    return { prompt:`Simplify this fraction to its lowest terms.`, answer:correct, inputType:'choice', choices, renderFractionChoices:true,
+    return { prompt:`Simplify this fraction to its lowest terms.`, hint, answer:correct, inputType:'choice', choices, renderFractionChoices:true,
       givenNum:n0, givenDen:d0,
       explanation:`${n0}/${d0} ÷ ${k}/${k} = ${n1}/${d1}.` };
   }
-  const {n1,d1}=pickSimplifiedFraction(NICE_DENOMS_MED);
-  const k=randInt(2,6); const n0=n1*k, d0=d1*k;
-  return { prompt:`Simplify this fraction to its lowest terms.`, answer:`${n1}/${d1}`, inputType:'fracHard',
+  // Hard: broader range including prime numerators (13/65 -> 1/5), but the mix is
+  // deliberately varied so not every one is a brain-teaser.
+  const primeNum = Math.random()<0.35;
+  let n1,d1,k;
+  if(primeNum){ n1=pick([7,11,13,17,19]); d1=pick([2,3,4,5]); k=pick([3,4,5]); }
+  else { const f=pickSimplifiedFraction(NICE_DENOMS_MED); n1=f.n1; d1=f.d1; k=randInt(2,6); }
+  const n0=n1*k, d0=d1*k;
+  return { prompt:`Simplify this fraction to its lowest terms.`,
+    hint:'Whatever you do to the top, you must also do to the bottom.',
+    answer:`${n1}/${d1}`, inputType:'fracHard',
     givenNum:n0, givenDen:d0,
     explanation:`${n0}/${d0} ÷ ${k}/${k} = ${n1}/${d1}.` };
 }
@@ -2038,6 +2062,101 @@ function genFracDec(diff){
   };
 }
 
+
+// ---------- Q16 TIME (rotating family) ----------
+// Gradebook category stays TIME; the subskill records which family and what it
+// tested, so the feedback page can separate clock reading from duration.
+const AMPM_CTX_EASY=[
+  {t:'8:45', ev:'School starts', a:'am'}, {t:'7:30', ev:'You eat breakfast', a:'am'},
+  {t:'3:15', ev:'School finishes', a:'pm'}, {t:'8:00', ev:'You go to bed', a:'pm'},
+  {t:'12:30', ev:'You eat lunch', a:'pm'}, {t:'6:30', ev:'The sun rises in summer', a:'am'},
+];
+const AMPM_CTX_MED=[
+  {t:'11:50', ev:'The bell rings just before lunch', a:'am'},
+  {t:'5:45', ev:'Footy training after school', a:'pm'},
+  {t:'9:20', ev:'Morning assembly begins', a:'am'},
+  {t:'7:15', ev:'The evening news starts', a:'pm'},
+];
+const AMPM_CTX_HARD=[
+  {t:'12:05', ev:'The lunch bell rings five minutes after midday', a:'pm'},
+  {t:'12:10', ev:'A plane takes off ten minutes after midnight', a:'am'},
+  {t:'11:55', ev:'The siren sounds five minutes before midday', a:'am'},
+  {t:'4:50', ev:'The bakery opens well before sunrise', a:'am'},
+  {t:'12:00', ev:'The clock strikes midday', a:'pm'},
+];
+function pad2(n){ return String(n).padStart(2,'0'); }
+function genTime(diff){
+  const family = rotationIndex() % 3;   // 0 clock, 1 am/pm, 2 duration
+
+  if(family===1){
+    const pool = diff==='easy'?AMPM_CTX_EASY : diff==='medium'?AMPM_CTX_MED : AMPM_CTX_HARD;
+    const c=pick(pool);
+    return { prompt:`${c.ev} at ${c.t}. Is that am or pm?`,
+      inputType:'choice', choices:['am','pm'], answer:c.a,
+      explanation:`${c.ev} at ${c.t} ${c.a}.`,
+      subskill:'am_pm' };
+  }
+
+  if(family===2){
+    let startH, startM, mins;
+    if(diff==='easy'){ startH=randInt(1,11); startM=pick([0,15,30]); mins=pick([15,30,45]);
+      if(startM+mins>=60) mins=60-startM-15<=0?15:60-startM-15; }
+    else if(diff==='medium'){ startH=randInt(1,10); startM=pick([5,10,20,25,35,40,50]); mins=randInt(25,70); }
+    else { startH=randInt(1,10); startM=randInt(1,59); mins=randInt(75,190); }
+    const mer=pick(['am','pm']);
+    const total=startH*60+startM+mins;
+    const endH24=Math.floor(total/60), endM=total%60;
+    const endH=((endH24-1)%12)+1;
+    const crossed = endH24>12;
+    const h=Math.floor(mins/60), m=mins%60;
+    const ansText = h? (m? `${h} hour${h>1?'s':''} ${m} minutes` : `${h} hour${h>1?'s':''}`) : `${m} minutes`;
+    // Crossing an hour is the thing that actually makes duration hard, and it
+    // happens well before the total reaches 60 minutes (5:35 to 6:17 is only 42).
+    const crossesHour = (startM + mins) >= 60;
+    const ctx=pick([
+      {a:'A film starts', b:'finishes'}, {a:'Swimming starts', b:'ends'},
+      {a:'The bus leaves', b:'arrives'}, {a:'The party starts', b:'finishes'},
+    ]);
+    return {
+      prompt:`${ctx.a} at ${startH}:${pad2(startM)} ${mer} and ${ctx.b} at ${endH}:${pad2(endM)} ${crossed&&mer==='am'?'pm':mer}. How long is that?`,
+      inputType:'parts',
+      // No point asking for hours when the answer is always zero.
+      parts: h>0 || diff!=='easy' ? [{label:'hours'},{label:'minutes'}] : [{label:'minutes'}],
+      answer: (h>0 || diff!=='easy') ? `${h},${m}` : `${m}`,
+      explanation:`From ${startH}:${pad2(startM)} to ${endH}:${pad2(endM)} is ${ansText}.`,
+      subskill: crossesHour ? 'duration_crossing_hour' : 'duration_within_hour'
+    };
+  }
+
+  // family 0 — analogue clock reading
+  const hour=randInt(1,12);
+  const minuteOptions = diff==='easy'? [0,15,30,45]
+    : diff==='medium'? [0,5,10,15,20,25,30,35,40,45,50,55]
+    : Array.from({length:60},(_,i)=>i);
+  const minute=pick(minuteOptions);
+  const correct=`${hour}:${pad2(minute)}`;
+  // The key distractor: reading the hands the wrong way round.
+  const swappedH = minute===0 ? 12 : (Math.round(minute/5)===0?12:Math.round(minute/5));
+  const swappedM = (hour%12)*5;
+  const swapped = `${swappedH}:${pad2(swappedM)}`;
+  const seen=new Set([correct]); const decoys=[];
+  if(swapped!==correct){ seen.add(swapped); decoys.push(swapped); }
+  const step = diff==='easy'?15: diff==='medium'?5:1;
+  [`${(hour%12)+1}:${pad2(minute)}`, `${hour}:${pad2((minute+step)%60)}`].forEach(c=>{
+    if(!seen.has(c)){ seen.add(c); decoys.push(c); }
+  });
+  while(decoys.length<3){
+    const h=randInt(1,12), m=pick(minuteOptions); const c=`${h}:${pad2(m)}`;
+    if(!seen.has(c)){ seen.add(c); decoys.push(c); }
+  }
+  const quarter = (minute===15||minute===45||minute===30);
+  return { prompt:`What time does the clock show?`, answer:correct, inputType:'choice',
+    choices:shuffleArr([correct, ...decoys.slice(0,3)]),
+    explanation:`The clock shows ${correct}.`,
+    svg:drawClock(hour,minute, diff==='medium'),
+    subskill: diff==='easy' && quarter ? 'clock_quarter' : (diff==='hard' ? 'clock_to_minute' : 'clock_reading') };
+}
+
 // ---------- Q22 IMPROPER FRACTION <-> MIXED NUMBER ----------
 function genMixedImproper(diff){
   const dens = diff==='easy' ? [2,3,4]
@@ -2167,29 +2286,45 @@ const STAT_CONTEXTS=[
   {label:'Ways students travel to school', cats:['Walk','Bus','Car','Bike','Scooter']},
 ];
 const MEAN_CONTEXTS=[
-  {who:'Sophie', unit:'points', verb:'scored', noun:'games', q:'What was her average score?'},
-  {who:'A plant', unit:'cm', verb:'grew', noun:'weeks', q:'What was the average growth each week?'},
-  {who:'Marcus', unit:'books', verb:'read', noun:'months', q:'What was the average number of books each month?'},
-  {who:'The team', unit:'goals', verb:'scored', noun:'matches', q:'What was the average number of goals?'},
-  {who:'Ava', unit:'km', verb:'ran', noun:'days', q:'What was her average distance each day?'},
-  {who:'The class', unit:'shells', verb:'collected', noun:'days', q:'What was the average number of shells each day?'},
+  // `lo`/`hi` keep the numbers believable for the context — nobody runs 3 km one
+  // day and 40 the next, and a Year 4 reader notices when a story doesn't add up.
+  {who:'Sophie', unit:'points', verb:'scored', noun:'games',   q:'What was her average score?',                 lo:6,  hi:20, unitAfter:true},
+  {who:'A plant', unit:'cm',    verb:'grew',   noun:'weeks',   q:'What was the average growth each week?',      lo:3,  hi:12, unitAfter:true},
+  {who:'Marcus', unit:'books',  verb:'read',   noun:'months',  q:'What was the average number of books?',       lo:2,  hi:9,  unitAfter:true},
+  {who:'The team', unit:'goals',verb:'scored', noun:'matches', q:'What was the average number of goals?',       lo:2,  hi:9,  unitAfter:true},
+  {who:'Ava', unit:'km',        verb:'ran',    noun:'days',    q:'What was her average distance each day?',     lo:8,  hi:16, unitAfter:true},
+  {who:'The class', unit:'shells', verb:'collected', noun:'days', q:'What was the average number of shells?',   lo:10, hi:30, unitAfter:true},
 ];
 const NUM_WORDS={4:'four',5:'five'};
+// "4 km, 2 km, 6 km and 2 km" reads far better to a nine-year-old than "4, 2, 6, 2 km".
+function listWithUnits(vals, unit){
+  // Countable units need singular/plural agreement ("1 book", not "1 books").
+  // Measurement units like cm and km never take an s.
+  const measure = ['cm','km','m','mm','kg','g','L','mL'].indexOf(unit)!==-1;
+  const parts=vals.map(v=>{
+    if(measure) return `${v} ${unit}`;
+    const u = (v===1 && unit.slice(-1)==='s') ? unit.slice(0,-1) : unit;
+    return `${v} ${u}`;
+  });
+  if(parts.length<2) return parts.join('');
+  return parts.slice(0,-1).join(', ')+' and '+parts[parts.length-1];
+}
 function genStatistics(diff){
   if(diff==='hard'){
     const c=pick(MEAN_CONTEXTS);
     const n=pick([4,5]);
-    const mean=randInt(4,15);
+    const mean=randInt(c.lo, c.hi);
+    const spread=Math.max(2, Math.round((c.hi-c.lo)/4));
     let vals=[];
-    for(let i=0;i<n-1;i++) vals.push(Math.max(1, mean+randInt(-3,3)));
+    for(let i=0;i<n-1;i++) vals.push(Math.max(1, mean+randInt(-spread,spread)));
     const last = mean*n - vals.reduce((s,v)=>s+v,0);
     // Reject outliers — a value far from the others makes the mean feel arbitrary.
-    if(last<1 || last>mean+4 || last<mean-4) return genStatistics(diff);
+    if(last<1 || last>mean+spread || last<mean-spread) return genStatistics(diff);
     vals.push(last); vals=shuffleArr(vals);
     return {
-      prompt:`${c.who} ${c.verb} ${vals.join(', ')} ${c.unit} over ${NUM_WORDS[n]} ${c.noun}. ${c.q}`,
+      prompt:`${c.who} ${c.verb} ${listWithUnits(vals, c.unit)} over ${NUM_WORDS[n]} ${c.noun}. ${c.q}`,
       answer:String(mean),
-      explanation:`${vals.join(' + ')} = ${vals.reduce((s,v)=>s+v,0)}, and ${vals.reduce((s,v)=>s+v,0)} ÷ ${n} = ${mean}.`,
+      explanation:`${vals.join(' + ')} = ${vals.reduce((s,v)=>s+v,0)}, and ${vals.reduce((s,v)=>s+v,0)} ÷ ${n} = ${mean} ${c.unit}.`,
       subskill:'mean_average'
     };
   }
@@ -2333,7 +2468,7 @@ const SLOTS=[
   {skill:'ORDER_DECIMAL',    title:'Ordering decimals',            gen:genOrderDecimals},
   {skill:'COINS',            title:'Australian coins',             gen:genCoins},
   {skill:'AREA_PERIMETER',   title:'Area and perimeter',           gen:genArea},
-  {skill:'TIME',             title:'Time',                         gen:genClock},
+  {skill:'TIME',             title:'Time',                         gen:genTime},
   {skill:'SIMPLIFY_FRACTION',title:'Simplifying fractions',        gen:genFractionSimplify},
   {skill:'METRIC_CONVERT',   title:'Metric conversions',           gen:genConversionV2},
   {skill:'ANGLES',           title:'Angles',                       gen:genAngle},
@@ -2359,7 +2494,7 @@ function buildQuestion(slotIdx, diff, strategyKey){
     // Inline-box questions (partitioning, sequences, powers-of-ten). These MUST be
     // whitelisted here — anything not listed is silently dropped before the
     // question is saved, which leaves the renderer with nothing to draw.
-    compareLead:!!q.compareLead, fracOfLead:!!q.fracOfLead, choiceSymbols:q.choiceSymbols||null,
+    hint:q.hint||null, compareLead:!!q.compareLead, fracOfLead:!!q.fracOfLead, choiceSymbols:q.choiceSymbols||null,
     leftNum:q.leftNum!=null?q.leftNum:null, leftDen:q.leftDen!=null?q.leftDen:null,
     rightNum:q.rightNum!=null?q.rightNum:null, rightDen:q.rightDen!=null?q.rightDen:null,
     ansNum:q.ansNum!=null?q.ansNum:null, ansDen:q.ansDen!=null?q.ansDen:null,
@@ -5866,6 +6001,7 @@ function renderQuestionBody(q, st, onCheck, headerHTML){
       ${headerHTML}
       ${q.svg ? `<div class="mmc-qsvg">${q.svg}</div>` : ''}
       <div class="qtext">${esc(q.prompt)}</div>
+      ${q.hint? `<div class="mmc-hint">${esc(q.hint)}</div>` : ''}
       ${fracPromptHTML(q)}
     </div>
   `);
