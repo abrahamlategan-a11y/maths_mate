@@ -742,9 +742,16 @@ function genFracHalf(diff){
 const GRID_SIZES = [ {rows:2,cols:5},{rows:4,cols:5},{rows:5,cols:6},{rows:5,cols:8},{rows:5,cols:10},{rows:6,cols:10},{rows:8,cols:10},{rows:10,cols:10} ];
 function genShadedGrid(diff){
   if(diff==='easy'){
-    const n=randInt(1,99);
-    return { prompt:`What fraction is shaded? Complete the fraction: ___/100`, answer:String(n),
-      explanation:`${n} out of 100 squares are shaded, so the fraction is ${n}/100.`, svg:drawShadedGrid(10,10,n) };
+    // Denominator is prefilled and varies (10, 20, 25, 50, 100) so students meet
+    // several "wholes", and they only type the numerator.
+    const shapes=[{rows:2,cols:5},{rows:4,cols:5},{rows:5,cols:5},{rows:5,cols:10},{rows:10,cols:10}];
+    const sh=pick(shapes); const total=sh.rows*sh.cols;
+    const n=randInt(1,total-1);
+    return { prompt:`What fraction of the grid is shaded?`,
+      inputType:'mixed', wantWhole:false, lockDen:total,
+      ansNum:n, ansDen:total, answer:`${n}/${total}`,
+      explanation:`${n} of the ${total} squares are shaded, so the fraction is ${n}/${total}.`,
+      svg:drawShadedGrid(sh.rows,sh.cols,n), subskill:'count_visual_fraction' };
   }
   if(diff==='medium'){
     // No simplification at Medium — the skill is reading the fraction the visual
@@ -755,13 +762,28 @@ function genShadedGrid(diff){
     const seen=new Set([correct]); const decoys=[];
     // Plausible misreads: counting the unshaded part, off-by-a-row, off-by-one,
     // and inverting the fraction.
+    // The different-denominator distractor is added FIRST. Added afterwards it
+    // never appeared, because the same-denominator loop had already filled all
+    // three slots — four options sharing one denominator reduces the question to
+    // counting shaded squares rather than reading the whole fraction.
+    const otherTotals=GRID_SIZES.map(g=>g.rows*g.cols).filter(t=>t!==total);
+    if(otherTotals.length){
+      const ot=pick(otherTotals);
+      const alt=`${Math.max(1,Math.min(ot-1,n))}/${ot}`;
+      if(!seen.has(alt)){ seen.add(alt); decoys.push(alt); }
+    }
     const candidates=[total-n, n+size.cols, n-size.cols, n+1, n-1];
     for(const c of shuffleArr(candidates)){
       if(c<=0||c>=total||c===n) continue;
       const f=`${c}/${total}`; if(!seen.has(f)){ seen.add(f); decoys.push(f); if(decoys.length>=3) break; }
     }
     if(decoys.length<3){ const inv=`${total}/${n}`; if(!seen.has(inv)){ seen.add(inv); decoys.push(inv); } }
-    while(decoys.length<3){ const c=randInt(1,total-1); const f=`${c}/${total}`; if(!seen.has(f)){ seen.add(f); decoys.push(f); } }
+    while(decoys.length<3){
+      const useOther = Math.random()<0.4 && otherTotals.length;
+      const t = useOther ? pick(otherTotals) : total;
+      const c=randInt(1,t-1); const f=`${c}/${t}`;
+      if(!seen.has(f)){ seen.add(f); decoys.push(f); }
+    }
     const choices=shuffleArr([correct,...decoys.slice(0,3)]);
     return { prompt:`What fraction of the grid is shaded?`, answer:correct, inputType:'choice', choices,
       renderFractionChoices:true,
@@ -896,7 +918,10 @@ function buildCoinsQuestion(target, promptText, explanationText, opts){
   // Always offer extra coins that aren't needed, so selecting everything on the
   // table is never the answer.
   const extras=[];
-  const extraCount = randInt(3,5);
+  // A fuller tray, and always a few small coins — without 5c and 10c present the
+  // "fewest coins" decision is much easier than it should be.
+  extras.push(5,5,10,10,20);
+  const extraCount = randInt(4,6);
   for(let i=0;i<extraCount;i++) extras.push(pick(AUD_COINS).v);
   const coins=[...solution, ...extras].map((v,i)=>{
     const c=coinByValue(v);
@@ -907,6 +932,9 @@ function buildCoinsQuestion(target, promptText, explanationText, opts){
   });
   for(let i=coins.length-1;i>0;i--){ const j=randInt(0,i); [coins[i],coins[j]]=[coins[j],coins[i]]; }
   return { prompt:promptText, inputType:'coins', targetCents:target, coins,
+    // Coins are graded from the selection, not a typed string — but an answer
+    // string still gives the teacher review screen and feedback something to show.
+    answer: solution.map(v=>coinByValue(v).l).join(' + '),
     explanation:explanationText, minCoins:solution.length,
     showRunningTotal: !!opts.runningTotal, coinsSubskill:opts.subskill||'make_amount' };
 }
@@ -1008,20 +1036,89 @@ const REAL_WORLD_RECT_CONTEXTS=[
   {obj:'a classroom floor', unit:'m',  lo:6,  hi:12},
   {obj:'a car park space',  unit:'m',  lo:3,  hi:6},
 ];
+
+// ---------- CUT-OUT SHAPES (Q15 medium) ----------
+// Built as a grid occupancy map rather than a formula. Area is simply the number
+// of filled cells; perimeter is the number of cell edges with nothing next to
+// them. That's exact for ANY rectilinear shape, so cut-outs can sit on edges,
+// in corners, be bigger than one square, and there can be several of them —
+// no special-case geometry to get wrong.
+function buildCutoutShape(){
+  const W=randInt(5,9), H=randInt(4,7);
+  const cells=[]; for(let y=0;y<H;y++){ cells.push(new Array(W).fill(true)); }
+  const cutCount = Math.random()<0.42 ? 2 : 1;
+  const corners=[[0,0],[1,0],[0,1],[1,1]];   // [right?, bottom?]
+  const used=[];
+  for(let k=0;k<cutCount;k++){
+    // Bites are taken from a corner or the middle of an edge, and can be
+    // several squares across, so the same notch never repeats.
+    const cw=randInt(1, Math.max(1, Math.floor(W/2)-1));
+    const ch=randInt(1, Math.max(1, Math.floor(H/2)-1));
+    const fromCorner = Math.random()<0.6 || k===1;
+    let x0,y0;
+    if(fromCorner){
+      const c=pick(corners.filter(c=>!used.some(u=>u[0]===c[0]&&u[1]===c[1])));
+      if(!c) continue;
+      used.push(c);
+      x0 = c[0] ? W-cw : 0;
+      y0 = c[1] ? H-ch : 0;
+    } else {
+      // Edge notch: flush against one side, offset along it.
+      const side=pick(['top','bottom','left','right']);
+      if(side==='top'){ x0=randInt(1,Math.max(1,W-cw-1)); y0=0; }
+      else if(side==='bottom'){ x0=randInt(1,Math.max(1,W-cw-1)); y0=H-ch; }
+      else if(side==='left'){ x0=0; y0=randInt(1,Math.max(1,H-ch-1)); }
+      else { x0=W-cw; y0=randInt(1,Math.max(1,H-ch-1)); }
+    }
+    for(let y=y0;y<y0+ch;y++) for(let x=x0;x<x0+cw;x++){ if(cells[y]&&cells[y][x]!==undefined) cells[y][x]=false; }
+  }
+  let area=0, perim=0;
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+    if(!cells[y][x]) continue;
+    area++;
+    if(y===0 || !cells[y-1][x]) perim++;
+    if(y===H-1 || !cells[y+1][x]) perim++;
+    if(x===0 || !cells[y][x-1]) perim++;
+    if(x===W-1 || !cells[y][x+1]) perim++;
+  }
+  return {W,H,cells,area,perim};
+}
+function drawCutoutShape(sh){
+  const cell=26, pad=8;
+  const w=sh.W*cell+pad*2, h=sh.H*cell+pad*2;
+  let rects='';
+  for(let y=0;y<sh.H;y++) for(let x=0;x<sh.W;x++){
+    if(!sh.cells[y][x]) continue;
+    rects+=`<rect x="${pad+x*cell}" y="${pad+y*cell}" width="${cell}" height="${cell}"
+      fill="#3F7D5C" stroke="#F5F2E8" stroke-width="1.5"/>`;
+  }
+  return svgWrap(`${rects}`, w, h);
+}
+
 function genArea(diff){
   if(diff==='easy'){
-    const w=randInt(2,9), h=randInt(2,9), unit='cm';
+    // Area stays between 4 and 16 squares so it's countable at a glance.
+    let w=randInt(2,8), h=randInt(2,8), unit='cm';
+    let guard=0;
+    while((w*h<4 || w*h>16) && guard++<60){ w=randInt(2,8); h=randInt(2,8); }
+    if(w*h>16){ w=randInt(2,4); h=randInt(2,4); }
     const area=w*h, perim=2*(w+h);
-    const {correct,choices}=buildAPChoices(area,perim,unit);
-    return { prompt:`Find the area and perimeter of this shape (each square = 1 ${unit}).`, answer:correct, inputType:'choice', choices,
-      explanation:`Area = ${w} × ${h} = ${area} ${unit}². Perimeter = 2 × (${w} + ${h}) = ${perim} ${unit}.`, svg:drawRectShape(w,h) };
+    return { prompt:`Find the area and perimeter of this shape (each square = 1 ${unit}).`,
+      inputType:'parts', parts:[{label:'Area (cm²)'},{label:'Perimeter (cm)'}],
+      answer:`${area},${perim}`, apArea:area, apPerim:perim,
+      explanation:`Area = ${w} × ${h} = ${area} ${unit}². Perimeter = 2 × (${w} + ${h}) = ${perim} ${unit}.`,
+      svg:drawRectShape(w,h), subskill:'area_perimeter_rectangle' };
   }
   if(diff==='medium'){
-    const s=genLShapeDims(4,8); const area=lShapeArea(s), perim=2*(s.W+s.H), unit='cm';
-    const {correct,choices}=buildAPChoices(area,perim,unit);
-    return { prompt:`Find the area and perimeter of this shape (each square = 1 ${unit}).`, answer:correct, inputType:'choice', choices,
-      explanation:`Area: ${s.W}×${s.H} − ${s.nw}×${s.nh} (the missing corner) = ${area} ${unit}². Perimeter: cutting a corner doesn't change the outer distance, so it's still 2 × (${s.W} + ${s.H}) = ${perim} ${unit}.`,
-      svg:drawLShape(s) };
+    let sh=buildCutoutShape(), guard=0;
+    // Always above 16 squares, per the Year 4 spec.
+    while(sh.area<=16 && guard++<80) sh=buildCutoutShape();
+    const unit='cm';
+    return { prompt:`Find the area and perimeter of this shape (each square = 1 ${unit}).`,
+      inputType:'parts', parts:[{label:'Area (cm²)'},{label:'Perimeter (cm)'}],
+      answer:`${sh.area},${sh.perim}`, apArea:sh.area, apPerim:sh.perim,
+      explanation:`Count the squares for area: ${sh.area} ${unit}². Count the outside edges for perimeter: ${sh.perim} ${unit}.`,
+      svg:drawCutoutShape(sh), subskill:'area_perimeter_cutout' };
   }
   const ctx=pick(REAL_WORLD_RECT_CONTEXTS);
   let length=randInt(ctx.lo,ctx.hi), width=randInt(ctx.lo,ctx.hi);
@@ -1729,16 +1826,25 @@ function genPartition(diff){
     num=d[0]*100+d[1]*10+d[2];
     parts=[d[0]*100, d[1]*10, d[2]];
   } else if(diff==='medium'){
+    // Zeros are deliberate at Medium, but a number like 30 000 leaves one box and
+    // no work to do — so require at least 4 non-zero places every time.
     const len=randInt(4,5);
-    const d=[randInt(1,9)];
-    for(let i=1;i<len;i++) d.push(Math.random()<0.3?0:randInt(0,9));
+    let d, guard=0;
+    do {
+      d=[randInt(1,9)];
+      for(let i=1;i<len;i++) d.push(Math.random()<0.25?0:randInt(1,9));
+    } while(d.filter(x=>x!==0).length<4 && guard++<200);
+    if(d.filter(x=>x!==0).length<4){ d=[randInt(1,9),randInt(1,9),randInt(1,9),randInt(1,9)]; }
     num=parseInt(d.join(''),10);
     parts=[];
-    d.forEach((dig,i)=>{ if(dig!==0) parts.push(dig*Math.pow(10,len-1-i)); });
+    d.forEach((dig,i)=>{ if(dig!==0) parts.push(dig*Math.pow(10,d.length-1-i)); });
   } else {
     const len=randInt(5,6);
-    const d=[randInt(1,9)];
-    for(let i=1;i<len;i++) d.push(Math.random()<0.25?0:randInt(0,9));
+    let d, guard=0;
+    do {
+      d=[randInt(1,9)];
+      for(let i=1;i<len;i++) d.push(Math.random()<0.25?0:randInt(1,9));
+    } while(d.filter(x=>x!==0).length<4 && guard++<200);
     const whole=parseInt(d.join(''),10);
     const dec1=randInt(0,9), dec2=randInt(1,9);
     num=whole+dec1/10+dec2/100;
@@ -2050,11 +2156,13 @@ function genFractionOf(diff){
       fracNum:1, fracDen:den, ofTotal:total,
       explanation:`${total} ÷ ${den} = ${q}` };
   }
-  const den=pick([3,4,5,6,8,10]);
+  // Hard: larger collections and bigger numerators, so the two steps (divide,
+  // then multiply) both involve real work.
+  const den=pick([3,4,5,6,7,8,9,10,12]);
   const gcd=(a,b)=>b?gcd(b,a%b):a;
   const cands=[]; for(let n=2;n<den;n++) if(gcd(n,den)===1) cands.push(n);
   if(!cands.length) return genFractionOf(diff);
-  const num=pick(cands); const q=randInt(3,9);
+  const num=pick(cands); const q=randInt(6,15);
   const total=den*q;
   return { prompt:`What is`, fracOfLead:true, answer:String(num*q),
     fracNum:num, fracDen:den, ofTotal:total,
@@ -2216,7 +2324,11 @@ const AMPM_CTX_HARD=[
 ];
 function pad2(n){ return String(n).padStart(2,'0'); }
 function genTime(diff){
-  const family = rotationIndex() % 3;   // 0 clock, 1 am/pm, 2 duration
+  // Normally rotates with the set count. The override exists so a teacher can
+  // preview a specific family without publishing three sets to reach it.
+  const forced = (typeof S!=='undefined' && S.timeOverride) ? S.timeOverride : null;
+  const family = forced==='clock' ? 0 : forced==='ampm' ? 1 : forced==='duration' ? 2
+    : rotationIndex() % 3;   // 0 clock, 1 am/pm, 2 duration
 
   if(family===1){
     const pool = diff==='easy'?AMPM_CTX_EASY : diff==='medium'?AMPM_CTX_MED : AMPM_CTX_HARD;
@@ -2306,6 +2418,10 @@ function genMixedImproper(diff){
     return {
       prompt:`Write this improper fraction as a mixed number.`,
       inputType:'mixed', wantWhole:true, requireMixedForm:true,
+      // Easy prefills the whole and the denominator so the only thinking is the
+      // remainder — the conversion idea without the notation overhead.
+      lockWhole: diff==='easy' ? whole : null,
+      lockDen: diff==='easy' ? den : null,
       mixedLead:null, showFracNum:improperNum, showFracDen:den,
       ansNum:improperNum, ansDen:den,
       answer:`${whole} ${num}/${den}`,
@@ -2316,6 +2432,7 @@ function genMixedImproper(diff){
   return {
     prompt:`Write this mixed number as an improper fraction.`,
     inputType:'mixed', wantWhole:false,
+    lockDen: diff==='easy' ? den : null,
     mixedLead:null, showWhole:whole, showFracNum:num, showFracDen:den,
     ansNum:improperNum, ansDen:den,
     answer:`${improperNum}/${den}`,
@@ -2395,10 +2512,14 @@ function genProbability(diff){
     };
   }
   // hard: numerical probability as a fraction
-  const cols=shuffleArr(CHANCE_COLOURS).slice(0,3);
-  const counts=[randInt(2,5),randInt(2,5),randInt(2,5)];
+  // Vary the scale — three small groups is a gentle start, but sometimes use four
+  // groups and larger counts so the totals are genuinely worth working out.
+  const groups = Math.random()<0.45 ? 4 : 3;
+  const big = Math.random()<0.45;
+  const cols=shuffleArr(CHANCE_COLOURS).slice(0,groups);
+  const counts=cols.map(()=> big ? randInt(6,15) : randInt(2,6));
   const total=counts.reduce((a,b)=>a+b,0);
-  const i=randInt(0,2);
+  const i=randInt(0,groups-1);
   return {
     prompt:`A bag contains ${counts.map((n,k)=>`${n} ${cols[k]}`).join(', ')} counters.\nWhat is the probability of choosing ${cols[i]}?`,
     inputType:'mixed', wantWhole:false,
@@ -2626,7 +2747,7 @@ function buildQuestion(slotIdx, diff, strategyKey){
     // Inline-box questions (partitioning, sequences, powers-of-ten). These MUST be
     // whitelisted here — anything not listed is silently dropped before the
     // question is saved, which leaves the renderer with nothing to draw.
-    hint:q.hint||null, showRunningTotal:!!q.showRunningTotal, coinsSubskill:q.coinsSubskill||null, compareLead:!!q.compareLead, fracOfLead:!!q.fracOfLead, choiceSymbols:q.choiceSymbols||null,
+    hint:q.hint||null, apArea:q.apArea!=null?q.apArea:null, apPerim:q.apPerim!=null?q.apPerim:null, lockDen:q.lockDen!=null?q.lockDen:null, lockWhole:q.lockWhole!=null?q.lockWhole:null, showRunningTotal:!!q.showRunningTotal, coinsSubskill:q.coinsSubskill||null, compareLead:!!q.compareLead, fracOfLead:!!q.fracOfLead, choiceSymbols:q.choiceSymbols||null,
     leftNum:q.leftNum!=null?q.leftNum:null, leftDen:q.leftDen!=null?q.leftDen:null,
     rightNum:q.rightNum!=null?q.rightNum:null, rightDen:q.rightDen!=null?q.rightDen:null,
     ansNum:q.ansNum!=null?q.ansNum:null, ansDen:q.ansDen!=null?q.ansDen:null,
@@ -2682,8 +2803,10 @@ function gradeQuestion(q, given){
   }
   if(q.inputType==='mixed'){
     const g=given||{};
-    const num=Number(g.num), den=Number(g.den);
-    const whole = String(g.whole||'').trim()===''? 0 : Number(g.whole);
+    const num=Number(g.num);
+    const den=Number(q.lockDen!=null ? q.lockDen : g.den);
+    const whole = q.lockWhole!=null ? Number(q.lockWhole)
+      : (String(g.whole||'').trim()===''? 0 : Number(g.whole));
     if(!isFinite(num)||!isFinite(den)||den===0||!isFinite(whole)) return false;
     // Compare as a single improper value so 2 3/4, 11/4 and 22/8 all match when
     // simplification isn't the skill being assessed.
@@ -3308,7 +3431,7 @@ const S = {
   user:null, isTeacher:false, profile:null, teacherEmails:[],
   authMode:'login', authError:null, showSignup:false,
   weeks:[], results:[], profiles:{},
-  teacherTab:'home', weeksView:'create', studentsView:'list', editingClasses:false, editingDraftId:null, showArchivedWeeks:false,
+  timeOverride:null, teacherTab:'home', weeksView:'create', studentsView:'list', editingClasses:false, editingDraftId:null, showArchivedWeeks:false,
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
@@ -3412,6 +3535,17 @@ function formatScheduledAt(ts){
 // have done — and record a flag so the feedback page can spot a pattern of it.
 function answerFlags(q, given){
   const flags=[];
+  // Area and perimeter are ONE mark, but the feedback page needs to know which
+  // half went wrong — a student who always nails area and fumbles perimeter has
+  // a specific gap that a single red mark completely hides.
+  if(q.apArea!=null && Array.isArray(given)){
+    const aOk = Number(given[0])===Number(q.apArea);
+    const pOk = Number(given[1])===Number(q.apPerim);
+    if(aOk && !pOk) flags.push('perimeter_wrong');
+    else if(!aOk && pOk) flags.push('area_wrong');
+    else if(!aOk && !pOk) flags.push('area_and_perimeter_wrong');
+    else flags.push('area_and_perimeter_correct');
+  }
   if(q.inputType==='mixed' && given && !q.requireSimplest){
     const n=Number(given.num), d=Number(given.den);
     if(isFinite(n)&&isFinite(d)&&d!==0&&n!==0&&!isSimplest(n,d)) flags.push('could_simplify');
@@ -3867,6 +4001,25 @@ function renderTeacherHome(){
       if((a.flags||[]).indexOf('could_simplify')!==-1) simplifyCounts[r.uid]=(simplifyCounts[r.uid]||0)+1;
     });
   });
+  // Area vs perimeter: one is often solid while the other isn't, and the single
+  // combined mark hides which.
+  const apCounts={};
+  results.forEach(r=>{ (r.answers||[]).forEach(a=>{
+    (a.flags||[]).forEach(f=>{
+      if(f==='perimeter_wrong'||f==='area_wrong'){
+        apCounts[r.uid]=apCounts[r.uid]||{perimeter_wrong:0,area_wrong:0};
+        apCounts[r.uid][f]++;
+      }
+    });
+  }); });
+  Object.keys(apCounts).forEach(u=>{
+    const c=apCounts[u], nm=nameOf(u); if(!nm) return;
+    if(c.perimeter_wrong>=3 && c.perimeter_wrong>c.area_wrong*2)
+      notes.push({score:62, k:'Specific gap', good:false, t:`${nm} gets area right but keeps missing perimeter.`});
+    else if(c.area_wrong>=3 && c.area_wrong>c.perimeter_wrong*2)
+      notes.push({score:62, k:'Specific gap', good:false, t:`${nm} gets perimeter right but keeps missing area.`});
+  });
+
   const simplifyKids=Object.keys(simplifyCounts).filter(u=>simplifyCounts[u]>=3);
   if(simplifyKids.length){
     const names=simplifyKids.map(nameOf).filter(Boolean);
@@ -4132,11 +4285,18 @@ function renderTeacherWeeks(){
               <input type="text" id="mmc-gen-label" placeholder="e.g. Week 6" value="${esc(S.genForm.label)}"></div>
             <div class="mmc-field" id="mmc-diff-wrap" style="flex:1;min-width:110px;margin-bottom:0;"><label>Difficulty</label>
               <select id="mmc-gen-diff">${['easy','medium','hard'].map(d=>`<option value="${d}" ${S.genForm.difficulty===d?'selected':''}>${d[0].toUpperCase()+d.slice(1)}</option>`).join('')}</select></div>
-            <div class="mmc-field" style="flex:2;min-width:180px;margin-bottom:0;"><label>Q8 / Q9 variant</label>
+            <div class="mmc-field" style="flex:1;min-width:150px;margin-bottom:0;"><label>Q8 / Q9 variant</label>
               <select id="mmc-gen-rot">
                 <option value="">Auto (every 3rd set)</option>
                 <option value="powers">Force &times;10 / &divide;10</option>
                 <option value="normal">Force normal</option>
+              </select></div>
+            <div class="mmc-field" style="flex:1;min-width:150px;margin-bottom:0;"><label>Q16 time type</label>
+              <select id="mmc-gen-time">
+                <option value="">Auto (rotates)</option>
+                <option value="clock">Force clock reading</option>
+                <option value="ampm">Force am / pm</option>
+                <option value="duration">Force duration</option>
               </select></div>
             <div class="mmc-field" style="display:none;"><label>Word problem (Q20)</label>
               <select id="mmc-gen-strategy">
@@ -4196,6 +4356,8 @@ function renderTeacherWeeks(){
     // silently sticks for later sets.
     const rotSel=form.querySelector('#mmc-gen-rot');
     S.rotationOverride = rotSel ? (rotSel.value||null) : null;
+    const timeSel=form.querySelector('#mmc-gen-time');
+    S.timeOverride = timeSel ? (timeSel.value||null) : null;
     const targetGroups = allCb.checked ? [] : groupCbs.filter(cb=>cb.checked).map(cb=>cb.value);
     const classIds = !allClassCb ? (S.showAllClasses ? [] : (S.currentClassId?[S.currentClassId]:[]))
       : (allClassCb.checked ? [] : classCbs.filter(cb=>cb.checked).map(cb=>cb.value));
@@ -4207,10 +4369,11 @@ function renderTeacherWeeks(){
       : (S.currentClassId ? S.classes.find(c=>c.id===S.currentClassId) : (S.classes||[])[0]);
     const weekData={ label, difficulty, status:'draft', createdAt:serverTimestamp(), teacherUid:S.user.uid,
       yearLevel:classYear(yearFrom),
+      timeOverride: S.timeOverride||null, rotationOverride: S.rotationOverride||null,
       questions:generateWeekQuestions(difficulty, strategy), targetGroups, classIds };
     try{
       const ref=await addDoc(collection(db,'weeks'), weekData);
-      S.rotationOverride=null;
+      S.rotationOverride=null; S.timeOverride=null;
       S.editingDraftId=ref.id;
       S.weeksView='list';  // jump to the set you just made, ready to review
       S.genForm={label:'',difficulty:'easy',strategy:'random'};
@@ -4433,7 +4596,12 @@ function renderQuestionEditor(week){
     row.querySelector('[data-f="explanation"]').onchange=(e)=>{ q.explanation=e.target.value; saveQuestions(); };
     row.querySelector('[data-act="rm"]').onclick=()=>{ week.questions=week.questions.filter(x=>x.id!==q.id); saveQuestions(); render(); };
     row.querySelector('[data-act="regen"]').onclick=()=>{
+      // Restore the set's own overrides so regenerating one question keeps the
+      // same question family the rest of the set was built with.
+      const prevRot=S.rotationOverride, prevTime=S.timeOverride;
+      S.rotationOverride = week.rotationOverride||null; S.timeOverride = week.timeOverride||null;
       const fresh = q.slot ? buildQuestion(q.slot-1, week.difficulty, q.strategyKey) : q;
+      S.rotationOverride=prevRot; S.timeOverride=prevTime;
       Object.assign(q, fresh, {id:q.id});
       saveQuestions(); render();
     };
@@ -6169,11 +6337,15 @@ function renderQuestionBody(q, st, onCheck, headerHTML){
     const row=el(`<div class="mmc-frac-eq" style="margin:14px 0 16px;">
       ${shownVal ? shownVal+'<span>=</span>' : ''}
       <span class="mmc-mixed">
-        ${wantWhole ? `<input type="text" class="wholebox" data-f="whole" inputmode="numeric" value="${esc(g.whole||'')}" ${st.checked?'disabled':''}>` : ''}
+        ${wantWhole ? (q.lockWhole!=null
+          ? `<span class="whole">${esc(q.lockWhole)}</span>`
+          : `<input type="text" class="wholebox" data-f="whole" inputmode="numeric" value="${esc(g.whole||'')}" ${st.checked?'disabled':''}>`) : ''}
         <span class="mmc-frac">
           <input type="text" data-f="num" inputmode="numeric" value="${esc(g.num||'')}" ${st.checked?'disabled':''}>
           <span class="line"></span>
-          <input type="text" data-f="den" inputmode="numeric" value="${esc(g.den||'')}" ${st.checked?'disabled':''}>
+          ${q.lockDen!=null
+            ? `<span class="den">${esc(q.lockDen)}</span>`
+            : `<input type="text" data-f="den" inputmode="numeric" value="${esc(g.den||'')}" ${st.checked?'disabled':''}>`}
         </span>
       </span>
     </div>`);
@@ -6181,7 +6353,7 @@ function renderQuestionBody(q, st, onCheck, headerHTML){
       inp.oninput=(e)=>{ st.given=Object.assign({}, st.given, {[e.target.dataset.f]: e.target.value}); };
     });
     qbox.appendChild(row);
-    const ready=()=> String((st.given||{}).num||'').trim()!=='' && String((st.given||{}).den||'').trim()!=='';
+    const ready=()=> String((st.given||{}).num||'').trim()!=='' && (q.lockDen!=null || String((st.given||{}).den||'').trim()!=='');
     const mb=el(`<button class="mmc-btn ${st.checked?'ghost':'gold'} sm" ${st.checked?'disabled':''}>${st.checked?'Checked':'Check'}</button>`);
     mb.onclick=()=>{ if(!ready()) return; doCheck(); };
     qbox.appendChild(mb);
