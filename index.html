@@ -5229,7 +5229,9 @@ async function approveTeacherRequest(requestId, email, btnEl){
   try{
     const call = httpsCallable(functions, 'approveTeacherRequest');
     const res = await call({ requestId });
-    await sendPasswordResetEmail(auth, email);
+    // Same continueUrl as the server side, so Firebase's reset page offers a
+    // working link back to the app instead of a dead "go to login" message.
+    await sendPasswordResetEmail(auth, email, { url: 'https://mathmentum.com.au', handleCodeInApp: false });
     // Show the setup link straight away as well as emailing it. A school mail
     // filter can quarantine a perfectly valid message, and an admin standing
     // next to the new teacher shouldn't have to wait on anyone's spam folder.
