@@ -102,6 +102,12 @@
     display:inline-block; margin-left:8px; font-size:10px; font-weight:800; letter-spacing:.08em;
     background:var(--ink); color:#fff; border-radius:20px; padding:1px 8px; vertical-align:2px;
   }
+  .mmc-previewbar {
+    display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+    background:var(--yellow); border:2.5px solid var(--ink); border-radius:12px;
+    box-shadow:3px 3px 0 var(--ink); padding:10px 14px; margin-bottom:14px;
+    font-family:'Baloo 2',sans-serif; font-weight:700; font-size:14px; color:var(--ink);
+  }
   .mmc-req { color:var(--incorrect); font-weight:800; }
   .mmc-forgot {
     display:inline-block; margin-left:14px; font-size:13px; font-weight:700;
@@ -609,9 +615,27 @@ import {
   onAuthStateChanged, signOut, updateProfile, sendPasswordResetEmail
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 import {
-  getFirestore, collection, doc, addDoc, setDoc, updateDoc, deleteDoc,
+  getFirestore, collection, doc,
+  addDoc as _addDoc, setDoc as _setDoc, updateDoc as _updateDoc, deleteDoc as _deleteDoc,
   getDoc, getDocs, onSnapshot, query, where, serverTimestamp, increment
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+
+// ---------- Preview mode write guard ----------
+// When a teacher previews the app as one of their students, NOTHING they do may
+// be recorded — no results, no times-table attempts, no saved progress, no theme
+// or horse-colour changes. Rather than patching ~36 individual call sites (where
+// a single miss would silently pollute a real child's data), every Firestore
+// write is intercepted here at the import. Preview mode is therefore safe by
+// construction: a write path added later is guarded automatically.
+function isPreviewing(){ try { return !!S.previewStudentUid; } catch(e){ return false; } }
+function _blockedWrite(what){
+  console.info('[preview] blocked '+what+' — nothing is saved while previewing.');
+  return Promise.resolve({ id:'preview-noop' });
+}
+const addDoc    = (...a)=> isPreviewing() ? _blockedWrite('addDoc')    : _addDoc(...a);
+const setDoc    = (...a)=> isPreviewing() ? _blockedWrite('setDoc')    : _setDoc(...a);
+const updateDoc = (...a)=> isPreviewing() ? _blockedWrite('updateDoc') : _updateDoc(...a);
+const deleteDoc = (...a)=> isPreviewing() ? _blockedWrite('deleteDoc') : _deleteDoc(...a);
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-functions.js";
 
 // ===== PASTE YOUR FIREBASE CONFIG HERE (see SETUP-INSTRUCTIONS.md) =====
@@ -3629,7 +3653,7 @@ const S = {
   user:null, isTeacher:false, profile:null, teacherEmails:[],
   authMode:'login', authError:null, showSignup:false,
   weeks:[], results:[], profiles:{},
-  setupLinkFor:null, timeOverride:null, teacherTab:'home', weeksView:'create', studentsView:'list', editingClasses:false, editingDraftId:null, showArchivedWeeks:false,
+  previewStudentUid:null, previewSaved:null, setupLinkFor:null, timeOverride:null, teacherTab:'home', weeksView:'create', studentsView:'list', editingClasses:false, editingDraftId:null, showArchivedWeeks:false,
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
@@ -3933,6 +3957,7 @@ function render(){
   if(S.loading){ body.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">✏️</div>Loading…</div>')); }
   else if(!configured){ /* error already shown above */ }
   else if(!S.user){ body.appendChild(renderAuth()); }
+  else if(S.previewStudentUid){ body.appendChild(renderStudentPreview()); }
   else if(S.isTeacher){ body.appendChild(renderTeacher()); }
   else { body.appendChild(renderStudent()); }
   root.appendChild(body);
@@ -4385,6 +4410,52 @@ function renderTeacherHome(){
   </div>`);
   acts.querySelectorAll('[data-go]').forEach(b=>{ b.onclick=()=>{ S.teacherTab=b.dataset.go; render(); }; });
   wrap.appendChild(acts);
+  return wrap;
+}
+
+
+// ---------- Preview as a student ----------
+// Lets a teacher walk through exactly what a given child sees — the same sets,
+// the same difficulty, their own dashboard. Every Firestore write is blocked by
+// the guard at the top of this file, so nothing they do here touches the child's
+// record. The teacher's own identity is untouched; only what's rendered changes.
+function startStudentPreview(uid){
+  S.previewStudentUid = uid;
+  S.previewSaved = {
+    profile: S.profile,
+    skillPracticeRecords: S.skillPracticeRecords,
+    activeWeekId: S.activeWeekId,
+    quiz: S.quiz,
+    studentTab: S.studentTab,
+  };
+  // Borrow the student's profile so difficulty targeting, groups and theme all
+  // behave exactly as they do for them.
+  S.profile = Object.assign({}, S.profiles[uid] || {});
+  S.skillPracticeRecords = (S.allSkillPracticeRecords||[]).filter(r=>r.uid===uid);
+  S.activeWeekId = null; S.quiz = {}; S.studentTab = 'dashboard';
+  render();
+}
+function endStudentPreview(){
+  const saved = S.previewSaved || {};
+  S.previewStudentUid = null;
+  S.profile = saved.profile || S.profile;
+  S.skillPracticeRecords = saved.skillPracticeRecords || [];
+  S.activeWeekId = saved.activeWeekId || null;
+  S.quiz = saved.quiz || {};
+  S.studentTab = saved.studentTab || 'dashboard';
+  S.previewSaved = null;
+  render();
+}
+function renderStudentPreview(){
+  const wrap=el('<div></div>');
+  const name = (S.profiles[S.previewStudentUid] && S.profiles[S.previewStudentUid].displayName) || 'this student';
+  const bar=el(`<div class="mmc-previewbar">
+    <span><b>Preview mode</b> — you're seeing Mathmentum as ${esc(name)}. Nothing you do here is saved.</span>
+    <button class="mmc-btn ghost sm" id="mmc-preview-exit">Exit preview</button>
+  </div>`);
+  bar.querySelector('#mmc-preview-exit').onclick=endStudentPreview;
+  wrap.appendChild(bar);
+  wrap.appendChild(renderStudent());
   return wrap;
 }
 
@@ -5941,11 +6012,13 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
         </select>
         <div class="mmc-stu-actions">
           <button class="mmc-btn ghost sm" data-act="dash">Dashboard</button>
+          <button class="mmc-btn ghost sm" data-act="preview">Preview</button>
           <button class="mmc-btn ghost sm" data-act="reset">Reset</button>
           <button class="mmc-btn danger sm" data-act="delete">Delete</button>
         </div>
       </div>`);
-      row.querySelector('[data-act="dash"]').onclick=()=>{ S.viewingStudentDashboardUid=uid; render(); };
+      row.querySelector('[data-act="dash"]').onclick=()=>{ S.viewingStudentDashboardUid=uid;
+      row.querySelector('[data-act="preview"]').onclick=()=>startStudentPreview(uid); render(); };
       const classSel=row.querySelector('[data-act="class"]');
       if(classSel) classSel.onchange=async (e)=>{
         try{ await updateDoc(doc(db,'profiles',uid), {classId:e.target.value}); }
