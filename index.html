@@ -6017,8 +6017,8 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
           <button class="mmc-btn danger sm" data-act="delete">Delete</button>
         </div>
       </div>`);
-      row.querySelector('[data-act="dash"]').onclick=()=>{ S.viewingStudentDashboardUid=uid;
-      row.querySelector('[data-act="preview"]').onclick=()=>startStudentPreview(uid); render(); };
+      row.querySelector('[data-act="dash"]').onclick=()=>{ S.viewingStudentDashboardUid=uid; render(); };
+      row.querySelector('[data-act="preview"]').onclick=()=>startStudentPreview(uid);
       const classSel=row.querySelector('[data-act="class"]');
       if(classSel) classSel.onchange=async (e)=>{
         try{ await updateDoc(doc(db,'profiles',uid), {classId:e.target.value}); }
@@ -7075,3 +7075,4 @@ render();
 </script>
 </body>
 </html>
+
