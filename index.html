@@ -66,6 +66,55 @@
     -webkit-background-clip:text; background-clip:text; color:transparent; text-shadow:none;
   }
   /* ---- Student-side branding: small Mathmentum wordmark, big ARENA ---- */
+  /* ---- Logged-out landing: says what this IS before asking for a password ---- */
+  #mmc:not(:has(.mmc-head)) .mmc-body { padding-top:22px; }
+  .mmc-pitch {
+    background:var(--paper); border:2.5px solid var(--ink); border-radius:16px;
+    box-shadow:5px 5px 0 var(--ink); padding:22px 24px; margin-bottom:16px;
+  }
+  .mmc-pitch-mark {
+    font-family:'Baloo 2',sans-serif; font-weight:800; font-size:clamp(26px,6vw,34px);
+    letter-spacing:-.035em; line-height:1; color:var(--ink);
+  }
+  .mmc-pitch-mark .o { color:var(--orange); }
+  .mmc-pitch-line {
+    font-family:'Nunito Sans',sans-serif; font-size:16px; color:var(--ink-soft);
+    margin:11px 0 0; max-width:56ch; line-height:1.55; font-weight:600;
+  }
+  .mmc-pitch-grid {
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+    gap:13px; margin-top:18px;
+  }
+  .mmc-pitch-grid .pp { border-left:3px solid var(--paper-line); padding-left:12px; }
+  .mmc-pitch-grid .pp1 { border-left-color:var(--slime); }
+  .mmc-pitch-grid .pp2 { border-left-color:var(--orange); }
+  .mmc-pitch-grid .pp3 { border-left-color:var(--purple); }
+  .mmc-pitch-grid .pp4 { border-left-color:var(--yellow); }
+  .mmc-pitch-grid b {
+    display:block; font-family:'Baloo 2',sans-serif; font-weight:800; font-size:15px; color:var(--ink);
+  }
+  .mmc-pitch-grid span {
+    display:block; font-family:'Nunito Sans',sans-serif; font-size:13.5px;
+    color:var(--ink-soft); line-height:1.5; font-weight:600;
+  }
+  .mmc-forgot {
+    display:inline-block; margin-left:14px; font-size:13px; font-weight:700;
+    color:var(--ink-soft); text-decoration:underline;
+  }
+  .mmc-entrypanels { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; margin-top:14px; }
+  .mmc-entrypanels .ep {
+    background:var(--paper); border:1px solid var(--paper-line); border-radius:0 12px 12px 0;
+    padding:16px 18px;
+  }
+  .mmc-entrypanels .ep-teacher { border-left:3px solid var(--slime); }
+  .mmc-entrypanels .ep-student { border-left:3px solid var(--purple); }
+  .mmc-entrypanels b {
+    display:block; font-family:'Baloo 2',sans-serif; font-weight:800; font-size:16px; margin-bottom:4px;
+  }
+  .mmc-entrypanels span {
+    display:block; font-family:'Nunito Sans',sans-serif; font-size:14px; color:var(--ink-soft);
+    line-height:1.55; font-weight:600; margin-bottom:10px;
+  }
   .mmc-palgrid {
     display:grid; grid-template-columns:repeat(auto-fill,minmax(132px,1fr));
     gap:8px; margin-top:12px;
@@ -3826,7 +3875,9 @@ function render(){
   // untouched — see the .mmc-pro block at the bottom of <style>.
   root.classList.toggle('mmc-pro', !!(S.user && S.isTeacher));
   root.innerHTML='';
-  root.appendChild(renderHead());
+  // Logged out, the pitch card IS the header — the gradient banner just repeated
+  // the name above it and pushed the actual message down the page.
+  if(S.user) root.appendChild(renderHead());
   const body=el('<div class="mmc-body"></div>');
   if(S.toast){
     scheduleToastClear();
@@ -3954,6 +4005,21 @@ function renderAuth(){
     return wrap;
   }
 
+  // The front door is seen by teachers, students and anyone a teacher shares the
+  // link with, so it has to say what the product IS before asking for a password.
+  wrap.appendChild(el(`
+    <div class="mmc-pitch">
+      <div class="mmc-pitch-mark"><span>Math</span><span class="o">mentum</span></div>
+      <p class="mmc-pitch-line">Weekly maths practice for primary classrooms. Quick to set, marks itself, and shows you exactly who's getting it and who isn't.</p>
+      <div class="mmc-pitch-grid">
+        <div class="pp pp1"><b>Key skills</b><span>Tests understanding right across the year level.</span></div>
+        <div class="pp pp2"><b>Times tables fluency</b><span>Builds automaticity with the operations that matter.</span></div>
+        <div class="pp pp3"><b>Differentiated</b><span>Every student practises at their own level.</span></div>
+        <div class="pp pp4"><b>Feedback that tells you something</b><span>Strengths, gaps and progress — not just a percentage.</span></div>
+      </div>
+    </div>
+  `));
+
   const card=el(`
     <div class="mmc-card">
       <h3>Log in</h3>
@@ -3962,8 +4028,25 @@ function renderAuth(){
         <input type="text" id="mmc-a-email" placeholder="e.g. SusieM"></div>
       <div class="mmc-field"><label>Password</label><input type="password" id="mmc-a-pass" placeholder="Your password"></div>
       <button class="mmc-btn gold" id="mmc-a-go">Log in</button>
+      <a href="#" id="mmc-a-forgot" class="mmc-forgot">Forgot your password?</a>
     </div>
   `);
+  card.querySelector('#mmc-a-forgot').onclick=async (e)=>{
+    e.preventDefault();
+    const raw=card.querySelector('#mmc-a-email').value.trim();
+    if(!raw || !raw.includes('@')){
+      S.authError='Type your teacher email above first, then click again. Students should ask their teacher for a new password.';
+      render(); return;
+    }
+    try{
+      await sendPasswordResetEmail(auth, raw, { url:'https://mathmentum.com.au', handleCodeInApp:false });
+      S.authError=null; S.toast='If that address has an account, a reset email is on its way.';
+    }catch(err){
+      // Deliberately vague: confirming which addresses exist would leak your roster.
+      S.toast='If that address has an account, a reset email is on its way.';
+    }
+    render();
+  };
   card.querySelector('#mmc-a-go').onclick=async ()=>{
     const raw=card.querySelector('#mmc-a-email').value.trim();
     const pass=card.querySelector('#mmc-a-pass').value;
@@ -3975,9 +4058,21 @@ function renderAuth(){
   };
   wrap.appendChild(card);
 
-  const toggle=el(`<a href="#" style="display:inline-block;margin-top:4px;font-size:12.5px;color:var(--ink-soft);">Want to bring this to your class? Request teacher access</a>`);
-  toggle.onclick=(e)=>{ e.preventDefault(); S.showSignup=true; S.authError=null; render(); };
-  wrap.appendChild(toggle);
+  const panels=el(`
+    <div class="mmc-entrypanels">
+      <div class="ep ep-teacher">
+        <b>New teacher?</b>
+        <span>Request access and you'll be set up with your own classes.</span>
+        <button class="mmc-btn ghost sm" id="mmc-req-go">Request teacher access</button>
+      </div>
+      <div class="ep ep-student">
+        <b>Students</b>
+        <span>Use the username and password on your login card. Your teacher can reset it if you're stuck.</span>
+      </div>
+    </div>
+  `);
+  panels.querySelector('#mmc-req-go').onclick=(e)=>{ e.preventDefault(); S.showSignup=true; S.authError=null; render(); };
+  wrap.appendChild(panels);
   return wrap;
 }
 
