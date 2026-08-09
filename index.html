@@ -566,9 +566,22 @@
   #mmc.mmc-pro .mmc-classpick select:hover { border-color:var(--pro-mute); }
   #mmc.mmc-pro .mmc-stu, #mmc.mmc-pro .mmc-stu-head {
     display:grid;
-    grid-template-columns: minmax(96px,1fr) 92px 88px 90px 104px 116px minmax(190px,auto);
+    grid-template-columns: minmax(120px,1.4fr) 104px 100px 108px 120px 128px;
     align-items:center; column-gap:10px;
   }
+  /* The action buttons get their own line spanning the full width, right-aligned.
+     Cramming them into a seventh column meant they either overlapped or wrapped
+     awkwardly, and Delete ended up stranded on a line of its own. */
+  #mmc.mmc-pro .mmc-stu { row-gap:6px; padding:12px 0; }
+  /* Class rows are simpler — a plain flex line with the buttons pushed right. */
+  #mmc.mmc-pro .mmc-clsrow {
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    padding:11px 0; border-bottom:1px solid var(--pro-soft);
+  }
+  #mmc.mmc-pro .mmc-clsrow:last-child { border-bottom:0; }
+  #mmc.mmc-pro .mmc-clsrow .mmc-stu-name { flex:1; min-width:120px; }
+  #mmc.mmc-pro .mmc-clsrow .mmc-stu-actions { margin-left:auto; }
+  #mmc.mmc-pro .mmc-stu-actions { grid-column:1 / -1; justify-content:flex-end; }
   #mmc.mmc-pro .mmc-stu { padding:9px 0; border-bottom:1px solid var(--pro-soft); }
   #mmc.mmc-pro .mmc-stu:last-child { border-bottom:0; }
   #mmc.mmc-pro .mmc-stu-head { padding:0 0 8px; margin-top:14px; border-bottom:1px solid var(--pro-line); }
@@ -593,11 +606,11 @@
   }
   #mmc.mmc-pro .mmc-stu > select:hover { border-color:var(--pro-mute); }
   #mmc.mmc-pro .mmc-stu-actions {
-    display:flex; align-items:center; gap:5px; justify-content:flex-end; flex-wrap:wrap;
+    display:flex; align-items:center; gap:6px; justify-content:flex-end; flex-wrap:wrap;
   }
   #mmc.mmc-pro .mmc-stu-actions .mmc-btn { padding:5px 9px; font-size:12.5px; }
   #mmc.mmc-pro .mmc-stu-actions .mmc-btn { white-space:nowrap; }
-  @media (max-width:1080px){
+  @media (max-width:720px){
     #mmc.mmc-pro .mmc-stu, #mmc.mmc-pro .mmc-stu-head { grid-template-columns: 1fr; row-gap:6px; }
     #mmc.mmc-pro .mmc-stu-head { display:none; }
     #mmc.mmc-pro .mmc-stu-actions { justify-content:flex-start; }
@@ -3579,20 +3592,21 @@ const _scriptPromises = {};
 function loadScriptOnce(url){
   if(_scriptPromises[url]) return _scriptPromises[url];
   _scriptPromises[url] = new Promise((resolve,reject)=>{
-    const existing = document.querySelector(`script[src="${url}"]`);
-    if(existing && existing.dataset.loaded==='1'){ resolve(); return; }
-    const s = existing || document.createElement('script');
-    s.addEventListener('load', ()=>{ s.dataset.loaded='1'; resolve(); });
+    // Always append a fresh tag. Reusing an existing one meant attaching a
+    // 'load' listener to a script that had ALREADY loaded — the event never
+    // fires again and the promise hangs forever. A duplicate tag is harmless;
+    // the browser serves it from cache and the library simply re-registers.
+    const s=document.createElement('script');
+    s.src=url; s.async=true;
+    s.addEventListener('load', ()=>resolve());
     s.addEventListener('error', ()=>{
-      delete _scriptPromises[url];      // let a later attempt retry
+      delete _scriptPromises[url];   // allow a retry on the next click
       reject(new Error('Failed to load '+url));
     });
-    if(!existing){ s.src=url; document.head.appendChild(s); }
+    document.head.appendChild(s);
   });
   return _scriptPromises[url];
 }
-// Belt and braces: even after onload fires, wait until the global the caller
-// actually needs is really there before continuing.
 function waitForGlobal(name, timeoutMs){
   const limit = Date.now() + (timeoutMs||8000);
   return new Promise((resolve,reject)=>{
@@ -3618,7 +3632,10 @@ async function generateLoginCardsPDF(students, btnId, idleLabel){
     await waitForGlobal('jspdf');
     await waitForGlobal('QRCode');
   }catch(e){
-    S.toast='Could not load the PDF tools — check your internet connection and try again.';
+    // Surface the real reason — a blocked CDN on a school network and a plain
+    // offline error need different responses from the teacher.
+    console.error('PDF tools failed to load:', e);
+    S.toast='Could not load the PDF tools ('+(e && e.message ? e.message : 'unknown error')+'). If your school network blocks cdnjs.cloudflare.com or cdn.jsdelivr.net, use Download logins CSV instead.';
     setBtnState(idleLabel, false); render(); return;
   }
   // Printed on every card, so it must be the address we want people typing —
@@ -5878,7 +5895,7 @@ function renderStudentsTab(mode){
     }
     S.classes.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'')).forEach(c=>{
       const count=Object.values(S.profiles||{}).filter(p=>p.username && p.classId===c.id).length;
-      const r=el(`<div class="mmc-stu">
+      const r=el(`<div class="mmc-clsrow">
         <div class="mmc-stu-name">${esc(c.name)}</div>
         <code class="mmc-stu-user">Year ${classYear(c)}</code>
         <code class="mmc-stu-user">${count} student${count===1?'':'s'}</code>
@@ -6092,7 +6109,6 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
       <span>${S.classes.length>1?'Class':''}</span>
       <span>Group</span>
       <span>Rank</span>
-      <span></span>
     </div>`));
     const ul=el('<div></div>');
     existing.sort((a,b)=>(a[1].displayName||'').localeCompare(b[1].displayName||'')).forEach(([uid,p])=>{
