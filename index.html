@@ -566,7 +566,7 @@
   #mmc.mmc-pro .mmc-classpick select:hover { border-color:var(--pro-mute); }
   #mmc.mmc-pro .mmc-stu, #mmc.mmc-pro .mmc-stu-head {
     display:grid;
-    grid-template-columns: minmax(110px,1fr) 104px 100px 96px 118px 272px;
+    grid-template-columns: minmax(100px,1fr) 96px 92px 92px 108px 120px 220px;
     align-items:center; column-gap:10px;
   }
   #mmc.mmc-pro .mmc-stu { padding:9px 0; border-bottom:1px solid var(--pro-soft); }
@@ -3004,7 +3004,12 @@ const BADGE_TIERS = {
 };
 // Badge is computed live from actual practice history — not a stored counter — so it's
 // always an honest reflection of recent effort, and naturally decays if practice stops.
-function computeBadgeInfo(attempts){
+function computeBadgeInfo(attempts, profile){
+  // A teacher can pin a rank. Some students put in real effort without the raw
+  // numbers moving, and letting the badge sit permanently out of reach is a good
+  // way to make them stop trying. The override is deliberate and visible, not a
+  // fudge of the underlying data — attempts and accuracy are untouched.
+  const pinned = profile && profile.rankOverride;
   attempts = attempts || [];
   const total = attempts.length;
   const totalCorrect = attempts.reduce((s,a)=>s+(a.score||0),0);
@@ -3026,8 +3031,16 @@ function computeBadgeInfo(attempts){
   if(meetsExpertStats && daysSince<=3) tierKey='expert';
   else if((meetsExpertStats || meetsUpAndComerStats) && daysSince<=14) tierKey='upandcomer';
 
+  // A pinned rank only ever lifts a student, never demotes one who has genuinely
+  // earned higher — otherwise an old override could quietly hold someone back.
+  const order = { rookie:0, upandcomer:1, expert:2 };
+  const earnedKey = tierKey;
+  if(pinned && order[pinned]!=null && order[pinned] > (order[tierKey]||0)) tierKey = pinned;
+
   return { tier:BADGE_TIERS[tierKey], total, avgAccuracy, hardCount:hardAttempts.length, hardAccuracy,
     daysSince, meetsExpertStats, meetsUpAndComerStats,
+    pinnedBy: (pinned && tierKey===pinned && pinned!==earnedKey) ? pinned : null,
+    earnedTier: BADGE_TIERS[earnedKey],
     decayedFromExpert: meetsExpertStats && daysSince>3 };
 }
 // ---------- Student Dashboard: skill analytics ----------
@@ -3102,7 +3115,11 @@ function computeSkillStats(results, weeks, skillPracticeRecords){
   return out;
 }
 function pickStrengthsAndWeaknesses(skillStats){
-  const withData = skillStats.filter(s=>s.total>=2);
+  // Retired skills (word problems, the old place-value and decimal-place slots)
+  // still have historical results, but telling a student to work on something the
+  // app no longer sets is useless advice. They stay in the data for the record;
+  // they just never surface as a strength or a growth area.
+  const withData = skillStats.filter(s=>s.total>=2 && !(SKILLS[s.skill] && SKILLS[s.skill].retired));
   // Strength: solid accuracy both overall and lately. Trend isn't required here — with a
   // handful of attempts, a single mid-sequence dip can register as "declining" from the
   // older/newer-half split even when both overall and recent accuracy are comfortably high,
@@ -3290,7 +3307,7 @@ async function applyThemeChoice(primary, secondary, accent){
   render();
 }
 function renderThemeCustomizeCard(){
-  const tier = computeBadgeInfo(S.ttAttempts).tier;
+  const tier = computeBadgeInfo(S.ttAttempts, S.profile).tier;
   const unlocked = palettesForTier(tier.key);
   const card=el(`<div class="mmc-card"><h3>🎨 Page Colours</h3></div>`);
   const nextMsg = tier.key==='rookie'
@@ -3347,7 +3364,7 @@ function renderThemeCustomizeCard(){
 function renderSettingsTab(){
   const wrap=el('<div></div>');
   wrap.appendChild(el('<h3 style="font-family:Fredoka,sans-serif;margin:4px 0 4px;">⚙️ Settings</h3>'));
-  const info = computeBadgeInfo(S.ttAttempts);
+  const info = computeBadgeInfo(S.ttAttempts, S.profile);
   wrap.appendChild(el(`<div class="meta" style="margin-bottom:16px;">Your current status: ${info.tier.emoji} ${esc(info.tier.label)} — practice in the Training Ground to unlock more.</div>`));
   wrap.appendChild(renderHorseCustomizeCard());
   wrap.appendChild(renderThemeCustomizeCard());
@@ -5377,7 +5394,7 @@ function renderTeacherTimetable(){
       const best=at.reduce((b,a)=>a.score>b.score?a:b, at[0]); return `${best.score}/${best.attempted} (${best.accuracy}%)`; };
     const last=mine.slice().sort((a,b)=>(b.submittedAt?.seconds||0)-(a.submittedAt?.seconds||0))[0];
     const lastStr = last && last.submittedAt?.seconds ? new Date(last.submittedAt.seconds*1000).toLocaleDateString() : '—';
-    const tier = computeBadgeInfo(mine).tier;
+    const tier = computeBadgeInfo(mine, S.profiles[uid]).tier;
     tbody.appendChild(el(`<tr><td>${esc(S.profiles[uid].displayName||uid)}</td><td>${tier.emoji} ${esc(tier.label)}</td><td>${esc(bestOf('easy'))}</td><td>${esc(bestOf('medium'))}</td><td>${esc(bestOf('hard'))}</td><td>${mine.length}</td><td>${esc(lastStr)}</td></tr>`));
   });
   table.appendChild(tbody);
@@ -5626,6 +5643,46 @@ async function denyTeacherRequest(requestId, btnEl){
   if(btnEl){ btnEl.disabled=false; btnEl.textContent=originalText; }
   render();
 }
+
+// ---------- Clear weekly results for a class ----------
+// Deliberately narrow: it removes ONLY `results` (the weekly sets) and the
+// in-progress `weekProgress` saves for students in one class. Times-table
+// attempts are never touched — students earn ranks and unlocks from those, and
+// wiping them would take away something they worked for. Self-directed skill
+// practice is also left alone; it's their own work, not a stale set.
+async function clearWeeklyResultsForClass(classId, btnEl){
+  const cls = (S.classes||[]).find(c=>c.id===classId);
+  const name = cls ? cls.name : 'this class';
+  const uids = Object.keys(S.profiles||{}).filter(u=>{
+    const p=S.profiles[u]; return p && p.username && p.classId===classId;
+  });
+  const doomed = (S.results||[]).filter(r=>uids.indexOf(r.uid)!==-1);
+  if(!doomed.length){ S.toast=`No weekly results to clear for ${name}.`; render(); return; }
+  const typed = prompt(
+    `This permanently deletes ${doomed.length} weekly set result${doomed.length===1?'':'s'} for ${uids.length} student${uids.length===1?'':'s'} in ${name}.\n\n`+
+    `Times-table attempts, ranks and unlocks are NOT affected.\n`+
+    `Skills practice they did on their own is NOT affected.\n\n`+
+    `This cannot be undone. Type CLEAR to confirm.`);
+  if(typed!=='CLEAR'){ S.toast='Nothing was cleared.'; render(); return; }
+  if(btnEl){ btnEl.disabled=true; btnEl.textContent='Clearing…'; }
+  let done=0, failed=0;
+  for(const r of doomed){
+    try{ await deleteDoc(doc(db,'results',r.id)); done++; }
+    catch(e){ failed++; }
+  }
+  // Half-finished attempts at now-deleted sets would otherwise linger.
+  for(const u of uids){
+    for(const w of (S.weeks||[])){
+      try{ await deleteDoc(doc(db,'weekProgress', `${u}_${w.id}`)); }catch(e){}
+    }
+  }
+  S.toast = failed
+    ? `Cleared ${done} results, ${failed} could not be removed — try again.`
+    : `Cleared ${done} weekly results for ${name}. Times tables untouched.`;
+  if(btnEl){ btnEl.disabled=false; btnEl.textContent='Clear weekly results'; }
+  render();
+}
+
 function renderStudentsTab(mode){
   mode = mode || 'students';
   const wrap=el('<div></div>');
@@ -5790,10 +5847,13 @@ function renderStudentsTab(mode){
         <code class="mmc-stu-user">Year ${classYear(c)}</code>
         <code class="mmc-stu-user">${count} student${count===1?'':'s'}</code>
         <div class="mmc-stu-actions">
+          <button class="mmc-btn ghost sm" data-c="clear">Clear weekly results</button>
           <button class="mmc-btn ghost sm" data-c="rename">Rename</button>
           <button class="mmc-btn danger sm" data-c="del"${count?' disabled title="Move or delete its students first"':''}>Delete</button>
         </div>
       </div>`);
+      const clearBtn=r.querySelector('[data-c="clear"]');
+      if(clearBtn) clearBtn.onclick=()=>clearWeeklyResultsForClass(c.id, clearBtn);
       r.querySelector('[data-c="rename"]').onclick=async ()=>{
         const name=prompt('New name for this class:', c.name||'');
         if(!name) return;
@@ -5995,6 +6055,7 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
       <span>Password</span>
       <span>${S.classes.length>1?'Class':''}</span>
       <span>Ability group</span>
+      <span>Rank</span>
       <span></span>
     </div>`));
     const ul=el('<div></div>');
@@ -6010,15 +6071,29 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
           <option value="">Unassigned</option>
           ${STUDENT_GROUPS.map(g=>`<option value="${g.key}" ${p.group===g.key?'selected':''}>${esc(g.label)}</option>`).join('')}
         </select>
+        <select data-act="rank" title="Pin a rank for a student who is working hard without the numbers moving. A pinned rank can only lift, never demote.">
+          <option value="">Rank: earned</option>
+          <option value="upandcomer" ${p.rankOverride==='upandcomer'?'selected':''}>Pin: Up and Comer</option>
+          <option value="expert" ${p.rankOverride==='expert'?'selected':''}>Pin: Expert</option>
+        </select>
         <div class="mmc-stu-actions">
           <button class="mmc-btn ghost sm" data-act="dash">Dashboard</button>
-          <button class="mmc-btn ghost sm" data-act="preview">Preview</button>
+          <button class="mmc-btn ghost sm" data-act="preview">Student view</button>
           <button class="mmc-btn ghost sm" data-act="reset">Reset</button>
           <button class="mmc-btn danger sm" data-act="delete">Delete</button>
         </div>
       </div>`);
       row.querySelector('[data-act="dash"]').onclick=()=>{ S.viewingStudentDashboardUid=uid; render(); };
       row.querySelector('[data-act="preview"]').onclick=()=>startStudentPreview(uid);
+      const rankSel=row.querySelector('[data-act="rank"]');
+      if(rankSel) rankSel.onchange=async (e)=>{
+        const v=e.target.value||null;
+        try{ await updateDoc(doc(db,'profiles',uid), {rankOverride:v});
+          S.toast = v ? `${p.displayName} is pinned at ${v==='expert'?'Expert':'Up and Comer'}.`
+                      : `${p.displayName} is back to their earned rank.`;
+        }catch(err){ S.toast='Could not update — check your connection.'; }
+        render();
+      };
       const classSel=row.querySelector('[data-act="class"]');
       if(classSel) classSel.onchange=async (e)=>{
         try{ await updateDoc(doc(db,'profiles',uid), {classId:e.target.value}); }
@@ -6158,7 +6233,7 @@ function bestTTScore(level){
 const COLOR_LABELS = { default:'Classic Brown', black:'Midnight Black', white:'Snow White', purple:'Royal Purple', gold:'Golden' };
 const HAT_LABELS = { none:'No hat', cap:'Cap', crown:'Crown', party:'Party Hat', wizard:'Wizard Hat' };
 function renderHorseCustomizeCard(){
-  const info = computeBadgeInfo(S.ttAttempts);
+  const info = computeBadgeInfo(S.ttAttempts, S.profile);
   const tier = info.tier;
   const card=el(`
     <div class="mmc-card">
@@ -6214,7 +6289,7 @@ function renderHorseCustomizeCard(){
   return card;
 }
 function renderStatusBanner(){
-  const info = computeBadgeInfo(S.ttAttempts);
+  const info = computeBadgeInfo(S.ttAttempts, S.profile);
   const tier = info.tier;
   const bg = { rookie:'var(--bg)', upandcomer:'var(--yellow)', expert:'var(--slime)' }[tier.key];
   const wrap=el('<div></div>');
@@ -7075,4 +7150,3 @@ render();
 </script>
 </body>
 </html>
-
