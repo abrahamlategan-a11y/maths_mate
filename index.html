@@ -65,6 +65,72 @@
     background: linear-gradient(90deg, var(--slime) 0%, var(--yellow) 35%, #4FB6E8 65%, var(--purple) 100%);
     -webkit-background-clip:text; background-clip:text; color:transparent; text-shadow:none;
   }
+  /* ---- Student-side branding: small Mathmentum wordmark, big ARENA ---- */
+  .mmc-palgrid {
+    display:grid; grid-template-columns:repeat(auto-fill,minmax(132px,1fr));
+    gap:8px; margin-top:12px;
+  }
+  .mmc-palbtn {
+    display:flex; align-items:center; gap:8px; position:relative;
+    background:var(--paper); border:2.5px solid var(--ink); border-radius:12px;
+    box-shadow:2px 2px 0 var(--ink); padding:8px 10px; cursor:pointer;
+    font-family:'Baloo 2',sans-serif; font-weight:700; font-size:13px; color:var(--ink);
+    transition:transform .1s ease;
+  }
+  .mmc-palbtn:hover:not(:disabled){ transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--ink); }
+  .mmc-palbtn.selected { background:var(--slime); }
+  /* Locked schemes stay visible — seeing what's coming is the point of a reward. */
+  .mmc-palbtn.locked { opacity:.45; cursor:not-allowed; box-shadow:none; border-style:dashed; }
+  .mmc-palswatch { display:inline-flex; gap:2px; flex-shrink:0; }
+  .mmc-palswatch span { width:13px; height:13px; border-radius:50%; border:1.5px solid var(--ink); display:inline-block; }
+  .mmc-palbtn .lbl { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mmc-palbtn .lock { margin-left:auto; font-size:11px; }
+  .mmc-arena-wrap { position:relative; z-index:1; padding:2px 0 6px; }
+  .mmc-brandmark {
+    position:absolute; left:0; top:2px;
+    font-family:'Baloo 2',sans-serif; font-weight:800; font-size:clamp(15px,2.6vw,19px);
+    letter-spacing:-.02em; line-height:1; white-space:nowrap;
+  }
+  /* Fixed brand orange, not var(--orange) — the wordmark is the parent brand
+     and shouldn't repaint itself when a student picks a theme. */
+  .mmc-brandmark { -webkit-text-stroke:2.5px var(--ink); paint-order:stroke fill; }
+  .mmc-brandmark .bm-a { color:#fff; }
+  .mmc-brandmark .bm-b { color:#FF7A1A; }
+  .mmc-arena { text-align:center; padding-top:26px; }
+  /* Students can pick their own theme colours, so the banner must stay legible
+     against ANY background. Everything here uses fixed ink/white rather than
+     theme variables, and the lettering carries a dark outline on all sides so
+     it survives a pale yellow header as readily as a dark purple one. */
+  .mmc-arena-the {
+    display:block; font-family:'Baloo 2',sans-serif; font-weight:700;
+    font-size:clamp(14px,2.4vw,19px); color:#fff;
+    letter-spacing:.32em; text-transform:lowercase; margin-bottom:-2px;
+    -webkit-text-stroke:3px var(--ink); paint-order:stroke fill;
+    text-shadow:0 2px 0 rgba(0,0,0,.35);
+  }
+  .mmc-arena-word {
+    display:block; font-family:'Baloo 2',sans-serif; font-weight:800;
+    font-size:clamp(46px,11vw,86px); line-height:1; letter-spacing:.02em;
+    color:#fff;
+    /* Outline first, fill on top — legible on any colour the student chooses.
+       The stacked ink shadow underneath gives the stadium-sign depth. */
+    -webkit-text-stroke:7px var(--ink); paint-order:stroke fill;
+    text-shadow:
+      0 3px 0 var(--ink),
+      0 6px 0 var(--ink),
+      0 11px 20px rgba(0,0,0,.35);
+    transform:rotate(-1.2deg);
+  }
+  @supports not (paint-order: stroke) {
+    /* Older engines ignore paint-order and would stroke over the letterforms,
+       so fall back to a plain heavy shadow rather than an unreadable blob. */
+    .mmc-arena-the, .mmc-arena-word { -webkit-text-stroke:0; }
+    .mmc-arena-word { text-shadow:2px 0 0 var(--ink),-2px 0 0 var(--ink),0 -2px 0 var(--ink),0 3px 0 var(--ink),0 6px 0 var(--ink); }
+  }
+  @media (max-width:520px){
+    .mmc-brandmark { position:static; text-align:center; margin-bottom:2px; }
+    .mmc-arena { padding-top:2px; }
+  }
   .mmc-sparkle { position:relative; z-index:1; font-size:20px; display:inline-block; margin-left:4px; }
   .mmc-tagline {
     position:relative; z-index:1; color:#fff; font-family:'Baloo 2',sans-serif; font-weight:700;
@@ -3079,12 +3145,44 @@ async function equipHorseOption(field, value){
 
 // ---------- Page theme (Up and Comer: preset palettes · Expert: any colour) ----------
 const PRESET_PALETTES = [
-  { key:'classic', label:'Classic', primary:'#FF7A1A', secondary:'#B7E600', accent:'#8B5CF6' },
-  { key:'ocean', label:'Ocean', primary:'#0EA5E9', secondary:'#06B6D4', accent:'#6366F1' },
-  { key:'sunset', label:'Sunset', primary:'#F43F5E', secondary:'#FB923C', accent:'#DB2777' },
-  { key:'forest', label:'Forest', primary:'#22C55E', secondary:'#84CC16', accent:'#0D9488' },
-  { key:'candy', label:'Candy', primary:'#EC4899', secondary:'#A78BFA', accent:'#F472B6' },
+  // Ordered by boldness. `tier` is the RANK REQUIRED to equip it, so the loud
+  // palettes are genuinely something to earn rather than a setting everyone has.
+  // Rookie gets three deliberately restrained schemes; the payoff for climbing
+  // is colour, not just more of the same.
+
+  // --- Rookie (3) — muted, sensible, nothing that shouts ---
+  { key:'classic',   label:'Classic',    tier:'rookie', primary:'#FF7A1A', secondary:'#B7E600', accent:'#8B5CF6' },
+  { key:'slate',     label:'Slate',      tier:'rookie', primary:'#64748B', secondary:'#94A3B8', accent:'#475569' },
+  { key:'ocean',     label:'Ocean',      tier:'rookie', primary:'#0EA5E9', secondary:'#38BDF8', accent:'#0369A1' },
+
+  // --- Up and Comer (7 more, 10 total) — confident but still tasteful ---
+  { key:'forest',    label:'Forest',     tier:'upandcomer', primary:'#22C55E', secondary:'#84CC16', accent:'#0D9488' },
+  { key:'sunset',    label:'Sunset',     tier:'upandcomer', primary:'#F97316', secondary:'#FBBF24', accent:'#DB2777' },
+  { key:'berry',     label:'Berry',      tier:'upandcomer', primary:'#A855F7', secondary:'#C084FC', accent:'#7E22CE' },
+  { key:'sand',      label:'Sand',       tier:'upandcomer', primary:'#D97706', secondary:'#FCD34D', accent:'#92400E' },
+  { key:'teal',      label:'Rockpool',   tier:'upandcomer', primary:'#14B8A6', secondary:'#5EEAD4', accent:'#0F766E' },
+  { key:'plum',      label:'Plum',       tier:'upandcomer', primary:'#9333EA', secondary:'#F472B6', accent:'#6B21A8' },
+  { key:'cherry',    label:'Cherry',     tier:'upandcomer', primary:'#E11D48', secondary:'#FB7185', accent:'#9F1239' },
+
+  // --- Expert (10 more, 20 total) — the loud ones ---
+  { key:'neon',      label:'Neon',       tier:'expert', primary:'#22D3EE', secondary:'#A3E635', accent:'#D946EF' },
+  { key:'lava',      label:'Lava',       tier:'expert', primary:'#F97316', secondary:'#FACC15', accent:'#DC2626' },
+  { key:'galaxy',    label:'Galaxy',     tier:'expert', primary:'#6366F1', secondary:'#22D3EE', accent:'#A21CAF' },
+  { key:'bubblegum', label:'Bubblegum',  tier:'expert', primary:'#FF3D8A', secondary:'#67E8F9', accent:'#C026D3' },
+  { key:'toxic',     label:'Toxic',      tier:'expert', primary:'#A3E635', secondary:'#4ADE80', accent:'#65A30D' },
+  { key:'volcano',   label:'Volcano',    tier:'expert', primary:'#DC2626', secondary:'#F59E0B', accent:'#7C2D12' },
+  { key:'arcade',    label:'Arcade',     tier:'expert', primary:'#FACC15', secondary:'#EC4899', accent:'#2563EB' },
+  { key:'midnight',  label:'Midnight',   tier:'expert', primary:'#4F46E5', secondary:'#8B5CF6', accent:'#1E1B4B' },
+  { key:'mango',     label:'Mango',      tier:'expert', primary:'#FB923C', secondary:'#FDE047', accent:'#EA580C' },
+  { key:'electric',  label:'Electric',   tier:'expert', primary:'#3B82F6', secondary:'#22D3EE', accent:'#1D4ED8' },
 ];
+const TIER_RANK = { rookie:0, upandcomer:1, expert:2 };
+// Which palettes a given rank may equip — cumulative, so an Expert keeps
+// everything unlocked on the way up.
+function palettesForTier(tierKey){
+  const lvl = TIER_RANK[tierKey] != null ? TIER_RANK[tierKey] : 0;
+  return PRESET_PALETTES.filter(p => TIER_RANK[p.tier] <= lvl);
+}
 function darkenHex(hex, amt){
   const m = /^#?([0-9a-f]{6})$/i.exec(hex);
   if(!m) return hex;
@@ -3114,50 +3212,57 @@ async function applyThemeChoice(primary, secondary, accent){
 }
 function renderThemeCustomizeCard(){
   const tier = computeBadgeInfo(S.ttAttempts).tier;
+  const unlocked = palettesForTier(tier.key);
   const card=el(`<div class="mmc-card"><h3>🎨 Page Colours</h3></div>`);
-  if(tier.key==='rookie'){
-    const rookiePreset = PRESET_PALETTES.find(p=>p.key==='ocean');
-    card.appendChild(el('<div class="meta">Even Rookies get one colour change! Reach Up and Comer for more presets, and Expert for full free choice.</div>'));
-    const row=el('<div class="mmc-choices"></div>');
-    const isClassic = !S.profile || !S.profile.themePrimary;
-    const classicBtn=el(`<button type="button" class="mmc-choice-btn${isClassic?' selected':''}">Classic</button>`);
-    classicBtn.onclick=()=>applyThemeChoice(null,null,null);
-    row.appendChild(classicBtn);
-    const isEquipped = S.profile && S.profile.themePrimary===rookiePreset.primary && S.profile.themeSecondary===rookiePreset.secondary && S.profile.themeAccent===rookiePreset.accent;
-    const swatch = `<span style="display:inline-flex;gap:2px;margin-right:5px;">${[rookiePreset.primary,rookiePreset.secondary,rookiePreset.accent].map(c=>`<span style="width:11px;height:11px;border-radius:50%;background:${c};display:inline-block;border:1px solid var(--ink);"></span>`).join('')}</span>`;
-    const presetBtn=el(`<button type="button" class="mmc-choice-btn${isEquipped?' selected':''}" style="display:inline-flex;align-items:center;">${swatch}${esc(rookiePreset.label)}</button>`);
-    presetBtn.onclick=()=>applyThemeChoice(rookiePreset.primary,rookiePreset.secondary,rookiePreset.accent);
-    row.appendChild(presetBtn);
-    card.appendChild(row);
-    return card;
+  const nextMsg = tier.key==='rookie'
+    ? 'Reach Up and Comer to unlock 7 more, and Expert for all 20 plus any colour you like.'
+    : tier.key==='upandcomer'
+    ? 'Reach Expert to unlock the 10 boldest schemes plus any colour you like.'
+    : 'You have every scheme unlocked, plus full free choice below.';
+  card.appendChild(el(`<div class="meta">${esc(unlocked.length)} of ${PRESET_PALETTES.length} colour schemes unlocked. ${esc(nextMsg)}</div>`));
+
+  const grid=el('<div class="mmc-palgrid"></div>');
+  const swatch=(pal)=>`<span class="mmc-palswatch">${[pal.primary,pal.secondary,pal.accent]
+    .map(c=>`<span style="background:${c};"></span>`).join('')}</span>`;
+
+  // Classic-as-default: no themePrimary stored means the stock palette.
+  const isDefault = !S.profile || !S.profile.themePrimary;
+
+  PRESET_PALETTES.forEach(pal=>{
+    const locked = TIER_RANK[pal.tier] > (TIER_RANK[tier.key]||0);
+    const equipped = pal.key==='classic'
+      ? isDefault
+      : (S.profile && S.profile.themePrimary===pal.primary
+         && S.profile.themeSecondary===pal.secondary && S.profile.themeAccent===pal.accent);
+    const btn=el(`<button type="button" class="mmc-palbtn${equipped?' selected':''}${locked?' locked':''}"
+      ${locked?'disabled':''} title="${locked?'Unlocks at '+esc(pal.tier==='expert'?'Expert':'Up and Comer'):esc(pal.label)}">
+      ${swatch(pal)}<span class="lbl">${esc(pal.label)}</span>
+      ${locked?'<span class="lock">🔒</span>':''}
+    </button>`);
+    if(!locked) btn.onclick=()=> pal.key==='classic'
+      ? applyThemeChoice(null,null,null)
+      : applyThemeChoice(pal.primary,pal.secondary,pal.accent);
+    grid.appendChild(btn);
+  });
+  card.appendChild(grid);
+
+  if(tier.key==='expert'){
+    card.appendChild(el('<div class="meta" style="margin-top:14px;">Or mix your own:</div>'));
+    const custom=el(`<div class="mmc-row" style="gap:14px;align-items:flex-end;flex-wrap:wrap;">
+      <div class="mmc-field" style="margin-bottom:0;"><label>Main</label>
+        <input type="color" id="mmc-th-1" value="${esc((S.profile&&S.profile.themePrimary)||'#FF7A1A')}"></div>
+      <div class="mmc-field" style="margin-bottom:0;"><label>Highlight</label>
+        <input type="color" id="mmc-th-2" value="${esc((S.profile&&S.profile.themeSecondary)||'#B7E600')}"></div>
+      <div class="mmc-field" style="margin-bottom:0;"><label>Extra</label>
+        <input type="color" id="mmc-th-3" value="${esc((S.profile&&S.profile.themeAccent)||'#8B5CF6')}"></div>
+      <button class="mmc-btn gold sm" id="mmc-th-go">Use these</button>
+    </div>`);
+    custom.querySelector('#mmc-th-go').onclick=()=>applyThemeChoice(
+      custom.querySelector('#mmc-th-1').value,
+      custom.querySelector('#mmc-th-2').value,
+      custom.querySelector('#mmc-th-3').value);
+    card.appendChild(custom);
   }
-  if(tier.key==='upandcomer'){
-    card.appendChild(el('<div class="meta">Pick a preset colour scheme for your whole page:</div>'));
-    const row=el('<div class="mmc-choices"></div>');
-    PRESET_PALETTES.forEach(pal=>{
-      const isEquipped = S.profile && S.profile.themePrimary===pal.primary && S.profile.themeSecondary===pal.secondary && S.profile.themeAccent===pal.accent;
-      const swatch = `<span style="display:inline-flex;gap:2px;margin-right:5px;">${[pal.primary,pal.secondary,pal.accent].map(c=>`<span style="width:11px;height:11px;border-radius:50%;background:${c};display:inline-block;border:1px solid var(--ink);"></span>`).join('')}</span>`;
-      const btn=el(`<button type="button" class="mmc-choice-btn${isEquipped?' selected':''}" style="display:inline-flex;align-items:center;">${swatch}${esc(pal.label)}</button>`);
-      btn.onclick=()=>applyThemeChoice(pal.primary,pal.secondary,pal.accent);
-      row.appendChild(btn);
-    });
-    card.appendChild(row);
-    return card;
-  }
-  // expert: full free-choice colour pickers
-  card.appendChild(el('<div class="meta">Choose any colours you like for your page:</div>'));
-  const primary=(S.profile&&S.profile.themePrimary)||'#FF7A1A', secondary=(S.profile&&S.profile.themeSecondary)||'#B7E600', accent=(S.profile&&S.profile.themeAccent)||'#8B5CF6';
-  const row=el(`<div class="mmc-row">
-    <label style="display:flex;flex-direction:column;font-size:11px;font-weight:800;color:var(--ink-soft);gap:3px;">Primary<input type="color" id="mmc-theme-primary" value="${primary}"></label>
-    <label style="display:flex;flex-direction:column;font-size:11px;font-weight:800;color:var(--ink-soft);gap:3px;">Secondary<input type="color" id="mmc-theme-secondary" value="${secondary}"></label>
-    <label style="display:flex;flex-direction:column;font-size:11px;font-weight:800;color:var(--ink-soft);gap:3px;">Accent<input type="color" id="mmc-theme-accent" value="${accent}"></label>
-    <button class="mmc-btn gold sm" id="mmc-theme-apply">Apply</button>
-    <button class="mmc-btn ghost sm" id="mmc-theme-reset">Reset to Classic</button>
-  </div>`);
-  row.querySelector('#mmc-theme-apply').onclick=()=>applyThemeChoice(
-    row.querySelector('#mmc-theme-primary').value, row.querySelector('#mmc-theme-secondary').value, row.querySelector('#mmc-theme-accent').value);
-  row.querySelector('#mmc-theme-reset').onclick=()=>applyThemeChoice(null,null,null);
-  card.appendChild(row);
   return card;
 }
 function renderSettingsTab(){
@@ -3766,8 +3871,18 @@ function renderHead(){
         <span style="top:40%;left:28%;font-size:18px;">−</span>
       </div>
       ${S.user ? `<button id="mmc-signout" class="mmc-signout-pill">↪ Sign out</button>` : ''}
+      ${S.user && !S.isTeacher ? `
+      <div class="mmc-arena-wrap">
+        <div class="mmc-brandmark"><span class="bm-a">Math</span><span class="bm-b">mentum</span></div>
+        <div class="mmc-arena">
+          <span class="mmc-arena-the">the</span>
+          <span class="mmc-arena-word">ARENA</span>
+        </div>
+      </div>
+      ` : `
       <div class="mmc-title"><span class="mmc-title-plain">Math</span><span class="mmc-title-rainbow">mentum</span><span class="mmc-sparkle">✨</span></div>
       <div class="mmc-tagline">Learn<span class="dot d1">.</span> Play<span class="dot d2">.</span> Improve<span class="dot d3">.</span></div>
+      `}
       ${S.user ? `
         <div class="mmc-head-bottom">
           <div class="mmc-welcome-card">
@@ -5670,7 +5785,7 @@ function renderHorseCustomizeCard(){
       card.appendChild(el('<div class="meta">Practice at least once every 14 days to keep Up and Comer status. Reach 30 attempts with 10+ at Hard level (60%+ accuracy) for Expert.</div>'));
     }
   } else {
-    card.appendChild(el('<div class="meta">Practice regularly to become an Up and Comer (15+ attempts, 50%+ accuracy) and unlock horse colours &amp; a hat.</div>'));
+    card.appendChild(el('<div class="meta">Practice regularly to become an Up and Comer (15+ attempts, 50%+ accuracy) and unlock horse colours, a hat, and 7 more page colour schemes.</div>'));
   }
   card.appendChild(el('<div style="height:6px;"></div>'));
 
@@ -5730,9 +5845,9 @@ function renderStatusUpgradePanel(currentTierKey){
   const wrap=el('<div class="mmc-card" style="margin-top:14px;"></div>');
   wrap.appendChild(el('<h3 style="margin-bottom:10px;">📈 How to level up</h3>'));
   const tiers=[
-    { key:'rookie', emoji:'🐴', label:'Rookie', reach:'Everyone starts here.', keep:'—', perks:'One page colour option.' },
-    { key:'upandcomer', emoji:'🌟', label:'Up and Comer', reach:'15+ practice attempts with 50%+ average accuracy.', keep:'Practice at least once every 14 days.', perks:'2 extra horse colours, 1 hat, and preset page colour themes for the whole site.' },
-    { key:'expert', emoji:'🏆', label:'Expert', reach:'30+ practice attempts, including 10+ at Hard level with 60%+ accuracy on those Hard attempts.', keep:'Practice at least once every 3 days.', perks:'Every horse colour, every hat, a custom race nickname, and full free choice of any page colours.' },
+    { key:'rookie', emoji:'🐴', label:'Rookie', reach:'Everyone starts here.', keep:'—', perks:'3 page colour schemes.' },
+    { key:'upandcomer', emoji:'🌟', label:'Up and Comer', reach:'15+ practice attempts with 50%+ average accuracy.', keep:'Practice at least once every 14 days.', perks:'2 extra horse colours, 1 hat, and 10 page colour schemes.' },
+    { key:'expert', emoji:'🏆', label:'Expert', reach:'30+ practice attempts, including 10+ at Hard level with 60%+ accuracy on those Hard attempts.', keep:'Practice at least once every 3 days.', perks:'Every horse colour, every hat, a custom race nickname, all 20 page colour schemes, and full free choice of any colours.' },
   ];
   tiers.forEach(t=>{
     const isCurrent = t.key===currentTierKey;
