@@ -566,7 +566,7 @@
   #mmc.mmc-pro .mmc-classpick select:hover { border-color:var(--pro-mute); }
   #mmc.mmc-pro .mmc-stu, #mmc.mmc-pro .mmc-stu-head {
     display:grid;
-    grid-template-columns: minmax(100px,1fr) 96px 92px 92px 108px 120px 220px;
+    grid-template-columns: minmax(96px,1fr) 92px 88px 90px 104px 116px minmax(190px,auto);
     align-items:center; column-gap:10px;
   }
   #mmc.mmc-pro .mmc-stu { padding:9px 0; border-bottom:1px solid var(--pro-soft); }
@@ -592,9 +592,12 @@
     min-width:0; width:100%;
   }
   #mmc.mmc-pro .mmc-stu > select:hover { border-color:var(--pro-mute); }
-  #mmc.mmc-pro .mmc-stu-actions { display:flex; align-items:center; gap:6px; justify-content:flex-end; }
+  #mmc.mmc-pro .mmc-stu-actions {
+    display:flex; align-items:center; gap:5px; justify-content:flex-end; flex-wrap:wrap;
+  }
+  #mmc.mmc-pro .mmc-stu-actions .mmc-btn { padding:5px 9px; font-size:12.5px; }
   #mmc.mmc-pro .mmc-stu-actions .mmc-btn { white-space:nowrap; }
-  @media (max-width:760px){
+  @media (max-width:1080px){
     #mmc.mmc-pro .mmc-stu, #mmc.mmc-pro .mmc-stu-head { grid-template-columns: 1fr; row-gap:6px; }
     #mmc.mmc-pro .mmc-stu-head { display:none; }
     #mmc.mmc-pro .mmc-stu-actions { justify-content:flex-start; }
@@ -5657,17 +5660,27 @@ async function clearWeeklyResultsForClass(classId, btnEl){
     const p=S.profiles[u]; return p && p.username && p.classId===classId;
   });
   const doomed = (S.results||[]).filter(r=>uids.indexOf(r.uid)!==-1);
-  if(!doomed.length){ S.toast=`No weekly results to clear for ${name}.`; render(); return; }
+  // Targeted skill-practice sessions feed the SAME dashboard as the weekly sets,
+  // so leaving them behind produced a confusing half-cleared state: the gradebook
+  // was empty while the student still saw strengths and weaknesses.
+  const doomedPractice = (S.allSkillPracticeRecords||[]).filter(r=>uids.indexOf(r.uid)!==-1);
+  if(!doomed.length && !doomedPractice.length){ S.toast=`Nothing to clear for ${name}.`; render(); return; }
   const typed = prompt(
-    `This permanently deletes ${doomed.length} weekly set result${doomed.length===1?'':'s'} for ${uids.length} student${uids.length===1?'':'s'} in ${name}.\n\n`+
-    `Times-table attempts, ranks and unlocks are NOT affected.\n`+
-    `Skills practice they did on their own is NOT affected.\n\n`+
+    `This permanently deletes skills data for ${uids.length} student${uids.length===1?'':'s'} in ${name}:\n\n`+
+    `  • ${doomed.length} weekly set result${doomed.length===1?'':'s'}\n`+
+    `  • ${doomedPractice.length} targeted practice session${doomedPractice.length===1?'':'s'}\n\n`+
+    `Their dashboards will be empty afterwards.\n\n`+
+    `Times-table attempts, ranks and unlocks are NOT affected.\n\n`+
     `This cannot be undone. Type CLEAR to confirm.`);
   if(typed!=='CLEAR'){ S.toast='Nothing was cleared.'; render(); return; }
   if(btnEl){ btnEl.disabled=true; btnEl.textContent='Clearing…'; }
   let done=0, failed=0;
   for(const r of doomed){
     try{ await deleteDoc(doc(db,'results',r.id)); done++; }
+    catch(e){ failed++; }
+  }
+  for(const r of doomedPractice){
+    try{ await deleteDoc(doc(db,'skillPractice',r.id)); done++; }
     catch(e){ failed++; }
   }
   // Half-finished attempts at now-deleted sets would otherwise linger.
@@ -5678,7 +5691,7 @@ async function clearWeeklyResultsForClass(classId, btnEl){
   }
   S.toast = failed
     ? `Cleared ${done} results, ${failed} could not be removed — try again.`
-    : `Cleared ${done} weekly results for ${name}. Times tables untouched.`;
+    : `Cleared ${done} skills records for ${name}. Times tables, ranks and unlocks untouched.`;
   if(btnEl){ btnEl.disabled=false; btnEl.textContent='Clear weekly results'; }
   render();
 }
@@ -6077,7 +6090,7 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
       <span>Username</span>
       <span>Password</span>
       <span>${S.classes.length>1?'Class':''}</span>
-      <span>Ability group</span>
+      <span>Group</span>
       <span>Rank</span>
       <span></span>
     </div>`));
