@@ -3598,8 +3598,16 @@ function loadScriptOnce(url){
     // the browser serves it from cache and the library simply re-registers.
     const s=document.createElement('script');
     s.src=url; s.async=true;
-    s.addEventListener('load', ()=>resolve());
+    // A school proxy that HOLDS the connection open rather than refusing it never
+    // fires an error event, so without this the promise waits forever and the
+    // button sits on "Preparing…" indefinitely. Fail loudly after 12 seconds.
+    const timer = setTimeout(()=>{
+      delete _scriptPromises[url];
+      reject(new Error('Timed out loading '+url+' — the network may be blocking it'));
+    }, 12000);
+    s.addEventListener('load', ()=>{ clearTimeout(timer); resolve(); });
     s.addEventListener('error', ()=>{
+      clearTimeout(timer);
       delete _scriptPromises[url];   // allow a retry on the next click
       reject(new Error('Failed to load '+url));
     });
@@ -3617,10 +3625,11 @@ function waitForGlobal(name, timeoutMs){
     })();
   });
 }
-async function generateLoginCardsPDF(students, btnId, idleLabel){
-  btnId = btnId || 'mmc-bulk-pdf';
-  idleLabel = idleLabel || 'Download Login Cards PDF';
-  const btn=document.getElementById(btnId);
+async function generateLoginCardsPDF(students, btnId, idleLabel, btnEl){
+  // Accepts either an element id or the element itself — the per-class buttons in
+  // Edit classes are generated in a loop and have no stable ids.
+  const btn = btnEl || document.getElementById(btnId || 'mmc-bulk-pdf');
+  idleLabel = idleLabel || (btnEl ? btnEl.textContent : 'Download Login Cards PDF');
   const setBtnState=(text,disabled)=>{ if(btn){ btn.textContent=text; btn.disabled=disabled; } };
   setBtnState('Preparing…', true);
   try{
@@ -5664,6 +5673,23 @@ async function denyTeacherRequest(requestId, btnEl){
   render();
 }
 
+
+// Shared by the roster buttons and the per-class buttons in Edit classes, so a
+// teacher can pull one class's cards without first switching the picker.
+function loginRowsForClass(classId){
+  return Object.entries(S.profiles||{})
+    .filter(([uid,p])=>p.username && p.currentPassword && (classId ? p.classId===classId : true))
+    .map(([uid,p])=>({name:p.displayName, username:p.username, password:p.currentPassword, status:'ok'}));
+}
+function downloadLoginsCSV(rows, filename){
+  if(!rows.length){ S.toast='No students with a set password yet.'; render(); return; }
+  const data=[['Name','Username','Password'], ...rows.map(r=>[r.name,r.username,r.password])];
+  const csv=data.map(r=>r.map(c=>{ const t=String(c); return /[",\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t; }).join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=filename||'student-logins.csv';
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+
 // ---------- Clear weekly results for a class ----------
 // Deliberately narrow: it removes ONLY `results` (the weekly sets) and the
 // in-progress `weekProgress` saves for students in one class. Times-table
@@ -5872,7 +5898,6 @@ function renderStudentsTab(mode){
   const clsBar=el('<div class="mmc-row" style="justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;"></div>');
   clsBar.appendChild(stabs);
   const clsBtns=el('<div class="mmc-row" style="gap:8px;align-items:center;"></div>');
-  if(sview==='list') clsBtns.appendChild(renderClassPicker());
   const newCls=el('<button class="mmc-btn ghost sm">+ New class</button>');
   newCls.onclick=async ()=>{
     const name=prompt('Name for the new class (e.g. "5B" or "Year 4 Green"):');
@@ -5882,13 +5907,14 @@ function renderStudentsTab(mode){
     await createClass(name, yr);
   };
   clsBtns.appendChild(newCls);
-  const editCls=el(`<button class="mmc-btn ghost sm">${S.editingClasses?'Done':'Edit classes'}</button>`);
-  editCls.onclick=()=>{ S.editingClasses=!S.editingClasses; render(); };
-  clsBtns.appendChild(editCls);
+  // The classes panel is always on now — nothing in it is destructive without a
+  // confirmation, and hiding the per-class downloads behind a toggle was friction
+  // for something a teacher reaches for constantly.
+
   clsBar.appendChild(clsBtns);
   wrap.appendChild(clsBar);
 
-  if(S.editingClasses){
+  if(sview==='list'){
     const panel=el('<div class="mmc-card"><h3>Your classes</h3><div class="meta">Rename a class or change its year level. A class can only be deleted once it has no students in it.</div></div>');
     if(!S.classes.length){
       panel.appendChild(el('<div class="meta" style="margin-top:10px;">No classes yet.</div>'));
@@ -5900,11 +5926,21 @@ function renderStudentsTab(mode){
         <code class="mmc-stu-user">Year ${classYear(c)}</code>
         <code class="mmc-stu-user">${count} student${count===1?'':'s'}</code>
         <div class="mmc-stu-actions">
+          <button class="mmc-btn ghost sm" data-c="csv">Logins CSV</button>
+          <button class="mmc-btn ghost sm" data-c="cards">Login cards</button>
           <button class="mmc-btn ghost sm" data-c="clear">Clear weekly results</button>
           <button class="mmc-btn ghost sm" data-c="rename">Rename</button>
           <button class="mmc-btn danger sm" data-c="del"${count?' disabled title="Move or delete its students first"':''}>Delete</button>
         </div>
       </div>`);
+      const csvBtn=r.querySelector('[data-c="csv"]');
+      if(csvBtn) csvBtn.onclick=()=>downloadLoginsCSV(loginRowsForClass(c.id), `${c.name.replace(/[^a-z0-9]+/gi,'-').toLowerCase()}-logins.csv`);
+      const cardsBtn=r.querySelector('[data-c="cards"]');
+      if(cardsBtn) cardsBtn.onclick=()=>{
+        const rows=loginRowsForClass(c.id);
+        if(!rows.length){ S.toast='No students in that class have a password set yet.'; render(); return; }
+        generateLoginCardsPDF(rows, null, null, cardsBtn);
+      };
       const clearBtn=r.querySelector('[data-c="clear"]');
       if(clearBtn) clearBtn.onclick=()=>clearWeeklyResultsForClass(c.id, clearBtn);
       r.querySelector('[data-c="rename"]').onclick=async ()=>{
@@ -6081,6 +6117,11 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
 
   const existing = Object.entries(S.profiles).filter(([uid,p])=>p.username && (S.showAllClasses || !p.classId || p.classId===S.currentClassId));
   if(existing.length){
+    const pickerRow=el('<div class="mmc-row" style="justify-content:flex-end;margin-bottom:10px;"></div>');
+    // Sits directly above the roster it filters — in the tab bar it read as a
+    // page-level control and wasn't obviously connected to the list below.
+    pickerRow.appendChild(renderClassPicker());
+    wrap.appendChild(pickerRow);
     const list=el('<div class="mmc-card"><h3>Student Management</h3><div class="meta">Passwords shown below reflect whatever is currently set — use "Reset Password" to issue a new one if needed.</div></div>');
     const withPasswords = existing.filter(([uid,p])=>p.currentPassword).map(([uid,p])=>({name:p.displayName, username:p.username, password:p.currentPassword, status:'ok'}));
     const missingCount = existing.length - withPasswords.length;
@@ -6089,14 +6130,7 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
       <button class="mmc-btn gold sm" id="mmc-manage-pdf">Download Login Cards PDF</button>
       ${missingCount>0 ? `<span class="meta" style="align-self:center;">${missingCount} student${missingCount===1?'':'s'} with no password set yet won't be included — reset their password first.</span>` : ''}
     </div>`);
-    downloadRow.querySelector('#mmc-manage-csv').onclick=()=>{
-      if(!withPasswords.length){ S.toast='No students with a set password yet.'; render(); return; }
-      const rows=[['Name','Username','Password'], ...withPasswords.map(r=>[r.name,r.username,r.password])];
-      const csv=rows.map(r=>r.map(c=>{ const s=String(c); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }).join(',')).join('\n');
-      const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob);
-      const a=document.createElement('a'); a.href=url; a.download='student-logins.csv';
-      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-    };
+    downloadRow.querySelector('#mmc-manage-csv').onclick=()=>downloadLoginsCSV(withPasswords,'student-logins.csv');
     downloadRow.querySelector('#mmc-manage-pdf').onclick=()=>{
       if(!withPasswords.length){ S.toast='No students with a set password yet.'; render(); return; }
       generateLoginCardsPDF(withPasswords, 'mmc-manage-pdf', 'Download Login Cards PDF');
@@ -7166,7 +7200,7 @@ function renderQuestionBody(q, st, onCheck, headerHTML){
 }
 function renderQuizTaking(week){
   const wrap=el('<div></div>');
-  const back=el('<a href="#" style="color:var(--sky-deep);font-size:13px;">← back to passport</a>');
+  const back=el('<a href="#" style="color:var(--sky-deep);font-size:13px;">← back to The Arena</a>');
   back.onclick=(e)=>{ e.preventDefault(); S.activeWeekId=null; render(); };
   wrap.appendChild(back);
   wrap.appendChild(el(`<h3 style="font-family:Fredoka,sans-serif;margin:10px 0 14px;">${esc(week.label)}</h3>`));
