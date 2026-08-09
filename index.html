@@ -3536,7 +3536,7 @@ const S = {
   user:null, isTeacher:false, profile:null, teacherEmails:[],
   authMode:'login', authError:null, showSignup:false,
   weeks:[], results:[], profiles:{},
-  timeOverride:null, teacherTab:'home', weeksView:'create', studentsView:'list', editingClasses:false, editingDraftId:null, showArchivedWeeks:false,
+  setupLinkFor:null, timeOverride:null, teacherTab:'home', weeksView:'create', studentsView:'list', editingClasses:false, editingDraftId:null, showArchivedWeeks:false,
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
@@ -5228,14 +5228,54 @@ async function approveTeacherRequest(requestId, email, btnEl){
   if(btnEl){ btnEl.disabled=true; btnEl.textContent='Approving…'; }
   try{
     const call = httpsCallable(functions, 'approveTeacherRequest');
-    await call({ requestId });
+    const res = await call({ requestId });
     await sendPasswordResetEmail(auth, email);
-    S.toast = `Approved — ${email} will get an email to set up their password.`;
+    // Show the setup link straight away as well as emailing it. A school mail
+    // filter can quarantine a perfectly valid message, and an admin standing
+    // next to the new teacher shouldn't have to wait on anyone's spam folder.
+    S.setupLinkFor = { email, link: (res && res.data && res.data.setupLink) || null };
+    S.toast = `Approved — an email is on its way to ${email}.`;
   }catch(e){
     S.toast = 'Could not approve: '+(e.message||'unknown error');
   }
   if(btnEl){ btnEl.disabled=false; btnEl.textContent=originalText; }
   render();
+}
+async function fetchSetupLink(email, btnEl){
+  const original = btnEl ? btnEl.textContent : '';
+  if(btnEl){ btnEl.disabled=true; btnEl.textContent='Getting link…'; }
+  try{
+    const call = httpsCallable(functions, 'getTeacherSetupLink');
+    const res = await call({ email });
+    S.setupLinkFor = { email, link: (res && res.data && res.data.link) || null };
+  }catch(e){
+    S.toast = 'Could not get a link: '+(e.message||'unknown error');
+  }
+  if(btnEl){ btnEl.disabled=false; btnEl.textContent=original; }
+  render();
+}
+function renderSetupLinkCard(){
+  const info = S.setupLinkFor;
+  if(!info || !info.link) return null;
+  const card=el(`<div class="mmc-card mmc-notice" style="margin-bottom:14px;">
+    <h3>Password setup link for ${esc(info.email)}</h3>
+    <div class="meta">Send this to them however suits — message, Teams, or read it out. It works whether or not the email arrives, and expires after a while.</div>
+    <div class="mmc-row" style="align-items:center;gap:8px;margin-top:10px;">
+      <input type="text" id="mmc-setuplink" readonly value="${esc(info.link)}"
+        style="flex:1;min-width:220px;font-family:'IBM Plex Mono',monospace;font-size:12px;">
+      <button class="mmc-btn gold sm" id="mmc-setuplink-copy">Copy link</button>
+      <button class="mmc-btn ghost sm" id="mmc-setuplink-close">Done</button>
+    </div>
+  </div>`);
+  card.querySelector('#mmc-setuplink-copy').onclick=async ()=>{
+    const inp=card.querySelector('#mmc-setuplink');
+    inp.select();
+    try{ await navigator.clipboard.writeText(info.link); S.toast='Link copied.'; }
+    catch(e){ document.execCommand('copy'); S.toast='Link copied.'; }
+    render();
+  };
+  card.querySelector('#mmc-setuplink-close').onclick=()=>{ S.setupLinkFor=null; render(); };
+  return card;
 }
 async function denyTeacherRequest(requestId, btnEl){
   if(!confirm('Deny this request? No account will be created.')) return;
@@ -5255,6 +5295,9 @@ function renderStudentsTab(mode){
   const wrap=el('<div></div>');
 
   if(mode==='teachers'){
+
+  const linkCard = renderSetupLinkCard();
+  if(linkCard) wrap.appendChild(linkCard);
 
   if(S.inviteTeacherResult){
     const r=S.inviteTeacherResult;
@@ -5353,8 +5396,13 @@ function renderStudentsTab(mode){
         const isSelf = (t.email||'').toLowerCase()===myEmail;
         const row=el(`<div class="mmc-row" style="justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--paper-line);flex-wrap:wrap;gap:8px;">
           <div><b>${esc(t.name||t.email)}</b> <span class="meta">${esc(t.email)}${t.status==='revoked'? ' · revoked' : ''}</span></div>
-          ${(!isSelf && t.status==='active') ? `<button class="mmc-btn danger sm" data-act="revoke">Revoke access</button>` : ''}
+          <div class="mmc-row" style="gap:6px;">
+            ${(t.status==='active') ? `<button class="mmc-btn ghost sm" data-act="setuplink">Setup link</button>` : ''}
+            ${(!isSelf && t.status==='active') ? `<button class="mmc-btn danger sm" data-act="revoke">Revoke access</button>` : ''}
+          </div>
         </div>`);
+        const linkBtn=row.querySelector('[data-act="setuplink"]');
+        if(linkBtn) linkBtn.onclick=()=>fetchSetupLink(t.email, linkBtn);
         const revokeBtn=row.querySelector('[data-act="revoke"]');
         if(revokeBtn) revokeBtn.onclick=()=>revokeTeacherAccess(t.email, revokeBtn);
         directoryCard.appendChild(row);
