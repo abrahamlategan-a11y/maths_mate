@@ -5554,7 +5554,7 @@ async function inviteTeacherColleague(name, email, btnEl){
     const call = httpsCallable(functions, 'inviteTeacher');
     const res = await call({ name, email });
     await sendPasswordResetEmail(auth, res.data.email);
-    S.inviteTeacherResult = { name, email: res.data.email };
+    S.inviteTeacherResult = { name, email: res.data.email, setupLink: res.data.setupLink||null };
   }catch(e){
     S.toast = 'Could not invite colleague: '+(e.message||'unknown error');
   }
@@ -5694,13 +5694,36 @@ function renderStudentsTab(mode){
 
   if(S.inviteTeacherResult){
     const r=S.inviteTeacherResult;
+    const msg = `Hi ${r.name||''},\n\n`+
+      `I've set you up on Mathmentum — weekly maths practice that marks itself and shows you who's getting it.\n\n`+
+      `Set your password here:\n${r.setupLink||''}\n\n`+
+      `Then sign in any time at https://mathmentum.com.au\n\n`+
+      `You'll have your own classes and students, completely separate from mine.`;
     const banner=el(`
       <div class="mmc-card" style="background:#E7F9EE;border-color:#2E9E4F;margin-bottom:14px;">
-        <h3>Invitation sent to ${esc(r.name||r.email)}</h3>
-        <div class="meta">An email just went to <b>${esc(r.email)}</b> with a link to set up their own password. Once they do, they'll have their own completely separate teacher account — their own classes, students, and revision sets, with no visibility into yours (and you won't see theirs).</div>
-        <button class="mmc-btn ghost sm" id="mmc-invite-dismiss" style="margin-top:10px;">Done</button>
+        <h3>${esc(r.name||r.email)} is set up</h3>
+        <div class="meta">Their account exists and they have their own classes, students and sets — completely separate from yours. Send them this yourself; don't rely on our email reaching them.</div>
+        ${r.setupLink ? `
+        <div class="mmc-field" style="margin-top:12px;"><label>Message to send them</label>
+          <textarea id="mmc-invite-msg" rows="8" readonly
+            style="width:100%;padding:10px 12px;border-radius:8px;border:2px solid var(--paper-line);background:var(--paper);font-size:13.5px;font-family:'Nunito Sans',sans-serif;">${esc(msg)}</textarea></div>
+        <div class="mmc-row" style="gap:8px;">
+          <button class="mmc-btn gold sm" id="mmc-invite-copymsg">Copy message</button>
+          <button class="mmc-btn ghost sm" id="mmc-invite-copylink">Copy link only</button>
+          <button class="mmc-btn ghost sm" id="mmc-invite-dismiss">Done</button>
+        </div>` : `
+        <div class="meta" style="margin-top:10px;">Couldn't generate a setup link — use the <b>Setup link</b> button next to their name in the directory below.</div>
+        <button class="mmc-btn ghost sm" id="mmc-invite-dismiss" style="margin-top:10px;">Done</button>`}
       </div>
     `);
+    const copyTo=async (text,label)=>{
+      try{ await navigator.clipboard.writeText(text); }catch(e){}
+      S.toast=label+' copied.'; render();
+    };
+    const cm=banner.querySelector('#mmc-invite-copymsg');
+    if(cm) cm.onclick=()=>copyTo(msg,'Message');
+    const cl=banner.querySelector('#mmc-invite-copylink');
+    if(cl) cl.onclick=()=>copyTo(r.setupLink,'Link');
     banner.querySelector('#mmc-invite-dismiss').onclick=()=>{ S.inviteTeacherResult=null; render(); };
     wrap.appendChild(banner);
   }
