@@ -3632,28 +3632,40 @@ async function generateLoginCardsPDF(students, btnId, idleLabel, btnEl){
   idleLabel = idleLabel || (btnEl ? btnEl.textContent : 'Download Login Cards PDF');
   const setBtnState=(text,disabled)=>{ if(btn){ btn.textContent=text; btn.disabled=disabled; } };
   setBtnState('Preparing…', true);
+  // jsPDF is REQUIRED — without it there are no cards at all.
   try{
-    // Load both in parallel, then confirm each global has actually appeared.
-    await Promise.all([
-      window.jspdf  ? Promise.resolve() : loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'),
-      window.QRCode ? Promise.resolve() : loadScriptOnce('https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js'),
-    ]);
+    if(!window.jspdf) await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
     await waitForGlobal('jspdf');
-    await waitForGlobal('QRCode');
   }catch(e){
     // Surface the real reason — a blocked CDN on a school network and a plain
     // offline error need different responses from the teacher.
     console.error('PDF tools failed to load:', e);
-    S.toast='Could not load the PDF tools ('+(e && e.message ? e.message : 'unknown error')+'). If your school network blocks cdnjs.cloudflare.com or cdn.jsdelivr.net, use Download logins CSV instead.';
+    S.toast='Could not load the PDF tool ('+(e && e.message ? e.message : 'unknown error')+'). If your school network blocks cdnjs.cloudflare.com, use Download logins CSV instead.';
     setBtnState(idleLabel, false); render(); return;
   }
   // Printed on every card, so it must be the address we want people typing —
   // not whatever local or GitHub URL the teacher happened to be on.
   const siteUrl = 'https://mathmentum.com.au';
   const siteLabel = 'mathmentum.com.au';
+  // The QR code is a convenience, not a requirement — the web address is printed
+  // on every card either way. jsdelivr is blocked on some school networks, so we
+  // try a couple of mirrors and simply carry on without a QR if none load.
   let qrDataUrl = null;
-  try{ qrDataUrl = await window.QRCode.toDataURL(siteUrl, {width:300, margin:1}); }
-  catch(e){ console.warn('QR code generation failed — continuing without it:', e); }
+  if(!window.QRCode){
+    const mirrors = [
+      'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
+      'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js',
+      'https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js',
+    ];
+    for(const m of mirrors){
+      try{ await loadScriptOnce(m); await waitForGlobal('QRCode', 3000); break; }
+      catch(e){ console.warn('QR mirror unavailable:', m); }
+    }
+  }
+  if(window.QRCode && typeof window.QRCode.toDataURL === 'function'){
+    try{ qrDataUrl = await window.QRCode.toDataURL(siteUrl, {width:300, margin:1}); }
+    catch(e){ console.warn('QR code generation failed — continuing without it:', e); }
+  }
 
   try{
     const { jsPDF } = window.jspdf;
