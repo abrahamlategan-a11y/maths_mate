@@ -3910,6 +3910,12 @@ async function handleAuthChange(user){
       const teachersSnap = await getDoc(doc(db,'config','teachers'));
       S.teacherEmails = teachersSnap.exists() ? (teachersSnap.data().emails||[]) : [];
       S.isTeacher = S.teacherEmails.map(e=>String(e).toLowerCase()).includes((user.email||'').toLowerCase());
+      if(S.isTeacher && S.pendingDeepLinkTab){
+        S.teacherTab = S.pendingDeepLinkTab;
+        S.pendingDeepLinkTab = null;
+        // Clear it from the address bar so a later refresh doesn't yank them back.
+        try{ history.replaceState(null,"", window.location.pathname); }catch(e){}
+      }
       const profSnap = await getDoc(doc(db,'profiles',user.uid));
       S.profile = profSnap.exists() ? profSnap.data() : { displayName:user.displayName||user.email, email:user.email };
     }catch(e){ S.error='Could not load your account details.'; }
@@ -4028,6 +4034,7 @@ function render(){
   else if(!S.user){ body.appendChild(renderAuth()); }
   else if(S.previewStudentUid){ body.appendChild(renderStudentPreview()); }
   else if(S.isTeacher){ body.appendChild(renderTeacher()); }
+  else if(isAwaitingApproval()){ body.appendChild(renderAwaitingApproval()); }
   else { body.appendChild(renderStudent()); }
   root.appendChild(body);
   const ttInput=document.getElementById('mmc-tt-input');
@@ -4104,8 +4111,8 @@ function renderAuth(){
     if(S.teacherRequestSubmitted){
       const done=el(`
         <div class="mmc-card">
-          <h3>Request sent</h3>
-          <div class="meta">Thanks — your request is with the admin now. You'll get an email once it's approved, with a link to set up your password.</div>
+          <h3>Account created</h3>
+          <div class="meta">Your account is ready and your request is with the admin. Once it's approved you can sign in with the email and password you just chose — nothing else to do, and no email to wait for.</div>
           <a href="#" id="mmc-req-back" style="display:inline-block;margin-top:10px;font-size:12.5px;color:var(--ink-soft);">← back to log in</a>
         </div>
       `);
@@ -4113,27 +4120,57 @@ function renderAuth(){
       wrap.appendChild(done);
       return wrap;
     }
+    // Teachers choose their own password up front. Every previous flow depended on
+    // an email arriving — and across the first handful of real invitations, one was
+    // quarantined by a school filter, one by Hotmail, and Outlook mangled the link
+    // in a third. Nothing in this flow needs email to work.
     const card=el(`
       <div class="mmc-card">
-        <h3>Request teacher access</h3>
+        <h3>Sign up as a teacher</h3>
         ${S.authError? `<div class="mmc-autherr">${esc(S.authError)}</div>` : ''}
-        <div class="meta">Every request is reviewed before an account is created — you'll get an email to set up your password once it's approved.</div>
+        <div class="meta">Choose your own password now. An admin approves new teachers, usually quickly — then you just sign in. No email needed.</div>
         <div class="mmc-field"><label>Your name</label><input type="text" id="mmc-a-name" placeholder="e.g. Priya Nair"></div>
-        <div class="mmc-field"><label>Your email</label><input type="email" id="mmc-a-email" placeholder="you@example.com"></div>
-        <button class="mmc-btn gold" id="mmc-a-go">Request access</button>
+        <div class="mmc-field"><label>Your email</label><input type="email" id="mmc-a-email" placeholder="you@example.com" autocomplete="username"></div>
+        <div class="mmc-field"><label>Choose a password</label><input type="password" id="mmc-a-pw" autocomplete="new-password" placeholder="At least 6 characters"></div>
+        <div class="mmc-field"><label>Confirm password</label><input type="password" id="mmc-a-pw2" autocomplete="new-password"></div>
+        <button class="mmc-btn gold" id="mmc-a-go">Create my account</button>
       </div>
     `);
     card.querySelector('#mmc-a-go').onclick=async ()=>{
       const name=card.querySelector('#mmc-a-name').value.trim();
       const email=card.querySelector('#mmc-a-email').value.trim();
-      if(!name || !email || !email.includes('@')){ S.authError='Please fill in every field with a valid email.'; render(); return; }
-      const btn=card.querySelector('#mmc-a-go'); btn.disabled=true; btn.textContent='Sending…';
+      const pw=card.querySelector('#mmc-a-pw').value;
+      const pw2=card.querySelector('#mmc-a-pw2').value;
+      if(!name || !email || !email.includes('@')){ S.authError='Please fill in your name and a valid email.'; render(); return; }
+      if(pw.length<6){ S.authError='Your password needs at least 6 characters.'; render(); return; }
+      if(pw!==pw2){ S.authError="The two passwords don't match."; render(); return; }
+      const btn=card.querySelector('#mmc-a-go'); btn.disabled=true; btn.textContent='Creating…';
       try{
+        // Create the sign-in account first, then lodge the request. The account
+        // exists but has no teacher permissions until an admin approves it, so
+        // signing in before then shows a "waiting for approval" screen.
+        try{
+          await createUserWithEmailAndPassword(auth, email, pw);
+        }catch(e){
+          if(e && e.code==='auth/email-already-in-use'){
+            // They may have signed up before, or been invited. Signing in proves
+            // it's them and still lodges the request.
+            await signInWithEmailAndPassword(auth, email, pw);
+          } else { throw e; }
+        }
         const call = httpsCallable(functions, 'requestTeacherAccess');
         await call({ name, email, referredBy: S.referredBy || null });
         S.authError=null; S.teacherRequestSubmitted=true;
-      }catch(e){ S.authError = e.message || 'Could not send the request — check your connection.'; }
-      btn.disabled=false; btn.textContent='Request access';
+      }catch(e){
+        const code=(e && e.code)||'';
+        S.authError =
+          code.includes('email-already-in-use') ? 'There is already an account for that email. Try signing in, or use "Forgot your password?".'
+          : code.includes('wrong-password') || code.includes('invalid-credential') ? 'There is already an account for that email and that password is not right. Try "Forgot your password?".'
+          : code.includes('weak-password') ? 'That password is too weak — try a longer one.'
+          : code.includes('invalid-email') ? 'That email address does not look right.'
+          : (e.message || 'Could not create your account — check your connection.');
+      }
+      btn.disabled=false; btn.textContent='Create my account';
       render();
     };
     wrap.appendChild(card);
@@ -4200,8 +4237,8 @@ function renderAuth(){
     <div class="mmc-entrypanels">
       <div class="ep ep-teacher">
         <b>New teacher?</b>
-        <span>Request access and you'll be set up with your own classes.</span>
-        <button class="mmc-btn ghost sm" id="mmc-req-go">Request teacher access</button>
+        <span>Sign up, choose a password, and you'll be approved shortly.</span>
+        <button class="mmc-btn ghost sm" id="mmc-req-go">Sign up as a teacher</button>
       </div>
       <div class="ep ep-student">
         <b>Students</b>
@@ -4606,6 +4643,36 @@ function renderChangePasswordCard(){
     render();
   };
   return card;
+}
+
+
+// Signed in, but not yet approved as a teacher. Without this they'd fall through
+// to the student view, which expects a student profile and shows nothing useful.
+// Students are excluded by their address: they use the internal students domain,
+// never a real email.
+function isAwaitingApproval(){
+  if(!S.user || S.isTeacher) return false;
+  const em = String(S.user.email||'');
+  if(!em || em.endsWith('@'+STUDENT_DOMAIN)) return false;
+  return true;
+}
+function renderAwaitingApproval(){
+  const wrap=el('<div></div>');
+  wrap.appendChild(el(`
+    <div class="mmc-card">
+      <h3>You're all set — just waiting on approval</h3>
+      <div class="meta">Your account exists and your password works. An admin needs to approve you before your classes appear, which is usually quick.</div>
+      <div class="meta" style="margin-top:10px;">Signed in as <b>${esc(S.user.email||'')}</b>. Come back and sign in again once you've been approved — there's no email to wait for.</div>
+    </div>
+  `));
+  const row=el('<div class="mmc-row" style="margin-top:10px;gap:8px;"></div>');
+  const again=el('<button class="mmc-btn gold sm">Check again</button>');
+  again.onclick=async ()=>{ await handleAuthChange(auth.currentUser); render(); };
+  const out=el('<button class="mmc-btn ghost sm">Sign out</button>');
+  out.onclick=()=>signOut(auth);
+  row.appendChild(again); row.appendChild(out);
+  wrap.appendChild(row);
+  return wrap;
 }
 
 function renderStudentPreview(){
@@ -5743,14 +5810,14 @@ async function approveTeacherRequest(requestId, email, btnEl){
   try{
     const call = httpsCallable(functions, 'approveTeacherRequest');
     const res = await call({ requestId });
-    // Same continueUrl as the server side, so Firebase's reset page offers a
-    // working link back to the app instead of a dead "go to login" message.
-    await sendPasswordResetEmail(auth, email, { url: 'https://mathmentum.com.au', handleCodeInApp: false });
-    // Show the setup link straight away as well as emailing it. A school mail
-    // filter can quarantine a perfectly valid message, and an admin standing
-    // next to the new teacher shouldn't have to wait on anyone's spam folder.
-    S.setupLinkFor = { email, link: (res && res.data && res.data.setupLink) || null };
-    S.toast = `Approved — an email is on its way to ${email}.`;
+    // No password reset is sent on approval any more. Teachers now choose their
+    // own password when they sign up, so mailing them a reset link would both be
+    // pointless and actively harmful — clicking it would invalidate the password
+    // they already have. The Setup link button in the directory covers the older
+    // accounts that were created before this change.
+    S.setupLinkFor = null;
+    void res;
+    S.toast = `Approved — ${email} can sign in now with the password they chose.`;
   }catch(e){
     S.toast = 'Could not approve: '+(e.message||'unknown error');
   }
