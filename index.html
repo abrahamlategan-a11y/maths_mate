@@ -216,6 +216,18 @@
   .mmc-worth-t {
     font-size:19px; font-weight:600; line-height:1.32; letter-spacing:-.015em; color:var(--ink);
   }
+  .mmc-worth-item.has-detail { cursor:pointer; }
+  .mmc-worth-item.has-detail:hover .mmc-worth-more { opacity:1; }
+  .mmc-worth-more {
+    font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--ink-soft); margin-left:9px; opacity:.55; white-space:nowrap;
+    border-bottom:1.5px solid currentColor; padding-bottom:1px;
+  }
+  .mmc-worth-names { display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
+  .mmc-worth-names span {
+    font-size:12.5px; font-weight:600; padding:3px 9px; border-radius:999px;
+    background:var(--paper-line); color:var(--ink);
+  }
   .mmc-setfilter { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:16px; }
   .mmc-setchip {
     font-family:'Nunito Sans',sans-serif; font-size:13px; font-weight:700;
@@ -5234,7 +5246,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.52';
+const BUILD = '2026-08-10.53';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -5657,7 +5669,7 @@ const S = {
   weeks:[], results:[], profiles:{},
   previewStudentUid:null, previewSaved:null, setupLinkFor:null, timeOverride:null, teacherTab:'home', weeksView:'create', studentsView:'list', editingClasses:false, editingDraftId:null, showArchivedWeeks:false,
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null, ttDetailUid:null,
-  stuExpandedUid:null, overviewUid:null, raceLeft:null, newClass:null, setsFilter:'ALL', justCreatedId:null,
+  stuExpandedUid:null, overviewUid:null, raceLeft:null, newClass:null, setsFilter:'ALL', justCreatedId:null, worthOpen:null,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
   quickDeployDone:null, resetPasswordResult:null,
@@ -6379,7 +6391,8 @@ function renderTeacherHome(){
   if(afterHoursNames.length){
     notes.push({score:55+afterHoursNames.length, k:'Nobody asked them to', good:true,
       t:afterHoursNames.length===1 ? afterHoursNames[0]+' practised after hours this week.'
-        : afterHoursNames.length+' students practised after hours this week.'});
+        : afterHoursNames.length+' students practised after hours this week.',
+      detail:afterHoursNames.slice()});
   }
 
   const quiet = roster.filter(u=>!activeUids.has(u));
@@ -6387,7 +6400,8 @@ function renderTeacherHome(){
     const names = quiet.map(nameOf).filter(Boolean);
     notes.push({score:60+quiet.length, k:'Gone quiet', good:false,
       t: (quiet.length===1 && names.length) ? names[0]+' — nothing all week.'
-        : quiet.length+" students haven't touched it this week"+(names.length?'. '+names.slice(0,2).join(', ')+(quiet.length>2?' and others':''):'')+'.'});
+        : quiet.length+" students haven't touched it this week.",
+      detail:names.slice()});
   }
 
   if(!notes.length && scored.length>=3){
@@ -6440,7 +6454,8 @@ function renderTeacherHome(){
     const names=never.map(nameOf).filter(Boolean);
     notes.push({score:65, k:'Never started', good:false,
       t: never.length===1 && names.length ? names[0]+' has never used it.'
-        : never.length+' students have never used it'+(names.length?', including '+names.slice(0,2).join(' and '):'')+'.'});
+        : never.length+' students have never used it.',
+      detail:names.slice()});
   }
 
   // How the most recent published set is landing. Counted against the students the set was
@@ -6455,7 +6470,8 @@ function renderTeacherHome(){
       const doneSet=new Set(results.filter(r=>r.weekId===latest.id).map(r=>r.uid));
       const did=aimedAt.filter(u=>doneSet.has(u)).length;
       if(did<aimedAt.length) notes.push({score:80, k:'Still outstanding', good:false,
-        t:(aimedAt.length-did)+' of '+aimedAt.length+" haven't done "+(latest.label||'the latest set')+' yet.'});
+        t:(aimedAt.length-did)+' of '+aimedAt.length+" haven't done "+(latest.label||'the latest set')+' yet.',
+        detail:aimedAt.filter(u=>!doneSet.has(u)).map(nameOf).filter(Boolean)});
       else notes.push({score:50, k:'All in', good:true,
         t:'Every student has finished '+(latest.label||'the latest set')+'.'});
     }
@@ -6471,11 +6487,10 @@ function renderTeacherHome(){
   try{
     const clsIns = computeTTClassInsights(S.ttAttempts, roster);
     clsIns.slice(0,2).forEach(g=>{
-      const names=g.students.map(u=>(S.profiles[u]&&S.profiles[u].displayName||'').split(/\s+/)[0]).filter(Boolean);
-      const who = names.length<=3 ? names.join(', ') : `${names.slice(0,3).join(', ')} and ${names.length-3} more`;
       const kind = (g.kinds.wrong||0) >= (g.kinds.slow||0) ? 'getting wrong' : 'slow on';
       notes.push({ score:90+g.count, k:'Whole-class gap', good:false,
-        t:`${g.count} students are ${kind} ${ttGroupLabel(g.op,g.table)} — ${who}.` });
+        t:`${g.count} students are ${kind} ${ttGroupLabel(g.op,g.table)}.`,
+        detail:g.students.map(u=>(S.profiles[u]&&S.profiles[u].displayName)||'').filter(Boolean) });
     });
     // A real win, named. The panel had almost nothing positive that was about LEARNING
     // rather than effort, and a teacher deserves to be told what is working.
@@ -6508,15 +6523,28 @@ function renderTeacherHome(){
     // This is the one part of the home page a teacher should read every morning, and it
     // looked like every other card. Given its own heading, a heavier frame and a count, so
     // it reads as a briefing rather than another panel.
+    // "8 students practised after hours" is the headline; WHICH eight is the useful part.
+    // Anything with names behind it opens on click — the summary stays short, and the
+    // detail is one tap away rather than crammed into the sentence.
     const nc=el(`<div class="mmc-card mmc-worth">
       <div class="mmc-worth-head">
         <span class="mmc-worth-title">Worth knowing</span>
         <span class="mmc-worth-count">${show.length} thing${show.length===1?'':'s'} to look at</span>
       </div>
-      ${show.map(n=>`<div class="mmc-worth-item ${n.good?'good':'flag'}">
-        <div class="mmc-worth-k">${esc(n.k)}</div>
-        <div class="mmc-worth-t">${esc(n.t)}</div></div>`).join('')}
     </div>`);
+    show.forEach((n,i)=>{
+      const has = Array.isArray(n.detail) && n.detail.length>1;
+      const open = S.worthOpen===i;
+      const item=el(`<div class="mmc-worth-item ${n.good?'good':'flag'}${has?' has-detail':''}">
+        <div class="mmc-worth-k">${esc(n.k)}</div>
+        <div class="mmc-worth-t">${esc(n.t)}${has?`<span class="mmc-worth-more">${open?'hide':'who?'}</span>`:''}</div>
+        ${open&&has?`<div class="mmc-worth-names">${n.detail.map(x=>`<span>${esc(x)}</span>`).join('')}</div>`:''}
+      </div>`);
+      if(has){
+        item.onclick=()=>{ S.worthOpen = open ? null : i; render(); };
+      }
+      nc.appendChild(item);
+    });
     wrap.appendChild(nc);
   }
 
