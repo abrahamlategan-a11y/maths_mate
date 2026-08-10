@@ -142,6 +142,40 @@
   @keyframes mmc-classpulse { 0%,100%{ transform:scale(1);} 50%{ transform:scale(1.03);} }
   .mmc-classrace .mmc-classflag { animation:mmc-classpulse 1.8s ease-in-out infinite; }
   @media (prefers-reduced-motion:reduce){ .mmc-classrace .mmc-classflag { animation:none; } }
+  /* A golden question has to be noticeable before you answer it, or there is no moment of
+     "ooh". Gold border, warm fill, and a slow shine. */
+  .mmc-golden {
+    border:3px solid #E8A33D !important;
+    background:linear-gradient(135deg,#FFF8E6,#FFEFC6) !important;
+    box-shadow:0 0 0 4px rgba(232,163,61,.18), 5px 5px 0 var(--ink) !important;
+    position:relative; overflow:hidden;
+  }
+  .mmc-golden::after {
+    content:''; position:absolute; top:0; left:-60%; width:40%; height:100%;
+    background:linear-gradient(90deg,transparent,rgba(255,255,255,.75),transparent);
+    animation:mmc-shine 2.4s ease-in-out infinite;
+  }
+  @keyframes mmc-shine { 0%{left:-60%;} 60%,100%{left:120%;} }
+  .mmc-goldenflag {
+    display:inline-block; background:#E8A33D; color:var(--ink);
+    font-family:'Baloo 2',sans-serif; font-weight:800; font-size:13px; letter-spacing:.1em;
+    text-transform:uppercase; padding:5px 14px; border-radius:999px; margin-bottom:10px;
+  }
+  .mmc-coinbar {
+    display:inline-flex; align-items:center; gap:7px; background:#FFF3D6;
+    border:2px solid #E8A33D; border-radius:999px; padding:5px 14px;
+    font-family:'Baloo 2',sans-serif; font-weight:800; font-size:15px; color:var(--ink);
+  }
+  .mmc-animalgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(78px,1fr)); gap:8px; margin-top:10px; }
+  .mmc-animalbtn {
+    background:var(--paper); border:2px solid var(--ink); border-radius:12px;
+    padding:9px 4px 7px; cursor:pointer; text-align:center; box-shadow:2px 2px 0 var(--ink);
+    font-family:'Nunito Sans',sans-serif;
+  }
+  .mmc-animalbtn:active { transform:translateY(2px); box-shadow:none; }
+  .mmc-animalbtn span { display:block; font-size:26px; line-height:1.1; }
+  .mmc-animalbtn small { font-size:11px; font-weight:700; color:var(--ink-soft); }
+  @media (prefers-reduced-motion:reduce){ .mmc-golden::after { animation:none; display:none; } }
   .mmc-pwwrap { position:relative; }
   .mmc-pwwrap input { padding-right:44px !important; }
   .mmc-pweye {
@@ -3303,6 +3337,63 @@ const HORSE_COLOR_FILTERS = {
   gold: 'hue-rotate(35deg) saturate(2.2) brightness(1.25)',
 };
 const HORSE_HAT_EMOJI = { none:'', cap:'🧢', crown:'👑', party:'🎉', wizard:'🧙' };
+// ---------- Gold coins & race animals ----------
+// A rare find during practice, spent on being something other than a horse for ONE race.
+// Deliberately outside the rank ladder: colours and hats are earned permanently through
+// rank, so an Expert already owns them all. Nobody ever owns an animal permanently, which
+// makes it the one perk an Expert still has to go and find.
+const RACE_ANIMALS = [
+  { key:'unicorn',  emoji:'🦄', label:'Unicorn' },
+  { key:'dragon',   emoji:'🐉', label:'Dragon' },
+  { key:'cheetah',  emoji:'🐆', label:'Cheetah' },
+  { key:'dolphin',  emoji:'🐬', label:'Dolphin' },
+  { key:'eagle',    emoji:'🦅', label:'Eagle' },
+  { key:'shark',    emoji:'🦈', label:'Shark' },
+  { key:'tiger',    emoji:'🐅', label:'Tiger' },
+  { key:'trex',     emoji:'🦖', label:'T-Rex' },
+  { key:'kangaroo', emoji:'🦘', label:'Kangaroo' },
+  { key:'octopus',  emoji:'🐙', label:'Octopus' },
+  { key:'penguin',  emoji:'🐧', label:'Penguin' },
+  { key:'frog',     emoji:'🐸', label:'Frog' },
+  { key:'flamingo', emoji:'🦩', label:'Flamingo' },
+  { key:'llama',    emoji:'🦙', label:'Llama' },
+  { key:'duck',     emoji:'🦆', label:'Duck' },
+  { key:'pig',      emoji:'🐷', label:'Pig' },
+  { key:'hedgehog', emoji:'🦔', label:'Hedgehog' },
+  { key:'tortoise', emoji:'🐢', label:'Tortoise' },
+  { key:'sloth',    emoji:'🦥', label:'Sloth' },
+  { key:'snail',    emoji:'🐌', label:'Snail' },
+];
+// One in twenty-five, so a child finds roughly one per practice session. Tune here.
+const GOLDEN_ODDS = 25;
+function animalEmoji(key){
+  const a = RACE_ANIMALS.find(x=>x.key===key);
+  return a ? a.emoji : '🐎';
+}
+function myCoins(){ return (S.profile && Number(S.profile.coins)) || 0; }
+async function awardGoldCoin(){
+  if(!S.user || !S.profile) return;
+  try{
+    await updateDoc(doc(db,'profiles',S.user.uid), { coins: increment(1) });
+    // Reflect it immediately — the snapshot will confirm a moment later, and a child
+    // who just found treasure should not watch an unchanged counter.
+    S.profile.coins = myCoins()+1;
+  }catch(e){ /* a lost coin is not worth an error message mid-practice */ }
+}
+// Spending writes the animal onto the entry in THIS race. Participant documents are
+// created fresh per race, so the perk expires by construction rather than by a timer
+// somebody has to remember to run.
+async function spendCoinOnAnimal(gameId, animalKey){
+  if(myCoins()<1){ S.toast='You need a gold coin for that.'; render(); return; }
+  try{
+    await updateDoc(doc(db,'liveGames',gameId,'participants',S.user.uid), { animal:animalKey });
+    await updateDoc(doc(db,'profiles',S.user.uid), { coins: increment(-1) });
+    S.profile.coins = Math.max(0, myCoins()-1);
+    const a=RACE_ANIMALS.find(x=>x.key===animalKey);
+    S.toast=`You're racing as a ${a?a.label.toLowerCase():'mystery animal'} this race!`;
+  }catch(e){ S.toast='Could not use your coin — check your connection.'; }
+  render();
+}
 // ---------- Class groups (Support / Mainstream / Extension) for differentiation ----------
 const STUDENT_GROUPS = [
   { key:'support', label:'Support', emoji:'🌱' },
@@ -4245,7 +4336,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.30';
+const BUILD = '2026-08-10.31';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -7691,6 +7782,42 @@ function bestTTScore(level){
 }
 const COLOR_LABELS = { default:'Classic Brown', black:'Midnight Black', white:'Snow White', purple:'Royal Purple', gold:'Golden' };
 const HAT_LABELS = { none:'No hat', cap:'Cap', crown:'Crown', party:'Party Hat', wizard:'Wizard Hat' };
+// Spending a coin. Shown even at zero, because a child needs to know the thing exists
+// before they will go looking for one — an invisible reward motivates nobody.
+function renderCoinAnimalCard(room){
+  const coins=myCoins();
+  const me=(S.liveParticipants||[]).find(p=>p.id===S.user.uid);
+  const current=me && me.animal;
+  const card=el(`<div class="mmc-card">
+    <div class="mmc-row" style="justify-content:space-between;align-items:center;">
+      <h3 style="margin:0;">Gold coins</h3>
+      <div class="mmc-coinbar">🪙 ${coins}</div>
+    </div>
+  </div>`);
+  if(current){
+    const a=RACE_ANIMALS.find(x=>x.key===current);
+    card.appendChild(el(`<div class="meta" style="margin-top:8px;font-weight:700;color:var(--ink);">
+      ${a?a.emoji:'🐎'} You're racing as a ${a?esc(a.label.toLowerCase()):'mystery animal'} this race. Just this one!</div>`));
+    return card;
+  }
+  if(coins<1){
+    card.appendChild(el(`<div class="meta" style="margin-top:6px;">Find gold coins on golden questions in Fast Facts practice. Spend one to race as a different animal — for one race only.</div>`));
+    return card;
+  }
+  card.appendChild(el(`<div class="meta" style="margin-top:6px;">Spend a coin to race as something else. It lasts for this race only.</div>`));
+  const grid=el('<div class="mmc-animalgrid"></div>');
+  RACE_ANIMALS.forEach(a=>{
+    const b=el(`<button type="button" class="mmc-animalbtn"><span>${a.emoji}</span><small>${esc(a.label)}</small></button>`);
+    b.onclick=()=>{
+      if(!confirm(`Spend 1 gold coin to race as a ${a.label.toLowerCase()}? It only lasts this race.`)) return;
+      spendCoinOnAnimal(room.id, a.key);
+    };
+    grid.appendChild(b);
+  });
+  card.appendChild(grid);
+  return card;
+}
+
 function renderHorseCustomizeCard(){
   const info = computeBadgeInfo(S.ttAttempts, S.profile);
   const tier = info.tier;
@@ -7813,7 +7940,10 @@ function renderTimetableTab(){
     card.querySelector('[data-go="challenge"]').onclick=()=>startTTChallenge(lv.k);
     cardsRow.appendChild(card);
   });
-  wrap.appendChild(el('<h3 style="font-family:Fredoka,sans-serif;margin:4px 0 12px;">Fast Facts Training Ground</h3>'));
+  wrap.appendChild(el(`<div class="mmc-row" style="justify-content:space-between;align-items:center;margin:4px 0 12px;">
+    <h3 style="font-family:Fredoka,sans-serif;margin:0;">Fast Facts Training Ground</h3>
+    <div class="mmc-coinbar" title="Gold coins found on golden questions. Spend them in the Racing Ground.">🪙 ${myCoins()}</div>
+  </div>`));
   wrap.appendChild(el(`<div class="meta" style="margin-bottom:10px;">
     <strong>🐢 Practice</strong> — ${TT_PRACTICE_TOTAL} questions, no clock, take your time. It shows you the answer when you get one wrong.<br>
     <strong>⏱ Challenge</strong> — 5 minutes, answer as many as you can. Both build your race status, but only the Challenge counts towards your accuracy.
@@ -7953,9 +8083,11 @@ function startTTChallenge(level, custom){
 // `mode` is the only difference, and it is checked rather than duplicated.
 function startTTPractice(level, custom){
   S.tt = { mode:'practice', active:true, finished:false, level, custom:custom||null, year:studentYear(S.profile), timeLeft:null,
+           golden:false, coinsFound:0,
            score:0, attempted:0, qIndex:0, currentQ:null, lastResult:null, reveal:null, typedValue:'',
            facts:{}, questionStartedAt:Date.now() };
   S.tt.currentQ = ttQuestionFor(S.tt, 0);
+  S.tt.golden = Math.random() < 1/GOLDEN_ODDS;
   S.tt.questionStartedAt = Date.now();
   render();
 }
@@ -7981,9 +8113,14 @@ function submitTTAnswer(given){
   S.tt.attempted++;
   if(correct) S.tt.score++;
   if(S.tt.mode==='practice'){
+    // A golden question only pays out if they get it right — that is what makes it worth
+    // slowing down for. Miss it and the coin is gone.
+    const wonCoin = !!(S.tt.golden && correct);
+    if(wonCoin){ S.tt.coinsFound=(S.tt.coinsFound||0)+1; awardGoldCoin(); }
     // Hold on this question. The child reads the result, then moves on when ready —
     // no clock, so there is nothing to be lost by looking at it properly.
-    S.tt.reveal = { correct, prompt:q.prompt, answer:String(q.answer), given:String(given||'') };
+    S.tt.reveal = { correct, prompt:q.prompt, answer:String(q.answer), given:String(given||''),
+                    golden:!!S.tt.golden, wonCoin };
     S.tt.typedValue='';
     render();
     return;
@@ -8002,6 +8139,9 @@ function nextTTPracticeQuestion(){
   S.tt.qIndex++;
   S.tt.currentQ=ttQuestionFor(S.tt, S.tt.qIndex);
   S.tt.typedValue='';
+  // Golden questions are Practice-only. A shimmer mid-race is a distraction, and the
+  // treasure should reward the careful slow mode rather than the fast one.
+  S.tt.golden = Math.random() < 1/GOLDEN_ODDS;
   // Timed from when the question APPEARS, not from when the previous one was answered —
   // otherwise the seconds spent reading the correction get charged to the next fact.
   S.tt.questionStartedAt=Date.now();
@@ -8048,8 +8188,10 @@ function renderTTChallenge(){
   `);
   head.querySelector('#mmc-tt-quit').onclick=abortTTChallenge;
   wrap.appendChild(head);
+  const isGolden = !!(t.mode==='practice' && t.golden && !t.reveal);
   const qbox=el(`
-    <div class="mmc-card" style="text-align:center;">
+    <div class="mmc-card${isGolden?' mmc-golden':''}" style="text-align:center;">
+      ${isGolden ? '<div class="mmc-goldenflag">🪙 Golden question!</div>' : ''}
       <div style="font-family:'Fredoka',sans-serif;font-size:${String(ttPromptText(t.currentQ)).length>18?'26px':'36px'};font-weight:700;margin-bottom:16px;">${esc(ttPromptText(t.currentQ))}</div>
       <div class="mmc-row" style="justify-content:center;">
         <input type="text" id="mmc-tt-input" class="${t.flash?('mmc-flash-'+t.flash):''}" autocomplete="off" inputmode="${KEYPAD_INPUTMODE}" value="${esc(t.typedValue||'')}" style="width:120px;text-align:center;font-size:22px;padding:10px;border-radius:8px;border:1.5px solid var(--paper-line);">
@@ -8070,6 +8212,8 @@ function renderTTChallenge(){
           ${r.correct ? '✓ Correct!' : '✗ Not quite'}
         </div>
         ${r.correct ? '' : `<div class="meta" style="margin-bottom:4px;">You put ${esc(r.given||'nothing')}.</div>`}
+        ${r.wonCoin ? '<div style="font-size:19px;font-weight:800;margin-top:6px;">🪙 You found a gold coin!</div>'
+          : (r.golden ? '<div class="meta" style="margin-top:6px;">That was a golden question — the coin got away this time.</div>' : '')}
       </div>
     `));
     const nextBtn=el(`<button class="mmc-btn gold" style="margin-top:12px;width:100%;max-width:300px;font-size:20px;padding:14px;">${t.attempted>=TT_PRACTICE_TOTAL?'See how you went':'Next question'}</button>`);
@@ -8154,7 +8298,7 @@ function renderRaceTrack(myUid, capNearFinish){
       <div class="mmc-race-horse${isMe?' me':''}" style="left:calc(${pos}% - 18px);">
         <span class="mmc-race-horse-wrap">
           ${hatEmoji? `<span class="mmc-race-hat">${hatEmoji}</span>` : ''}
-          <span class="mmc-race-emoji" style="filter:${combinedFilter};">🐎</span>
+          <span class="mmc-race-emoji" style="filter:${p.animal? (meGlow||'none') : combinedFilter};">${animalEmoji(p.animal)}</span>
         </span>
         <span class="mmc-race-name">${esc(label)}${isMe?' (you)':''}</span>
       </div>
@@ -8624,7 +8768,8 @@ function renderStudentLiveGame(){
           wrap.appendChild(go);
         }
       } else {
-        wrap.appendChild(el(`<div class="mmc-card"><h3>You're in! ✓</h3><div class="meta">Customize your horse before the race starts.</div></div>`));
+        wrap.appendChild(el(`<div class="mmc-card${room.hostUid?'':' mmc-classrace'}">${room.hostUid?'':'<div class="mmc-classflag">🏫 Class Race</div>'}<h3>You're in! ✓</h3><div class="meta">Get yourself ready before the race starts.</div></div>`));
+        wrap.appendChild(renderCoinAnimalCard(room));
         wrap.appendChild(renderHorseCustomizeCard());
         const readyBtn=el('<button class="mmc-btn gold" style="width:100%;font-size:16px;padding:12px;">I\'m Ready! 🏁</button>');
         readyBtn.onclick=async ()=>{ await syncParticipantCustomization(room.id); S.lobbyReadyForRoom=room.id; render(); };
