@@ -3992,6 +3992,18 @@ function genTTQuestion(level, idx, year){
   return { prompt:`${dividend} ÷ ${divisor}`, answer:quotient, isDivision:true, level };
 }
 function formatMMSS(s){ const m=Math.floor(Math.max(0,s)/60), sec=Math.max(0,s)%60; return `${m}:${String(sec).padStart(2,'0')}`; }
+// A class race used to give every child the same questions, which meant the strongest
+// child won every time and the weakest never had a reason to try. Each racer now works
+// at THEIR OWN level, and the boost table below does the balancing that makes that fair:
+// a hard question moves a horse 1.7 lengths against an easy question's 1.0. The stronger
+// child answers fewer, harder questions and travels further per answer; the child on
+// Support answers more of them. Both can win, and both are doing maths they can actually
+// do. A student with no group set falls back to whatever the host chose.
+const GROUP_LEVEL = { support:'easy', mainstream:'medium', extension:'hard' };
+function studentRaceLevel(profile, fallback){
+  const g = profile && profile.group;
+  return GROUP_LEVEL[g] || fallback || 'medium';
+}
 function raceBoostAmount(level, isDivision, elapsedSec){
   const base = { easy:1.0, medium:1.3, hard:1.7 }[level] + (isDivision?0.3:0);
   const speedFactor = Math.max(0.3, 1 - elapsedSec/12);
@@ -4017,7 +4029,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.15';
+const BUILD = '2026-08-10.16';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -7947,6 +7959,11 @@ function renderTeacherLiveGame(){
   }
 
   if(room.status==='lobby'){
+    // Flag student-hosted rooms clearly. A teacher should never wonder where a race came
+    // from, and this is the only visible sign that a child started one.
+    if(room.hostUid) wrap.appendChild(el(`<div class="mmc-card" style="border-color:var(--gold);">
+      <h3>Started by ${esc(room.hostName||'a student')}</h3>
+      <div class="meta">A student in your class started this race. You can start or end it like any other.</div></div>`));
     const card=el(`
       <div class="mmc-card">
         <h3>🐎 Room open — ${esc(room.level)} level</h3>
@@ -8014,7 +8031,8 @@ function syncMyLiveSession(){
     if(!joined) return;
     if(S.myLive && S.myLive.gameId===room.id) return;
     if(S.myLive && S.myLive.timerHandle) clearInterval(S.myLive.timerHandle);
-    S.myLive = { gameId:room.id, level:room.level, answering:true, qIndex:0, currentQ:genTTQuestion(room.level,0,studentYear(S.profile)),
+    const myLevel = studentRaceLevel(S.profile, room.level);
+    S.myLive = { gameId:room.id, level:myLevel, answering:true, qIndex:0, currentQ:genTTQuestion(myLevel,0,studentYear(S.profile)),
       score:0, attempted:0, position:0, questionStartedAt:Date.now(), timerHandle:null, typedValue:'' };
     startMyLiveTimer();
   }
@@ -8026,6 +8044,8 @@ function startMyLiveTimer(){
     const left=liveTimeLeft(r);
     const timerEl=document.getElementById('mmc-live-my-timer');
     if(timerEl) timerEl.textContent=formatMMSS(left);
+    // If this player is the host, their screen is the only thing that can close the room.
+    endMyHostedRaceIfDue(r);
     if(left<=0){ clearInterval(S.myLive.timerHandle); S.myLive.answering=false; render(); }
   },1000);
 }
@@ -8048,6 +8068,21 @@ async function submitMyLiveAnswer(given){
   try{ await updateDoc(doc(db,'liveGames',S.myLive.gameId,'participants',S.user.uid), {score:S.myLive.score, attempted:S.myLive.attempted, position:S.myLive.position}); }
   catch(e){ S.toast='Score sync error: '+e.message; render(); }
 }
+// Host-side auto-end. Only the TEACHER's screen runs the five-minute clock that closes a
+// room, so a student-hosted race with no teacher present would sit 'active' forever and
+// block the next race from appearing. Guarded three ways: only the host's device, only
+// once, and only when the clock has genuinely run out.
+let studentHostEndedRoom=null;
+async function endMyHostedRaceIfDue(room){
+  if(!room || room.status!=='active') return;
+  if(room.hostUid !== S.user.uid) return;
+  if(studentHostEndedRoom===room.id) return;
+  if(liveTimeLeft(room) > 0) return;
+  studentHostEndedRoom=room.id;
+  try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended'}); }
+  catch(e){ studentHostEndedRoom=null; }   // let it retry next tick
+}
+
 function renderMyLiveSession(){
   const wrap=el('<div></div>');
   const room=currentLiveRoom();
@@ -8105,11 +8140,40 @@ function renderMyLiveSession(){
   }
   return wrap;
 }
+// A student hosting their own race. Deliberately scoped to their OWN teacher's students:
+// teacherUid is copied from their profile and the rules refuse anything else, so a race
+// can never reach a child in another teacher's class. hostUid marks who may start it.
+async function hostStudentRace(){
+  if(!S.profile || !S.profile.teacherUid){ S.toast='You need to be in a class to start a race.'; render(); return; }
+  try{
+    const ref = await addDoc(collection(db,'liveGames'), {
+      teacherUid: S.profile.teacherUid,
+      hostUid: S.user.uid,
+      hostName: S.profile.displayName || '',
+      level: studentRaceLevel(S.profile, 'medium'),   // only a fallback; each racer uses their own
+      status: 'lobby', createdAt: serverTimestamp(), durationSec: 300,
+      classId: S.profile.classId || null
+    });
+    await joinLiveGame(ref.id);
+  }catch(e){ S.toast='Could not start the race — check your connection.'; render(); }
+}
+
 function renderStudentLiveGame(){
   const wrap=el('<div></div>');
   const room=currentLiveRoom();
-  if(!room){
-    wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">🐎</div>No race right now — ask your teacher to start one!</div>'));
+  if(!room || room.status==='ended'){
+    if(room && room.status==='ended') wrap.appendChild(renderLiveLeaderboardCard('Last race', room, true));
+    const card=el(`
+      <div class="mmc-card" style="text-align:center;">
+        <div style="font-size:34px;">🐎</div>
+        <h3>Challenge your class</h3>
+        <div class="meta">Start a race and anyone in your class can join. Everyone gets questions at their own level, so it's a fair race.</div>
+      </div>
+    `);
+    const btn=el('<button class="mmc-btn gold" style="width:100%;font-size:16px;padding:12px;margin-top:6px;">🏁 Start a race</button>');
+    btn.onclick=hostStudentRace;
+    card.appendChild(btn);
+    wrap.appendChild(card);
     return wrap;
   }
   const joined = S.liveParticipants.some(p=>p.id===S.user.uid);
@@ -8117,21 +8181,34 @@ function renderStudentLiveGame(){
     if(!joined){
       const card=el(`
         <div class="mmc-card">
-          <h3>🐎 ${esc(room.level)} race starting soon!</h3>
+          <h3>🐎 ${room.hostUid ? esc((room.hostName||'A classmate')+"'s race") : 'Race'} starting soon!</h3>
           <div class="meta">${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} waiting · Room: <code class="mmc-code">${esc(room.id.slice(0,6))}</code></div>
+          <div class="meta">You'll get questions at your own level.</div>
           <button class="mmc-btn gold" id="mmc-live-join">Join ▶</button>
         </div>
       `);
       card.querySelector('#mmc-live-join').onclick=()=>joinLiveGame(room.id);
       wrap.appendChild(card);
     } else {
+      const iAmHost = room.hostUid === S.user.uid;
       if(S.lobbyReadyForRoom === room.id){
         wrap.appendChild(el(`
           <div class="mmc-card">
             <h3>You're in! ✓</h3>
-            <div class="meta">Waiting for your teacher to start… ${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} ready.</div>
+            <div class="meta">${iAmHost
+              ? `${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} ready. Start when everyone has joined.`
+              : `Waiting for ${room.hostUid? esc(room.hostName||'the host') : 'your teacher'} to start… ${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} ready.`}</div>
           </div>
         `));
+        if(iAmHost){
+          const go=el('<button class="mmc-btn gold" style="width:100%;font-size:16px;padding:12px;">🏁 Start the race</button>');
+          go.onclick=async ()=>{
+            go.disabled=true; go.textContent='Starting…';
+            try{ await updateDoc(doc(db,'liveGames',room.id), {status:'active', startedAt:serverTimestamp()}); }
+            catch(e){ S.toast='Could not start the race — check your connection.'; go.disabled=false; go.textContent='🏁 Start the race'; render(); }
+          };
+          wrap.appendChild(go);
+        }
       } else {
         wrap.appendChild(el(`<div class="mmc-card"><h3>You're in! ✓</h3><div class="meta">Customize your horse before the race starts.</div></div>`));
         wrap.appendChild(renderHorseCustomizeCard());
