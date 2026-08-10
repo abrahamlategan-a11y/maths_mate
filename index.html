@@ -5377,7 +5377,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.55';
+const BUILD = '2026-08-10.56';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -7824,6 +7824,8 @@ function renderGradebookDetail(){
       </div>
     `);
     card.querySelector('#mmc-gb-close').onclick=()=>{ S.gradebookDetail=null; render(); };
+    // Deliberately NOT class-scoped: this is one student's history for one skill, and a
+    // child who changed class should not lose sight of what they did before.
     const pubWeeks=S.weeks.filter(isWeekLive).sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
     let any=false;
     pubWeeks.forEach(w=>{
@@ -7855,7 +7857,8 @@ function renderGradebookDetail(){
 
 function renderLedgerSummary(){
   const wrap=el('<div></div>');
-  const pubWeeks = S.weeks.filter(isWeekLive).sort((a,b)=> (a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
+  const pubWeeks = S.weeks.filter(w=>isWeekLive(w) && weekInCurrentClass(w))
+    .sort((a,b)=> (a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
   const studentUids = classFilteredStudentUids().filter(uid=>{
     const email=(S.profiles[uid].email||'').toLowerCase();
     return !S.teacherEmails.map(e=>String(e).toLowerCase()).includes(email);
@@ -7898,10 +7901,26 @@ function renderLedgerSummary(){
   return wrap;
 }
 
+// Whether a set is relevant to the class currently being viewed. Every other part of the
+// gradebook is scoped to the selected class; the By Week picker was not, so a teacher
+// looking at 3B was offered every Year 6 set they had ever made.
+function weekInCurrentClass(w){
+  if(S.showAllClasses || !S.currentClassId) return true;
+  const ids = Array.isArray(w.classIds) ? w.classIds.filter(Boolean) : [];
+  if(!ids.length) return true;              // aimed at every class, so it counts here too
+  return ids.indexOf(S.currentClassId)!==-1;
+}
+
 function renderLedgerByWeek(){
   const wrap=el('<div></div>');
-  const pubWeeks = S.weeks.filter(isWeekLive).sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
-  if(pubWeeks.length===0){ wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">📒</div>No published weeks yet.</div>')); return wrap; }
+  const pubWeeks = S.weeks.filter(w=>isWeekLive(w) && weekInCurrentClass(w))
+    .sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+  if(pubWeeks.length===0){
+    wrap.appendChild(el(`<div class="mmc-empty"><div class="mmc-empty-icon">📒</div>${
+      S.showAllClasses ? 'No published sets yet.'
+        : 'No published sets for '+esc(currentClassLabel())+' yet. Switch to another class, or All classes, to see others.'}</div>`));
+    return wrap;
+  }
   if(!S.gradebookWeekId || !pubWeeks.some(w=>w.id===S.gradebookWeekId)) S.gradebookWeekId=pubWeeks[0].id;
 
   const selectRow=el(`<div class="mmc-field" style="max-width:280px;margin-bottom:14px;"><label>Week</label>
@@ -7969,7 +7988,7 @@ function renderLedgerByQuestion(){
   const detail=renderGradebookDetail();
   if(detail && S.gradebookDetail && S.gradebookDetail.type==='question') wrap.appendChild(detail);
 
-  const pubWeeks = S.weeks.filter(isWeekLive);
+  const pubWeeks = S.weeks.filter(w=>isWeekLive(w) && weekInCurrentClass(w));
   const qidToSlotByWeek={};
   // Keyed by SKILL CODE, not slot number. Once Year 3 sets exist alongside Year 4 ones,
   // "Q5" means Factors in one and Addition in the other — the same column would have been
