@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Mathmentum</title>
+<!-- Favicon embedded as an SVG data URI rather than a separate .ico file, so the deploy
+     stays a single paste: no second file to forget, no path to get wrong, and nothing
+     extra for the school network to block. Single quotes inside the SVG and %23 for the
+     colours keep it a valid HTML attribute. -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%2317181C'/><path d='M13 46V18h7l12 17 12-17h7v28h-7V30L33 45h-2L20 30v16z' fill='%23FF7A1A'/></svg>">
+<meta name="theme-color" content="#FF7A1A">
+
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito+Sans:wght@400;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap');
 
@@ -183,32 +190,32 @@
   .mmc-plainrow.good { background:#E7F9EE; }
   .mmc-plainrow.up   { background:#EAF2FF; }
   .mmc-plainrow.work { background:#FFF4E0; }
-  .mmc-worth {
-    border:3px solid var(--ink) !important;
-    box-shadow:6px 6px 0 var(--ink) !important;
-    background:linear-gradient(180deg,#FFFDF7,var(--paper)) !important;
-  }
+  /* Editorial, not a kid's dashboard. Salience comes from typography and white space —
+     a heavy rule above the heading, a bigger statement line, and thin coloured margins —
+     rather than from tinted blocks, which read as the student view. */
+  .mmc-worth { border-top:3px solid var(--ink) !important; padding-top:16px !important; }
   .mmc-worth-head {
-    display:flex; align-items:baseline; justify-content:space-between; gap:12px;
-    padding-bottom:10px; margin-bottom:4px; border-bottom:2px solid var(--paper-line);
+    display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:2px;
   }
   .mmc-worth-title {
-    font-family:'Baloo 2',sans-serif; font-weight:800; font-size:21px; letter-spacing:-.01em;
+    font-size:11px; font-weight:800; letter-spacing:.16em; text-transform:uppercase;
+    color:var(--ink);
   }
-  .mmc-worth-count { font-size:12px; font-weight:700; color:var(--ink-soft); white-space:nowrap; }
-  .mmc-worth-item {
-    display:flex; flex-direction:column; gap:2px;
-    padding:11px 13px; margin-top:10px; border-radius:10px;
-    border-left:5px solid var(--ink);
+  .mmc-worth-count {
+    font-size:11px; font-weight:600; letter-spacing:.02em; color:var(--ink-soft); white-space:nowrap;
   }
-  .mmc-worth-item.flag { background:#FFF4E0; border-left-color:#E8720A; }
-  .mmc-worth-item.good { background:#E9F8EF; border-left-color:#2E7D4F; }
+  .mmc-worth-item { padding:1px 0 1px 16px; margin-top:18px; border-left:3px solid var(--ink); }
+  .mmc-worth-item.flag { border-left-color:#E8720A; }
+  .mmc-worth-item.good { border-left-color:#2E7D4F; }
   .mmc-worth-k {
-    font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase;
+    font-size:10.5px; font-weight:800; letter-spacing:.09em; text-transform:uppercase;
+    margin-bottom:3px;
   }
   .mmc-worth-item.flag .mmc-worth-k { color:#8A4B02; }
   .mmc-worth-item.good .mmc-worth-k { color:#1F6340; }
-  .mmc-worth-t { font-size:17.5px; font-weight:650; line-height:1.35; letter-spacing:-.01em; }
+  .mmc-worth-t {
+    font-size:19px; font-weight:600; line-height:1.32; letter-spacing:-.015em; color:var(--ink);
+  }
   .mmc-setfilter { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:16px; }
   .mmc-setchip {
     font-family:'Nunito Sans',sans-serif; font-size:13px; font-weight:700;
@@ -5227,7 +5234,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.50';
+const BUILD = '2026-08-10.52';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -6507,7 +6514,7 @@ function renderTeacherHome(){
         <span class="mmc-worth-count">${show.length} thing${show.length===1?'':'s'} to look at</span>
       </div>
       ${show.map(n=>`<div class="mmc-worth-item ${n.good?'good':'flag'}">
-        <div class="mmc-worth-k">${n.good?'✓':'!'} ${esc(n.k)}</div>
+        <div class="mmc-worth-k">${esc(n.k)}</div>
         <div class="mmc-worth-t">${esc(n.t)}</div></div>`).join('')}
     </div>`);
     wrap.appendChild(nc);
