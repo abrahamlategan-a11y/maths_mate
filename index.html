@@ -3088,12 +3088,24 @@ function computeBadgeInfo(attempts, profile){
   const pinned = profile && profile.rankOverride;
   attempts = attempts || [];
   const total = attempts.length;
-  const totalCorrect = attempts.reduce((s,a)=>s+(a.score||0),0);
-  const totalAttempted = attempts.reduce((s,a)=>s+(a.attempted||0),0);
+  // PRACTICE COUNTS FOR EFFORT, TIMED COUNTS FOR ACCURACY. Untimed practice shows the
+  // answer and runs at 90%+, so letting it feed the accuracy gates would make Expert —
+  // and every colour scheme it unlocks — trivial to reach. But a child who practises
+  // diligently should still be credited and should never lose status for choosing the
+  // slower mode. So session COUNT and the recency clock use every attempt, while the
+  // accuracy thresholds read timed challenges only. Records saved before practice mode
+  // existed have no `mode` field and therefore count as timed, exactly as they always did.
+  const timedAttempts = attempts.filter(a=>a.mode!=='practice');
+  const totalCorrect = timedAttempts.reduce((s,a)=>s+(a.score||0),0);
+  const totalAttempted = timedAttempts.reduce((s,a)=>s+(a.attempted||0),0);
   const avgAccuracy = totalAttempted ? Math.round((totalCorrect/totalAttempted)*100) : 0;
+  // Effort: doing hard sessions at all, practice or not.
   const hardAttempts = attempts.filter(a=>a.level==='hard');
-  const hardCorrect = hardAttempts.reduce((s,a)=>s+(a.score||0),0);
-  const hardAttempted = hardAttempts.reduce((s,a)=>s+(a.attempted||0),0);
+  // Accuracy: only what was proven under the clock. A student with no timed hard attempt
+  // scores 0 here and cannot reach Expert, which is the intended gate.
+  const timedHard = timedAttempts.filter(a=>a.level==='hard');
+  const hardCorrect = timedHard.reduce((s,a)=>s+(a.score||0),0);
+  const hardAttempted = timedHard.reduce((s,a)=>s+(a.attempted||0),0);
   const hardAccuracy = hardAttempted ? Math.round((hardCorrect/hardAttempted)*100) : 0;
 
   const meetsExpertStats = total>=30 && hardAttempts.length>=10 && hardAccuracy>=60;
@@ -3494,7 +3506,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.4';
+const BUILD = '2026-08-10.5';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -6751,21 +6763,28 @@ function renderTimetableTab(){
         <h3>${lv.label}</h3>
         <div class="meta">${lv.desc}</div>
         <div class="meta" style="font-weight:700;color:var(--ink);">Best: ${best? `${best.score} correct (${best.accuracy}%)` : 'Not attempted yet'}</div>
-        <button class="mmc-btn gold sm" data-lv="${lv.k}">Start ▶</button>
+        <div class="mmc-row" style="gap:8px;margin-top:6px;">
+          <button class="mmc-btn ghost sm" data-go="practice">🐢 Practice</button>
+          <button class="mmc-btn gold sm" data-go="challenge">⏱ Challenge</button>
+        </div>
       </div>
     `);
-    card.querySelector('button').onclick=()=>startTTChallenge(lv.k);
+    card.querySelector('[data-go="practice"]').onclick=()=>startTTPractice(lv.k);
+    card.querySelector('[data-go="challenge"]').onclick=()=>startTTChallenge(lv.k);
     cardsRow.appendChild(card);
   });
   wrap.appendChild(el('<h3 style="font-family:Fredoka,sans-serif;margin:4px 0 12px;">Times Table Training Ground</h3>'));
-  wrap.appendChild(el('<div class="meta" style="margin-bottom:10px;">5 minutes on the clock — answer as many as you can! Regular, accurate practice builds your race status.</div>'));
+  wrap.appendChild(el(`<div class="meta" style="margin-bottom:10px;">
+    <strong>🐢 Practice</strong> — ${TT_PRACTICE_TOTAL} questions, no clock, take your time. It shows you the answer when you get one wrong.<br>
+    <strong>⏱ Challenge</strong> — 5 minutes, answer as many as you can. Both build your race status, but only the Challenge counts towards your accuracy.
+  </div>`));
   wrap.appendChild(cardsRow);
 
   if(S.tt && S.tt.finished && S.tt.lastResult){
     const r=S.tt.lastResult;
     wrap.appendChild(el(`
       <div class="mmc-card" style="margin-top:16px;">
-        <h3>Last attempt: ${r.score} correct out of ${r.attempted} (${r.accuracy}%) — ${r.level}</h3>
+        <h3>Last ${r.mode==='practice'?'practice':'attempt'}: ${r.score} correct out of ${r.attempted} (${r.accuracy}%) — ${esc(r.level)}</h3>
       </div>
     `));
   }
@@ -6773,11 +6792,13 @@ function renderTimetableTab(){
   if(S.ttAttempts.length){
     wrap.appendChild(el('<h3 style="font-family:Fredoka,sans-serif;margin:18px 0 8px;">Your attempt history</h3>'));
     const tableWrap=el('<div class="mmc-ledger-wrap"></div>');
-    const table=el('<table class="mmc-ledger"><thead><tr><th>Date</th><th>Level</th><th>Score</th><th>Accuracy</th></tr></thead><tbody></tbody></table>');
+    const table=el('<table class="mmc-ledger"><thead><tr><th>Date</th><th>Mode</th><th>Level</th><th>Score</th><th>Accuracy</th></tr></thead><tbody></tbody></table>');
     const tbody=table.querySelector('tbody');
     S.ttAttempts.slice().sort((a,b)=>(b.submittedAt?.seconds||0)-(a.submittedAt?.seconds||0)).slice(0,25).forEach(a=>{
       const date=a.submittedAt?.seconds? new Date(a.submittedAt.seconds*1000).toLocaleDateString() : '—';
-      tbody.appendChild(el(`<tr><td>${esc(date)}</td><td>${esc(a.level)}</td><td>${a.score}/${a.attempted}</td><td>${a.accuracy}%</td></tr>`));
+      // No mode field means a record from before practice existed, i.e. a timed challenge.
+      const modeLabel = a.mode==='practice' ? '🐢 Practice' : '⏱ Challenge';
+      tbody.appendChild(el(`<tr><td>${esc(date)}</td><td>${modeLabel}</td><td>${esc(a.level)}</td><td>${a.score}/${a.attempted}</td><td>${a.accuracy}%</td></tr>`));
     });
     tableWrap.appendChild(table);
     wrap.appendChild(tableWrap);
@@ -6785,10 +6806,19 @@ function renderTimetableTab(){
   return wrap;
 }
 
+const TT_PRACTICE_TOTAL = 30;
 function startTTChallenge(level){
-  S.tt = { active:true, finished:false, level, timeLeft:300, score:0, attempted:0, qIndex:0, currentQ:genTTQuestion(level,0), lastResult:null };
+  S.tt = { mode:'challenge', active:true, finished:false, level, timeLeft:300, score:0, attempted:0, qIndex:0, currentQ:genTTQuestion(level,0), lastResult:null };
   render();
   startTTTimer();
+}
+// Practice: no clock, a fixed 30 questions, and the answer shown when wrong. Deliberately
+// shares S.tt and submitTTAnswer with the timed challenge so the two can't drift apart —
+// `mode` is the only difference, and it is checked rather than duplicated.
+function startTTPractice(level){
+  S.tt = { mode:'practice', active:true, finished:false, level, timeLeft:null, score:0, attempted:0, qIndex:0,
+           currentQ:genTTQuestion(level,0), lastResult:null, reveal:null, typedValue:'' };
+  render();
 }
 function startTTTimer(){
   if(S.tt.timerHandle) clearInterval(S.tt.timerHandle);
@@ -6802,26 +6832,53 @@ function startTTTimer(){
 }
 function submitTTAnswer(given){
   if(!S.tt || !S.tt.active) return;
-  const correct = normalize(given)===normalize(String(S.tt.currentQ.answer));
+  // While a practice answer is on screen the question is already scored. The reveal panel
+  // replaces the input so this shouldn't be reachable, but the rule belongs in the logic
+  // rather than depending on the UI — otherwise a future shortcut key could double-count.
+  if(S.tt.mode==='practice' && S.tt.reveal) return;
+  const q = S.tt.currentQ;
+  const correct = sameNumber(given, q.answer) || normalize(given)===normalize(String(q.answer));
   S.tt.attempted++;
   if(correct) S.tt.score++;
+  if(S.tt.mode==='practice'){
+    // Hold on this question. The child reads the result, then moves on when ready —
+    // no clock, so there is nothing to be lost by looking at it properly.
+    S.tt.reveal = { correct, prompt:q.prompt, answer:String(q.answer), given:String(given||'') };
+    S.tt.typedValue='';
+    render();
+    return;
+  }
   flashResult('tt', correct);
   S.tt.qIndex++;
   S.tt.currentQ=genTTQuestion(S.tt.level, S.tt.qIndex);
   render();
 }
+// Practice only: advance past the revealed answer, or finish after the 30th.
+function nextTTPracticeQuestion(){
+  if(!S.tt || S.tt.mode!=='practice') return;
+  S.tt.reveal=null;
+  if(S.tt.attempted >= TT_PRACTICE_TOTAL){ finishTTChallenge(); return; }
+  S.tt.qIndex++;
+  S.tt.currentQ=genTTQuestion(S.tt.level, S.tt.qIndex);
+  S.tt.typedValue='';
+  render();
+}
 async function finishTTChallenge(){
   const {level, score, attempted} = S.tt;
+  const mode = S.tt.mode==='practice' ? 'practice' : 'challenge';
   const accuracy = attempted? Math.round((score/attempted)*100) : 0;
-  S.tt.active=false; S.tt.finished=true; S.tt.lastResult={level,score,attempted,accuracy};
+  if(S.tt.timerHandle) clearInterval(S.tt.timerHandle);
+  S.tt.active=false; S.tt.finished=true; S.tt.reveal=null; S.tt.lastResult={level,score,attempted,accuracy,mode};
   try{
-    await addDoc(collection(db,'ttAttempts'), { uid:S.user.uid, teacherUid:S.profile?S.profile.teacherUid:null, level, score, attempted, accuracy, submittedAt:serverTimestamp() });
+    // `mode` is what computeBadgeInfo reads to keep practice out of the accuracy gates.
+    // Older records have no mode field and are treated as timed — that is deliberate.
+    await addDoc(collection(db,'ttAttempts'), { uid:S.user.uid, teacherUid:S.profile?S.profile.teacherUid:null, level, score, attempted, accuracy, mode, submittedAt:serverTimestamp() });
   }catch(e){ S.toast='Could not save this attempt — check your connection.'; }
   render();
 }
 function abortTTChallenge(){
   if(!S.tt) return;
-  if(!confirm("Quit this challenge? Your progress won't be saved.")) return;
+  if(!confirm(S.tt.mode==='practice' ? "Stop practising? This session won't be saved." : "Quit this challenge? Your progress won't be saved.")) return;
   if(S.tt.timerHandle) clearInterval(S.tt.timerHandle);
   S.tt=null;
   render();
@@ -6832,8 +6889,10 @@ function renderTTChallenge(){
   const head=el(`
     <div class="mmc-card">
       <div class="mmc-row" style="justify-content:space-between;">
-        <div><h3 style="text-transform:capitalize;">${esc(t.level)} challenge</h3><div class="meta">Score: ${t.score} / ${t.attempted}</div></div>
-        <div id="mmc-tt-timer" style="font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:700;color:var(--sky-deep);">${formatMMSS(t.timeLeft)}</div>
+        <div><h3 style="text-transform:capitalize;">${esc(t.level)} ${t.mode==='practice'?'practice':'challenge'}</h3><div class="meta">Score: ${t.score} / ${t.attempted}</div></div>
+        ${t.mode==='practice'
+          ? `<div style="font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:700;color:var(--sky-deep);">${Math.min(t.attempted+1,TT_PRACTICE_TOTAL)} of ${TT_PRACTICE_TOTAL}</div>`
+          : `<div id="mmc-tt-timer" style="font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:700;color:var(--sky-deep);">${formatMMSS(t.timeLeft)}</div>`}
       </div>
       <button class="mmc-btn danger sm" id="mmc-tt-quit" style="margin-top:8px;">✕ Quit</button>
     </div>
@@ -6849,6 +6908,29 @@ function renderTTChallenge(){
       </div>
     </div>
   `);
+  // While a practice answer is revealed, the input and keypad are replaced by the result
+  // panel. Swapping rather than disabling means there is no half-live field to tab into
+  // and no way to submit the same question twice.
+  if(t.mode==='practice' && t.reveal){
+    const r=t.reveal;
+    qbox.innerHTML='';
+    qbox.appendChild(el(`
+      <div style="text-align:center;">
+        <div style="font-family:'Fredoka',sans-serif;font-size:30px;font-weight:700;margin-bottom:10px;">${esc(r.prompt)} = ${esc(r.answer)}</div>
+        <div style="font-size:20px;font-weight:800;color:${r.correct?'var(--correct)':'var(--incorrect)'};margin-bottom:6px;">
+          ${r.correct ? '✓ Correct!' : '✗ Not quite'}
+        </div>
+        ${r.correct ? '' : `<div class="meta" style="margin-bottom:4px;">You put ${esc(r.given||'nothing')}.</div>`}
+      </div>
+    `));
+    const nextBtn=el(`<button class="mmc-btn gold" style="margin-top:12px;width:100%;max-width:300px;font-size:20px;padding:14px;">${t.attempted>=TT_PRACTICE_TOTAL?'See how you went':'Next question'}</button>`);
+    nextBtn.onclick=nextTTPracticeQuestion;
+    const holder=el('<div style="text-align:center;"></div>');
+    holder.appendChild(nextBtn);
+    qbox.appendChild(holder);
+    wrap.appendChild(qbox);
+    return wrap;
+  }
   const input=qbox.querySelector('#mmc-tt-input');
   // The typed value used to live only in the DOM. Any background snapshot (a profile,
   // week or live-game update) triggers a full re-render, which rebuilt this field empty
