@@ -4018,9 +4018,11 @@ function render(){
   // untouched — see the .mmc-pro block at the bottom of <style>.
   root.classList.toggle('mmc-pro', !!(S.user && S.isTeacher));
   root.innerHTML='';
-  // Logged out, the pitch card IS the header — the gradient banner just repeated
-  // the name above it and pushed the actual message down the page.
-  if(S.user) root.appendChild(renderHead());
+  // Logged out — and while a teacher waits for approval — the pitch card IS the
+  // header. A teacher mid-signup shouldn't be shown THE ARENA; that's the
+  // students' side of the product and it reads as though they've landed in the
+  // wrong place.
+  if(S.user && !isAwaitingApproval()) root.appendChild(renderHead());
   const body=el('<div class="mmc-body"></div>');
   if(S.toast){
     scheduleToastClear();
@@ -4067,7 +4069,7 @@ function renderHead(){
         <span style="top:40%;left:28%;font-size:18px;">−</span>
       </div>
       ${S.user ? `<button id="mmc-signout" class="mmc-signout-pill">↪ Sign out</button>` : ''}
-      ${S.user && !S.isTeacher ? `
+      ${S.user && !S.isTeacher && !isAwaitingApproval() ? `
       <div class="mmc-arena-wrap">
         <div class="mmc-brandmark"><span class="bm-a">Math</span><span class="bm-b">mentum</span></div>
         <div class="mmc-arena">
@@ -4659,12 +4661,17 @@ function isAwaitingApproval(){
 function renderAwaitingApproval(){
   const wrap=el('<div></div>');
   wrap.appendChild(el(`
-    <div class="mmc-card">
-      <h3>You're all set — just waiting on approval</h3>
-      <div class="meta">Your account exists and your password works. An admin needs to approve you before your classes appear, which is usually quick.</div>
-      <div class="meta" style="margin-top:10px;">Signed in as <b>${esc(S.user.email||'')}</b>. Come back and sign in again once you've been approved — there's no email to wait for.</div>
+    <div class="mmc-pitch">
+      <div class="mmc-pitch-mark"><span>Math</span><span class="o">mentum</span></div>
+      <p class="mmc-pitch-line">You're all set — just waiting on approval.</p>
+      <div class="mmc-pitch-grid" style="grid-template-columns:1fr;">
+        <div class="pp pp1"><b>Your account is ready</b><span>The password you chose works. Nothing else to set up.</span></div>
+        <div class="pp pp2"><b>An admin is reviewing you</b><span>Usually quick. You'll be able to sign in as soon as they approve.</span></div>
+        <div class="pp pp3"><b>No email to wait for</b><span>Just come back and sign in, or press Check again below.</span></div>
+      </div>
     </div>
   `));
+  wrap.appendChild(el(`<div class="mmc-card"><div class="meta">Signed in as <b>${esc(S.user.email||'')}</b>.</div></div>`));
   const row=el('<div class="mmc-row" style="margin-top:10px;gap:8px;"></div>');
   const again=el('<button class="mmc-btn gold sm">Check again</button>');
   again.onclick=async ()=>{ await handleAuthChange(auth.currentUser); render(); };
