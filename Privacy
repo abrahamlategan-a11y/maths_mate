@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy — Mathmentum</title>
+<meta name="description" content="How Mathmentum handles student and teacher information. Plain English, no jargon.">
+<style>
+  :root{
+    --ink:#2B2620; --ink-soft:#5C5A56; --mute:#8A8880;
+    --paper:#FFFDF8; --wash:#FAF9F7; --line:#E4E2DC; --gold:#E8A33D;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--wash); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    font-size:17px; line-height:1.65;
+  }
+  .wrap{max-width:760px; margin:0 auto; padding:0 22px 80px;}
+  header{background:var(--paper); border-bottom:1px solid var(--line); padding:26px 0 22px; margin-bottom:34px;}
+  .brand{font-size:26px; font-weight:800; letter-spacing:-.02em;}
+  .brand span{color:var(--gold);}
+  .tag{color:var(--mute); font-size:14px; margin-top:2px;}
+  h1{font-size:31px; line-height:1.2; margin:0 0 6px;}
+  .updated{color:var(--mute); font-size:14px; margin-bottom:30px;}
+  h2{font-size:20px; margin:38px 0 10px; padding-top:20px; border-top:1px solid var(--line);}
+  h3{font-size:16px; margin:22px 0 6px;}
+  p,li{color:var(--ink-soft);}
+  li{margin-bottom:6px;}
+  strong{color:var(--ink);}
+  .lead{font-size:18px; color:var(--ink);}
+  .box{background:var(--paper); border:1px solid var(--line); border-left:3px solid var(--gold); padding:16px 18px; margin:20px 0; border-radius:0 6px 6px 0;}
+  .box p:last-child{margin-bottom:0;}
+  .box p:first-child{margin-top:0;}
+  table{width:100%; border-collapse:collapse; margin:14px 0; font-size:16px;}
+  th,td{text-align:left; padding:9px 10px 9px 0; border-bottom:1px solid var(--line); vertical-align:top;}
+  th{font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--mute);}
+  a{color:#1F6F8B;}
+  footer{margin-top:50px; padding-top:20px; border-top:1px solid var(--line); color:var(--mute); font-size:14px;}
+  @media print{ body{background:#fff;} header{margin-bottom:20px;} }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap" style="padding-bottom:0;">
+    <div class="brand">Math<span>mentum</span></div>
+    <div class="tag">Learn. Play. Improve.</div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<h1>Privacy at Mathmentum</h1>
+<div class="updated">Last updated 10 August 2026</div>
+
+<p class="lead">Mathmentum is a maths practice tool for primary classrooms, built and run in Australia by a practising primary school teacher. This page explains exactly what information the app holds, who can see it, and where it is stored. It is written to be read by teachers and parents, not lawyers.</p>
+
+<h2>The short version</h2>
+<ul>
+  <li>Students sign in with a <strong>made-up username</strong>, not a real email address.</li>
+  <li>A student's work is visible only to <strong>their own teacher</strong>. No other teacher can see it.</li>
+  <li>There is <strong>no advertising and no tracking</strong> of any kind in Mathmentum.</li>
+  <li>We do not sell, rent or share student information with anyone.</li>
+  <li>Student data is currently stored on Google servers <strong>in the United States</strong>. We are moving it to Australia — see <a href="#where">Where information is stored</a> for the honest detail.</li>
+</ul>
+
+<h2>What information is held</h2>
+
+<h3>About students</h3>
+<table>
+  <tr><th>Information</th><th>Where it comes from</th></tr>
+  <tr><td>First and last name</td><td>Typed in by the teacher when creating the class</td></tr>
+  <tr><td>A generated username, e.g. <em>PriyaN</em></td><td>Created automatically by the app</td></tr>
+  <tr><td>A generated password, e.g. <em>puddle88</em></td><td>Created automatically by the app</td></tr>
+  <tr><td>Class, year level and group</td><td>Set by the teacher</td></tr>
+  <tr><td>Answers to practice questions, scores and dates</td><td>Recorded as the student works</td></tr>
+  <tr><td>Times-tables attempts, including which facts were answered correctly and how long each took</td><td>Recorded as the student practises</td></tr>
+  <tr><td>An optional race nickname, up to 14 characters</td><td>Chosen by the student</td></tr>
+</table>
+
+<p>Students are <strong>not</strong> asked for an email address, a date of birth, a photograph, an address, or a phone number. The app does not ask a student to type anything about themselves other than maths answers and, if they choose, a nickname.</p>
+
+<div class="box">
+  <p><strong>A note on the race nickname.</strong> Students who reach the top rank can choose a nickname shown above their horse. Teachers can see and change it. If a child enters their full name or anything identifying, the teacher should change it — the app cannot tell the difference.</p>
+</div>
+
+<h3>About teachers</h3>
+<ul>
+  <li>Name and email address</li>
+  <li>A password you choose</li>
+  <li>Which classes and students you have created</li>
+</ul>
+
+<h2>Who can see student information</h2>
+<p>Every student record is tied to the teacher who created it. The app is built so that a teacher can only ever read the records of their own students — this is enforced by the database itself, not just by what the app chooses to display.</p>
+<p>Students can see their own work and their own dashboard. They cannot see another student's results. In the multiplayer racing game, students in the same class see each other's first names and scores on a leaderboard, which is the point of the game.</p>
+<p>The site administrator can see the list of registered teachers, and has the technical access to the database that running the service requires.</p>
+
+<h2>Student passwords</h2>
+<p>We want to be straightforward about this because a school IT team will ask.</p>
+<p>Student passwords are stored in a form the teacher can read, so that you can print login cards and help a child who has forgotten theirs. This is a deliberate choice for primary classrooms, where children cannot be expected to manage a password reset. Only the student's own teacher can see them.</p>
+<p><strong>Because of this, student logins should be treated as classroom logins, not secure personal accounts.</strong> They protect a child's work from other children. They are not suitable for anything sensitive, and nothing sensitive is stored against them.</p>
+<p>Teacher passwords are different: they are never stored by us in readable form, and are handled by Google's authentication service.</p>
+
+<h2 id="where">Where information is stored</h2>
+<p>Mathmentum runs on Google Firebase. Today, the database sits in Google's <strong>us-central1</strong> region in the United States.</p>
+<p>We are moving the student database to Google's Australian region. When that is done, student names, answers, scores and practice history will be stored in Australia.</p>
+<div class="box">
+  <p><strong>The part we will not overstate.</strong> Even after that move, the <em>account records</em> — usernames and password information — will remain on United States infrastructure, because Google's authentication service does not currently offer an Australian option. We will update this page when that changes.</p>
+  <p>In practice the account record for a student is a made-up username such as <em>PriyaN</em> and a password such as <em>puddle88</em>. It is not a real email address and does not on its own identify a child.</p>
+</div>
+<p>Under the Australian Privacy Principles, storing personal information overseas is a disclosure that should be told to you plainly rather than buried. That is why this section exists. If your school's policy does not permit any student information to be held overseas, Mathmentum is not suitable for you yet, and we would rather you knew that now.</p>
+
+<h2>Other services we use</h2>
+<table>
+  <tr><th>Service</th><th>What for</th></tr>
+  <tr><td>Google Firebase</td><td>Sign-in, database, and the server-side functions that create accounts</td></tr>
+  <tr><td>GitHub Pages</td><td>Serving the website itself</td></tr>
+  <tr><td>Resend</td><td>Sending the small number of emails we send to teachers</td></tr>
+  <tr><td>Google Fonts and public code libraries</td><td>Fonts and the code that generates printable login cards</td></tr>
+</table>
+<p>Emails are only ever sent to teachers — never to students.</p>
+
+<h2>What we do not do</h2>
+<ul>
+  <li>No advertising, anywhere in the app.</li>
+  <li>No analytics or tracking software. There is no Google Analytics, no advertising pixel, and no third-party tracker of any kind in Mathmentum.</li>
+  <li>No selling, renting or sharing of student information.</li>
+  <li>No using student work to train artificial intelligence systems.</li>
+  <li>No contacting students. We have no way to contact a student and never will.</li>
+</ul>
+
+<h2>How long information is kept</h2>
+<p>Student records are kept while the account exists, so that a teacher can see progress across the year.</p>
+<ul>
+  <li>A teacher can <strong>delete a student</strong> at any time, which removes their login and every result, attempt and record attached to it.</li>
+  <li>A teacher can <strong>clear a class's results</strong> at the start of a term, which removes practice-set results while leaving times-tables history intact.</li>
+  <li>If a teacher's access is removed, their students' records remain attached to that teacher's account and are not visible to anyone else.</li>
+</ul>
+
+<h2>Asking about, correcting or deleting information</h2>
+<p>In the first instance, ask your child's teacher — they can see, correct and delete everything held about your child, and they can do it immediately.</p>
+<p>If you would rather contact us directly, or you are a school asking about the service, write to <strong>hello@mathmentum.com.au</strong>. We will respond within a reasonable time and will not charge you for asking.</p>
+
+<h2>If something goes wrong</h2>
+<p>If information is ever exposed in a way likely to cause serious harm, we will notify affected teachers and schools directly and promptly, and meet our obligations under the Notifiable Data Breaches scheme.</p>
+
+<h2>Changes to this page</h2>
+<p>When this page changes in a way that matters, the date at the top changes and teachers are told. The most likely change is the Australian database move described above.</p>
+
+<footer>
+  Mathmentum · <a href="https://mathmentum.com.au">mathmentum.com.au</a> · hello@mathmentum.com.au<br>
+  Operated by a sole trader registered in Australia.
+</footer>
+
+</div>
+</body>
+</html>
