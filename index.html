@@ -5377,7 +5377,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.56';
+const BUILD = '2026-08-10.57';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -5818,6 +5818,7 @@ const S = {
 let unsubs = [];
 let liveParticipantsUnsub = null, liveParticipantsRoomId = null;
 let scheduledWeeksUnsub = null, scheduledWeeksInterval = null;
+let healTimer = null;
 function subscribeScheduledWeeks(){
   const teacherUid=(S.profile&&S.profile.teacherUid)||'__none__';
   if(scheduledWeeksUnsub){ try{scheduledWeeksUnsub();}catch(e){} scheduledWeeksUnsub=null; }
@@ -6079,6 +6080,11 @@ function subscribeData(){
     unsubs.push(onSnapshot(query(collection(db,'skillPractice'), where('uid','==',S.user.uid)), snap=>{
       S.skillPracticeRecords=snap.docs.map(d=>({id:d.id,...d.data()})); render();
     }, (err)=>{ S.toast='Skill practice data error: '+err.message; render(); }));
+    // Once, a few seconds after sign-in, when all four listeners have delivered. Not on
+    // every snapshot: the repair writes, and the write fires the snapshot again, which
+    // would loop.
+    if(healTimer) clearTimeout(healTimer);
+    healTimer = setTimeout(()=>{ repairOrphanedRecords(); }, 4000);
     unsubs.push(onSnapshot(query(collection(db,'liveGames'), where('teacherUid','==',(S.profile&&S.profile.teacherUid)||'__none__')), snap=>{
       S.liveGames=snap.docs.map(d=>({id:d.id,...d.data()})); ensureParticipantsSub(currentLiveRoom()?.id||null);
       if(S.myLive && S.myLive.answering) return; // same reasoning as the participants listener — don't interrupt active typing
@@ -9224,7 +9230,7 @@ async function saveWeekProgress(week){
   if(!S.user) return;
   try{
     await setDoc(doc(db,'weekProgress', `${S.user.uid}_${week.id}`), {
-      uid:S.user.uid, weekId:week.id, teacherUid: S.profile? S.profile.teacherUid : null,
+      uid:S.user.uid, weekId:week.id, teacherUid: stampTeacherUid(),
       quiz:S.quiz, updatedAt:serverTimestamp()
     });
   }catch(e){ /* auto-save is best-effort — don't interrupt the student over it */ }
@@ -9683,6 +9689,43 @@ function nextTTPracticeQuestion(){
   S.tt.questionStartedAt=Date.now();
   render();
 }
+// ---------- Repairing records the teacher cannot see ----------
+// Every student record carries a teacherUid so the teacher can query for it. If that field
+// was null when the record was written — a profile created before the field existed, or a
+// student moved between teacher accounts — the record stays perfectly visible to the child
+// and becomes invisible to the teacher. Nothing is lost, but every teacher-side number
+// about that student is quietly understated, which is worse than an obvious break.
+//
+// Only the student's own account can still see those records, so the repair has to run
+// here. It touches one field, only on their own documents, and only when it actually
+// disagrees — so on a healthy account it writes nothing at all.
+// Writing `null` here is what created the problem, and it did so silently. Every write
+// goes through this now, so a missing teacherUid leaves a trace instead of vanishing.
+function stampTeacherUid(){
+  const t = S.profile && S.profile.teacherUid;
+  if(!t) console.warn('Mathmentum: saving a record with no teacherUid — the teacher will not see it.');
+  return t || null;
+}
+const HEAL_COLLECTIONS = ['ttAttempts','results','skillPractice','weekProgress'];
+async function repairOrphanedRecords(){
+  if(!S.user || S.isTeacher || isPreviewing()) return;
+  const mine = S.profile && S.profile.teacherUid;
+  if(!mine) return;                       // nothing to repair TO
+  let fixed=0;
+  for(const coll of HEAL_COLLECTIONS){
+    const local = coll==='ttAttempts' ? S.ttAttempts
+      : coll==='results' ? S.results
+      : coll==='skillPractice' ? S.skillPracticeRecords
+      : S.weekProgress;
+    for(const rec of (local||[])){
+      if(!rec || !rec.id || rec.teacherUid===mine) continue;
+      try{ await updateDoc(doc(db,coll,rec.id), {teacherUid:mine}); rec.teacherUid=mine; fixed++; }
+      catch(e){ /* a record we cannot repair is no worse than before */ }
+    }
+  }
+  if(fixed){ S.healed=fixed; render(); }
+}
+
 async function finishTTChallenge(){
   const {level, score, attempted} = S.tt;
   const mode = S.tt.mode==='practice' ? 'practice' : 'challenge';
@@ -9692,7 +9735,7 @@ async function finishTTChallenge(){
   try{
     // `mode` is what computeBadgeInfo reads to keep practice out of the accuracy gates.
     // Older records have no mode field and are treated as timed — that is deliberate.
-    const rec = { uid:S.user.uid, teacherUid:S.profile?S.profile.teacherUid:null, level, score, attempted, accuracy, mode, submittedAt:serverTimestamp() };
+    const rec = { uid:S.user.uid, teacherUid: stampTeacherUid(), level, score, attempted, accuracy, mode, submittedAt:serverTimestamp() };
     // Only on custom sessions, so an attempt history row can say "6, 7 ×" rather than
     // an anonymous "custom" that means nothing to a teacher reading it later.
     if(level==='custom' && S.tt.custom) rec.customLabel = ttCustomLabel(S.tt.custom);
@@ -10393,7 +10436,7 @@ async function finishSkillPractice(){
   const answers=sess.questions.map(q=>({ qId:q.id, correct:sess.quiz[q.id].correct }));
   try{
     await addDoc(collection(db,'skillPractice'), {
-      uid:S.user.uid, teacherUid:S.profile?S.profile.teacherUid:null, slot:sess.slot,
+      uid:S.user.uid, teacherUid: stampTeacherUid(), slot:sess.slot,
       score, total:sess.questions.length, answers, submittedAt:serverTimestamp()
     });
   }catch(e){ S.toast='Could not save your practice session — check your connection.'; }
@@ -10705,7 +10748,7 @@ function renderQuizTaking(week){
     try{
       await setDoc(doc(db,'results', `${S.user.uid}_${week.id}`), {
         uid:S.user.uid, studentName:S.profile? S.profile.displayName : S.user.email, studentEmail:S.user.email,
-        teacherUid: S.profile ? S.profile.teacherUid : null,
+        teacherUid: stampTeacherUid(),
         weekId:week.id, weekLabel:week.label, score, total, answers, submittedAt:serverTimestamp()
       });
     }catch(e){ S.toast='Could not save your result — check your connection and try again.'; render(); return; }
