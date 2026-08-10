@@ -4504,6 +4504,52 @@ function endStudentPreview(){
   S.previewSaved = null;
   render();
 }
+
+// Sets a colleague's password directly, for when a setup link can't get through.
+// The password is shown once here and never stored — the admin passes it on and
+// the teacher changes it themselves afterwards.
+async function setTeacherPasswordFlow(email, name, btnEl){
+  const suggestion = pick(PASSWORD_WORDS)+randInt(100,999);
+  const pw = prompt(
+    `Set a password for ${name||email}.\n\n`+
+    `They can change it once they're signed in. Tell them in person or by text —\n`+
+    `don't email it alongside their username.\n\n`+
+    `At least 6 characters:`, suggestion);
+  if(pw===null) return;
+  if(String(pw).length<6){ S.toast='Password must be at least 6 characters.'; render(); return; }
+  const original = btnEl ? btnEl.textContent : '';
+  if(btnEl){ btnEl.disabled=true; btnEl.textContent='Setting…'; }
+  try{
+    const call = httpsCallable(functions, 'setTeacherPassword');
+    await call({ email, password: pw });
+    S.setTeacherPwResult = { email, name, password: pw };
+  }catch(e){
+    S.toast = 'Could not set the password: '+(e.message||'unknown error');
+  }
+  if(btnEl){ btnEl.disabled=false; btnEl.textContent=original; }
+  render();
+}
+function renderTeacherPwCard(){
+  const r = S.setTeacherPwResult;
+  if(!r) return null;
+  const card=el(`<div class="mmc-card mmc-notice" style="margin-bottom:14px;">
+    <h3>Password set for ${esc(r.name||r.email)}</h3>
+    <div class="meta">Shown once — it isn't stored anywhere. Pass it on in person, by text or on Teams, and ask them to change it after signing in.</div>
+    <div class="mmc-row" style="align-items:center;gap:10px;margin-top:10px;">
+      <code class="mmc-code" style="font-size:18px;padding:8px 14px;">${esc(r.password)}</code>
+      <button class="mmc-btn gold sm" id="mmc-pw-copy">Copy password</button>
+      <button class="mmc-btn ghost sm" id="mmc-pw-done">Done</button>
+    </div>
+    <div class="meta" style="margin-top:8px;">They sign in at <b>mathmentum.com.au</b> with <b>${esc(r.email)}</b>.</div>
+  </div>`);
+  card.querySelector('#mmc-pw-copy').onclick=async ()=>{
+    try{ await navigator.clipboard.writeText(r.password); }catch(e){}
+    S.toast='Password copied.'; render();
+  };
+  card.querySelector('#mmc-pw-done').onclick=()=>{ S.setTeacherPwResult=null; render(); };
+  return card;
+}
+
 function renderStudentPreview(){
   const wrap=el('<div></div>');
   const name = (S.profiles[S.previewStudentUid] && S.profiles[S.previewStudentUid].displayName) || 'this student';
@@ -4617,14 +4663,32 @@ function renderTeacherWeeks(){
     const yearFrom = classIds.length===1 ? S.classes.find(c=>c.id===classIds[0]) : (S.classes||[])[0];
     btn.disabled=true; btn.textContent='Deploying…';
     try{
-      const pairs=[['support','easy'],['mainstream','medium'],['extension','hard']];
+      // Only create a set for a group that actually HAS students in this class.
+      // Deploying all three regardless left a class of, say, all-Extension students
+      // with two sets aimed at nobody, cluttering the page for teacher and student.
+      const inScope = Object.values(S.profiles||{}).filter(p=>{
+        if(!p || !p.username) return false;
+        if(classIds.length && p.classId && classIds.indexOf(p.classId)===-1) return false;
+        return true;
+      });
+      const groupsPresent = new Set(inScope.map(p=>p.group || 'mainstream'));
+      const pairs=[['support','easy'],['mainstream','medium'],['extension','hard']]
+        .filter(([group])=>groupsPresent.has(group));
+      if(!pairs.length){
+        S.toast='No students in that class yet — add some first.';
+        btn.disabled=false; btn.textContent='Deploy now'; render(); return;
+      }
       for(const [group,difficulty] of pairs){
         await addDoc(collection(db,'weeks'), { label, difficulty, status:'published', createdAt:serverTimestamp(),
           teacherUid:S.user.uid, yearLevel:classYear(yearFrom),
           questions:generateWeekQuestions(difficulty,'random'), targetGroups:[group], classIds });
       }
       S.quickDeployDone=label;
+      S.quickDeployCount=pairs.length;
       S.weeksView='list';
+      S.toast = pairs.length===1
+        ? `Deployed one set — every student in that class is ${pairs[0][0]}.`
+        : `Deployed ${pairs.length} sets, one for each group that has students.`;
     }catch(e){ S.toast='Could not deploy — check your connection.'; }
     render();
   };
@@ -5759,6 +5823,8 @@ function renderStudentsTab(mode){
 
   const linkCard = renderSetupLinkCard();
   if(linkCard) wrap.appendChild(linkCard);
+  const pwCard = renderTeacherPwCard();
+  if(pwCard) wrap.appendChild(pwCard);
 
   if(S.inviteTeacherResult){
     const r=S.inviteTeacherResult;
@@ -5882,11 +5948,14 @@ function renderStudentsTab(mode){
           <div><b>${esc(t.name||t.email)}</b> <span class="meta">${esc(t.email)}${t.status==='revoked'? ' · revoked' : ''}</span></div>
           <div class="mmc-row" style="gap:6px;">
             ${(t.status==='active') ? `<button class="mmc-btn ghost sm" data-act="setuplink">Setup link</button>` : ''}
+            ${(t.status==='active') ? `<button class="mmc-btn ghost sm" data-act="setpw">Set password</button>` : ''}
             ${(!isSelf && t.status==='active') ? `<button class="mmc-btn danger sm" data-act="revoke">Revoke access</button>` : ''}
           </div>
         </div>`);
         const linkBtn=row.querySelector('[data-act="setuplink"]');
         if(linkBtn) linkBtn.onclick=()=>fetchSetupLink(t.email, linkBtn);
+        const pwBtn=row.querySelector('[data-act="setpw"]');
+        if(pwBtn) pwBtn.onclick=()=>setTeacherPasswordFlow(t.email, t.name, pwBtn);
         const revokeBtn=row.querySelector('[data-act="revoke"]');
         if(revokeBtn) revokeBtn.onclick=()=>revokeTeacherAccess(t.email, revokeBtn);
         directoryCard.appendChild(row);
