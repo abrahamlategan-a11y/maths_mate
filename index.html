@@ -1528,7 +1528,22 @@ function pickSimplifiedFraction(denomPool){
   do{ n1=randInt(1,d1-1); } while(gcd(n1,d1)!==1);
   return {n1,d1};
 }
-function genFractionSimplify(diff){
+function genFractionSimplify(diff, _strategy, year){
+  if(+year===6){
+    // 6/10, then 12/20, then 18/24 — always a real simplification, never the fill-in-the-
+    // numerator form, which is a Year 4 stepping stone and guessable besides.
+    const pairs = diff==='easy' ? [[6,10],[8,12],[4,10],[6,8],[9,12]]
+      : diff==='medium' ? [[12,20],[15,25],[10,15],[14,21],[16,20]]
+      : [[18,24],[24,36],[21,28],[30,45],[27,36],[32,40]];
+    const [n,d]=pick(pairs);
+    const g=gcd2(n,d);
+    return { prompt:`Simplify this fraction to its lowest terms.`, inputType:'fracHard',
+      givenNum:n, givenDen:d, answer:`${n/g}/${d/g}`,
+      explanation:`${n}/${d} ÷ ${g}/${g} = ${n/g}/${d/g}.`, subskill:'simplifying_fractions' };
+  }
+  return genFractionSimplifyY4(diff);
+}
+function genFractionSimplifyY4(diff){
   if(diff==='easy'){
     // Easy is deliberately a single halving step — no unrelated division facts.
     const {n1,d1}=pickSimplifiedFraction(NICE_DENOMS_EASY);
@@ -2277,6 +2292,23 @@ function genPartitionY4(diff){
 // ---------- Q2 NUMBER PATTERNS ----------
 // Constant step only. Direction, step size, missing position and start all vary.
 function genSequenceV2(diff, _strategy, year){
+  if(+year===6 && diff==='hard'){
+    // Doubling, tripling, or a difference that grows by one each step — one clear rule,
+    // never an ambiguous puzzle.
+    if(Math.random()<0.5){
+      const r=pick([2,3]), start=pick([2,3,4,5]);
+      const terms=[start]; for(let i=1;i<5;i++) terms.push(terms[i-1]*r);
+      return { prompt:`Fill in the missing number: ${terms.slice(0,4).join(', ')}, ?`,
+        answer:String(terms[4]),
+        explanation:`Each term is multiplied by ${r}, so the next is ${terms[4]}.` };
+    }
+    const start=randInt(3,9), d0=randInt(3,6);
+    const terms=[start]; let d=d0;
+    for(let i=1;i<5;i++){ terms.push(terms[i-1]+d); d++; }
+    return { prompt:`Fill in the missing number: ${terms.slice(0,4).join(', ')}, ?`,
+      answer:String(terms[4]),
+      explanation:`The gap grows by one each time (${d0}, ${d0+1}, ${d0+2}, ${d0+3}), so the next is ${terms[4]}.` };
+  }
   if(+year===3){
     // Skip counting, and the STEP is what gets harder. Hard used to count by 10s, which
     // is easier than the 3s at Medium — the difficulty was running backwards.
@@ -2472,6 +2504,28 @@ function genFactorsV2(diff){
 
 // ---------- Q6 ADDITION ----------
 function genAdditionV2(diff, _strategy, year){
+  if(+year===6){
+    // Every one of these has a mental route. 1998 + 347 is 2000 + 347 - 2; 2905 + 95 is
+    // a bridge to the next hundred. Falling through to Year 4 gave 2 503 + 71 + 80 618,
+    // which is column addition with no shortcut at all — the thing the spec rules out.
+    if(diff==='easy'){
+      const a=pick([275,340,685,1250,2905,4180]), b=pick([25,60,95,150,200,300]);
+      return { prompt:`${formatGrouped(a)} + ${formatGrouped(b)} = ?`, answer:String(a+b),
+        explanation:`${a} + ${b} = ${formatGrouped(a+b)} — a round number to bridge to.`,
+        subskill:'whole_number_addition' };
+    }
+    if(diff==='medium'){
+      const a=randInt(300,3900), b=randInt(120,890);
+      return { prompt:`${formatGrouped(a)} + ${formatGrouped(b)} = ?`, answer:String(a+b),
+        explanation:`Partition: ${a} + ${Math.floor(b/100)*100} + ${b%100} = ${formatGrouped(a+b)}.`,
+        subskill:'whole_number_addition' };
+    }
+    const near=pick([998,1998,2998,3005,4995,5002]);
+    const b=randInt(120,890);
+    return { prompt:`${formatGrouped(near)} + ${formatGrouped(b)} = ?`, answer:String(near+b),
+      explanation:`${near} is close to ${Math.round(near/1000)*1000}: ${Math.round(near/1000)*1000} + ${b} ${near<Math.round(near/1000)*1000?'−':'+'} ${Math.abs(Math.round(near/1000)*1000-near)} = ${formatGrouped(near+b)}.`,
+      subskill:'whole_number_addition' };
+  }
   if(+year===3){
     // Year 3 adds within 1000. Easy is 2-digit; Hard introduces a third addend but
     // every number stays inside three digits.
@@ -2514,6 +2568,25 @@ function needsBorrow(a,b){
   return false;
 }
 function genSubtractionV2(diff, _strategy, year){
+  if(+year===6){
+    if(diff==='easy'){
+      const a=pick([685,940,1250,2905,3400]), b=pick([200,300,400,500,1000]);
+      return { prompt:`${formatGrouped(a)} − ${formatGrouped(b)} = ?`, answer:String(a-b),
+        explanation:`Take off whole hundreds: ${formatGrouped(a-b)}.`, subskill:'whole_number_subtraction' };
+    }
+    if(diff==='medium'){
+      const b=randInt(120,480), a=b+randInt(150,600);
+      return { prompt:`${formatGrouped(a)} − ${formatGrouped(b)} = ?`, answer:String(a-b),
+        explanation:`Partition the ${b}: ${formatGrouped(a-b)}.`, subskill:'whole_number_subtraction' };
+    }
+    // 3005 - 998 wants 3005 - 1000 + 2, not borrowing across three zeros.
+    const sub=pick([98,198,398,498,998,1998]);
+    const a=sub+randInt(400,2400);
+    const round=Math.round(sub/100)*100 === sub ? sub : Math.round((sub+1)/100)*100;
+    return { prompt:`${formatGrouped(a)} − ${formatGrouped(sub)} = ?`, answer:String(a-sub),
+      explanation:`${sub} is ${round-sub} less than ${round}: ${formatGrouped(a)} − ${round} + ${round-sub} = ${formatGrouped(a-sub)}.`,
+      subskill:'whole_number_subtraction' };
+  }
   if(+year===3){
     // The answer is always positive by construction, and regrouping appears from
     // Medium up — that is the actual Year 3 skill, not the size of the numbers.
@@ -2584,6 +2657,39 @@ function genPowersOfTen(diff, op){
   };
 }
 function genMultiplicationV2(diff, _strategy, year){
+  if(+year===6){
+    if(diff==='easy'){
+      const a=randInt(12,99), b=pick([2,3,4,5,10]);
+      return { prompt:`${a} × ${b} = ?`, answer:String(a*b),
+        explanation: b===5?`${a} × 10 = ${a*10}, halved is ${a*5}.` : `${a} × ${b} = ${formatGrouped(a*b)}`,
+        subskill:'mental_multiplication' };
+    }
+    if(diff==='medium'){
+      const a=randInt(120,980), b=pick([4,5,6]);
+      return { prompt:`${formatGrouped(a)} × ${b} = ?`, answer:String(a*b),
+        explanation: b===5?`${a} × 10 = ${formatGrouped(a*10)}, halved is ${formatGrouped(a*5)}.`
+          :`Partition: ${Math.floor(a/100)*100} × ${b} + ${a%100} × ${b} = ${formatGrouped(a*b)}.`,
+        subskill:'mental_multiplication' };
+    }
+    // The classic Year 6 shortcuts: x25 via quarters, x8 via doubling, x99 via compensation.
+    const kind=pick(['x25','x8','x99','big']);
+    if(kind==='x25'){ const a=pick([12,16,24,28,32,36,44,48]);
+      return { prompt:`${a} × 25 = ?`, answer:String(a*25),
+        explanation:`${a} × 100 = ${formatGrouped(a*100)}, then ÷ 4 = ${formatGrouped(a*25)}.`,
+        subskill:'mental_multiplication' }; }
+    if(kind==='x8'){ const a=pick([125,25,45,75,125,250]);
+      return { prompt:`${a} × 8 = ?`, answer:String(a*8),
+        explanation:`Double three times: ${a} → ${a*2} → ${a*4} → ${formatGrouped(a*8)}.`,
+        subskill:'mental_multiplication' }; }
+    if(kind==='x99'){ const b=pick([6,7,8,9]); const a=pick([99,199,49]);
+      return { prompt:`${a} × ${b} = ?`, answer:String(a*b),
+        explanation:`${a+1} × ${b} = ${formatGrouped((a+1)*b)}, minus ${b} = ${formatGrouped(a*b)}.`,
+        subskill:'mental_multiplication' }; }
+    const a=randInt(210,980), b=pick([6,7,8,9]);
+    return { prompt:`${formatGrouped(a)} × ${b} = ?`, answer:String(a*b),
+      explanation:`Partition: ${Math.floor(a/100)*100} × ${b} + ${a%100} × ${b} = ${formatGrouped(a*b)}.`,
+      subskill:'mental_multiplication' };
+  }
   if(+year===3){
     // Same tables as the Year 3 fast-facts ladder. Hard used to draw from a wider set of
     // tables but the same size numbers, so it regularly landed easier than Medium — it now
@@ -2617,6 +2723,32 @@ function genMultiplicationV2(diff, _strategy, year){
 
 // ---------- Q9 DIVISION (synchronised rotation) ----------
 function genDivisionV2(diff, _strategy, year){
+  if(+year===6){
+    if(diff==='easy'){
+      const b=pick([2,3,4,5,6,7,8,9]), q=randInt(4,12);
+      return { prompt:`${b*q} ÷ ${b} = ?`, answer:String(q),
+        explanation:`${b} × ${q} = ${b*q}.`, subskill:'mental_division' };
+    }
+    if(diff==='medium'){
+      const b=pick([4,5,6,7,8]), q=randInt(40,320);
+      return { prompt:`${formatGrouped(b*q)} ÷ ${b} = ?`, answer:String(q),
+        explanation:`Partition: ${formatGrouped(b*q)} ÷ ${b} = ${formatGrouped(q)}.`,
+        subskill:'mental_division' };
+    }
+    const kind=pick(['by25','by5','by12']);
+    if(kind==='by25'){ const q=randInt(12,80);
+      return { prompt:`${formatGrouped(q*25)} ÷ 25 = ?`, answer:String(q),
+        explanation:`÷ 25 is ÷ 100 then × 4: ${formatGrouped(q*25)} ÷ 100 = ${q/4}, × 4 = ${q}.`,
+        subskill:'mental_division' }; }
+    if(kind==='by5'){ const q=randInt(120,450);
+      return { prompt:`${formatGrouped(q*5)} ÷ 5 = ?`, answer:String(q),
+        explanation:`÷ 5 is ÷ 10 then double: ${formatGrouped(q*5)} ÷ 10 = ${q/2}, doubled is ${q}.`,
+        subskill:'mental_division' }; }
+    const q=randInt(30,150);
+    return { prompt:`${formatGrouped(q*12)} ÷ 12 = ?`, answer:String(q),
+      explanation:`÷ 12 is ÷ 4 then ÷ 3: ${formatGrouped(q*12)} ÷ 4 = ${formatGrouped(q*3)}, ÷ 3 = ${q}.`,
+      subskill:'mental_division' };
+  }
   if(+year===3){
     // Exact division inside the same tables — Year 3 does not meet remainders. Same fix as
     // multiplication: the harder tables at Hard, and sometimes a missing divisor.
@@ -2648,7 +2780,29 @@ const METRIC_PAIRS=[
   {from:'L',to:'mL',k:1000,fam:'capacity'},{from:'mL',to:'L',k:1/1000,fam:'capacity'},
 ];
 let _convDepth = 0;
-function genConversionV2(diff){
+function genConversionV2(diff, _strategy, year){
+  if(+year===6){
+    const P=[{b:'m',s:'cm',k:100},{b:'km',s:'m',k:1000},{b:'kg',s:'g',k:1000},
+             {b:'L',s:'mL',k:1000},{b:'tonne',s:'kg',k:1000}];
+    const p=pick(P);
+    if(diff==='easy'){ const n=randInt(2,9);
+      return { prompt:`Complete the conversion: ${n} ${p.b} = ___ ${p.s}`, answer:String(n*p.k),
+        explanation:`1 ${p.b} = ${p.k} ${p.s}, so ${n} ${p.b} = ${n*p.k} ${p.s}.`,
+        subskill:`convert_${p.b}_${p.s}` }; }
+    if(diff==='medium'){ const n=Number((randInt(11,99)/10).toFixed(1));
+      return { prompt:`Complete the conversion: ${n} ${p.b} = ___ ${p.s}`, answer:String(Number((n*p.k).toPrecision(12))),
+        explanation:`1 ${p.b} = ${p.k} ${p.s}, so ${n} ${p.b} = ${Number((n*p.k).toPrecision(12))} ${p.s}.`,
+        subskill:`convert_${p.b}_${p.s}` }; }
+    // Hard goes the other way — the direction students find harder.
+    const small = randInt(1,20) * (p.k/ (p.k===100?10:100));
+    const ans = Number((small/p.k).toPrecision(12));
+    return { prompt:`Complete the conversion: ${small} ${p.s} = ___ ${p.b}`, answer:String(ans),
+      explanation:`${p.k} ${p.s} = 1 ${p.b}, so ${small} ${p.s} = ${ans} ${p.b}.`,
+      subskill:`convert_${p.s}_${p.b}` };
+  }
+  return genConversionV2Y4(diff);
+}
+function genConversionV2Y4(diff){
   const p=pick(METRIC_PAIRS);
   let val;
   if(diff==='easy'){
@@ -2678,7 +2832,7 @@ function genConversionV2(diff){
   // satisfy, and an unbounded retry would blow the stack rather than serve a question.
   const decimals = (v)=>{ const t=String(v); const i=t.indexOf('.'); return i<0?0:t.length-i-1; };
   if(decimals(ans) > 2 || (Math.abs(ans) < 0.0001 && ans !== 0)){
-    if(_convDepth < 12){ _convDepth++; const q=genConversionV2(diff); _convDepth--; return q; }
+    if(_convDepth < 12){ _convDepth++; const q=genConversionV2Y4(diff); _convDepth--; return q; }
     // Last resort after repeated retries: fall back to a whole-number conversion in the
     // same direction, so a set is never short a question.
     const whole = Math.max(1, Math.round(val * p.k));
@@ -2695,6 +2849,341 @@ function genConversionV2(diff){
     explanation:`${val} ${p.from} = ${ans} ${p.to}`,
     subskill:`${p.from}_to_${p.to}`
   };
+}
+
+// ---------- Year 6 number fluency ----------
+// Built to the principle that HARD must mean a better mental pathway, not bigger numbers.
+// 48 x 25 belongs here because it is 48 x 100 / 4; 7384 + 2947 does not, because it is
+// column addition with no shortcut. Every generator below picks numbers that reward
+// number sense.
+const PRIMES_TO_50=[2,3,5,7,11,13,17,19,23,29,31,37,41,43,47];
+function hcf(a,b){ while(b){ [a,b]=[b,a%b]; } return a; }
+function lcm(a,b){ return a*b/hcf(a,b); }
+
+function genPrimeComposite(diff){
+  const composites=[4,6,8,9,10,12,14,15,16,18,20,21,22,24,25,26,27,28,33,35,39,49];
+  if(diff==='easy'){
+    // Choose the ANSWER first, then a number to fit it. Drawing from a combined pool made
+    // "composite" the answer 64% of the time, so a student who always said composite
+    // scored 64% without knowing anything.
+    const isP=Math.random()<0.5;
+    const n=isP ? pick(PRIMES_TO_50.filter(x=>x<40)) : pick(composites.filter(x=>x<40));
+    return { prompt:`Is ${n} prime or composite?`, inputType:'choice', choices:['prime','composite'],
+      answer:isP?'prime':'composite',
+      explanation:isP?`${n} has exactly two factors: 1 and ${n}.`
+        :`${n} has more than two factors, so it is composite.`,
+      subskill:isP?'prime_numbers':'composite_numbers' };
+  }
+  if(diff==='medium'){
+    // Select-all, mixing both kinds so guessing one label cannot work.
+    const wantPrime=Math.random()<0.5;
+    const ps=shuffleArr(PRIMES_TO_50.filter(x=>x<40)).slice(0,wantPrime?3:2);
+    const cs=shuffleArr(composites).slice(0,wantPrime?2:3);
+    const opts=shuffleArr(ps.concat(cs));
+    const want=opts.filter(n=> wantPrime ? PRIMES_TO_50.indexOf(n)!==-1 : PRIMES_TO_50.indexOf(n)===-1);
+    return { prompt:`Select all the ${wantPrime?'prime':'composite'} numbers.`, inputType:'multi',
+      choices:opts.map(String), answer:want.map(String).join(','),
+      explanation:`${want.join(', ')} ${want.length===1?'is':'are'} ${wantPrime?'prime':'composite'}.`,
+      subskill:wantPrime?'prime_numbers':'composite_numbers' };
+  }
+  // Hard: the next prime, or "which has exactly two factors" — same idea, stated properly.
+  if(Math.random()<0.5){
+    const i=randInt(2,PRIMES_TO_50.length-2), n=PRIMES_TO_50[i];
+    return { prompt:`What is the next prime number after ${n}?`, answer:String(PRIMES_TO_50[i+1]),
+      explanation:`${PRIMES_TO_50[i+1]} is the next number with exactly two factors.`,
+      subskill:'prime_numbers' };
+  }
+  const target=pick(PRIMES_TO_50.filter(x=>x>10&&x<50));
+  const others=shuffleArr(composites.filter(x=>x>10)).slice(0,3);
+  return { prompt:`Which number has exactly two factors?`, inputType:'choice',
+    choices:shuffleArr([target,...others]).map(String), answer:String(target),
+    explanation:`${target} is prime — its only factors are 1 and ${target}.`,
+    subskill:'prime_numbers' };
+}
+
+function genHcfLcm(diff){
+  const wantHcf=Math.random()<0.5;
+  const pairs = diff==='easy' ? [[4,6],[6,9],[8,12],[4,10],[6,8]]
+    : diff==='medium' ? [[8,12],[6,8],[9,12],[10,15],[12,18]]
+    : [[18,30],[8,12],[16,24],[15,25],[24,36],[12,20]];
+  const [a,b]=pick(pairs);
+  if(wantHcf) return { prompt:`Find the highest common factor (HCF) of ${a} and ${b}.`,
+    answer:String(hcf(a,b)),
+    explanation:`The biggest number that divides into both ${a} and ${b} is ${hcf(a,b)}.`,
+    subskill:'hcf' };
+  return { prompt:`Find the lowest common multiple (LCM) of ${a} and ${b}.`,
+    answer:String(lcm(a,b)),
+    explanation:`${lcm(a,b)} is the smallest number in both the ${a} and ${b} times tables.`,
+    subskill:'lcm' };
+}
+
+function genPrimeFactors(diff){
+  const pool = diff==='easy' ? [6,10,14,15,21,22,26]
+    : diff==='medium' ? [12,18,20,28,45,50]
+    : [24,30,36,40,42,60,72];
+  const n=pick(pool);
+  const fs=[]; let x=n;
+  for(const pr of PRIMES_TO_50){ while(x%pr===0){ fs.push(pr); x/=pr; } if(x===1) break; }
+  return { prompt:`Write ${n} as a product of its prime factors.`,
+    inputType:'parts', partsLead:`${n} =`, partsJoin:'×',
+    parts:fs.map(()=>({})), answer:fs.join(','),
+    explanation:`${n} = ${fs.join(' × ')}`, subskill:'prime_factorisation' };
+}
+
+function genPowersOfTenY6(diff){
+  const up=Math.random()<0.5;
+  const pow = diff==='easy' ? pick([10,100]) : pick([10,100,1000]);
+  if(diff==='easy'){
+    const n=randInt(12,999);
+    return up ? { prompt:`${n} × ${pow} = ?`, answer:String(n*pow),
+        explanation:`Every digit shifts ${String(pow).length-1} place${pow===10?'':'s'} to the left.`,
+        subskill:`multiply_by_${pow}` }
+      : { prompt:`${n*pow} ÷ ${pow} = ?`, answer:String(n),
+        explanation:`Every digit shifts ${String(pow).length-1} place${pow===10?'':'s'} to the right.`,
+        subskill:`divide_by_${pow}` };
+  }
+  // Medium and hard use decimals, which is where place value is really tested. The number
+  // of decimal places is chosen against the direction of travel: dividing 0.034 by 1000
+  // gives 0.000034, which is correct and unreadable. Four decimal places is the floor.
+  const powDp = String(pow).length-1;
+  const maxDp = up ? 3 : Math.max(1, 4-powDp);
+  const dp = Math.min(diff==='medium'?randInt(1,2):randInt(2,3), maxDp);
+  const raw = randInt(1, Math.pow(10, 4-dp)*9)/Math.pow(10,dp);
+  const val = Number(raw.toFixed(dp));
+  const exact=(v)=>Number(Number(v).toPrecision(12));
+  return up
+    ? { prompt:`${val} × ${pow} = ?`, answer:String(exact(val*pow)),
+        explanation:`Each digit moves ${String(pow).length-1} place${pow===10?'':'s'} to the left: ${val} × ${pow} = ${exact(val*pow)}.`,
+        subskill:`multiply_by_${pow}` }
+    : { prompt:`${val} ÷ ${pow} = ?`, answer:String(exact(val/pow)),
+        explanation:`Each digit moves ${String(pow).length-1} place${pow===10?'':'s'} to the right: ${val} ÷ ${pow} = ${exact(val/pow)}.`,
+        subskill:`divide_by_${pow}` };
+}
+
+function genIntegers(diff){
+  if(diff==='easy'){
+    if(Math.random()<0.5){
+      const a=-randInt(1,9), b=randInt(1,9);
+      return { prompt:`Which is greater: ${a} or ${b}?`, inputType:'choice',
+        choices:[String(a),String(b)], answer:String(b),
+        explanation:`${b} is above zero and ${a} is below it.`, subskill:'negative_numbers' };
+    }
+    const start=-randInt(1,8), rise=randInt(2,9);
+    return { prompt:`The temperature is ${start}°C and rises ${rise}°C. What is the new temperature?`,
+      answer:String(start+rise), explanation:`${start} + ${rise} = ${start+rise}°C.`,
+      subskill:'negative_numbers' };
+  }
+  if(diff==='medium'){
+    const nums=shuffleArr([-randInt(1,7), -randInt(1,7), 0, randInt(1,6), randInt(1,6)]
+      .filter((v,i,arr)=>arr.indexOf(v)===i));
+    while(nums.length<5) nums.push(randInt(-8,8));
+    const uniq=[...new Set(nums)].slice(0,5);
+    const asc=Math.random()<0.5;
+    const sorted=uniq.slice().sort((a,b)=> asc? a-b : b-a);
+    return { prompt:`Tap the numbers in ${asc?'ascending':'descending'} order.`,
+      items:uniq.map(String), answer:sorted.join(','),
+      inputType:'order', checkType:'numlist',
+      explanation:`${asc?'Ascending':'Descending'}: ${sorted.join(', ')}`,
+      subskill:'integer_ordering' };
+  }
+  if(Math.random()<0.5){
+    const start=-randInt(1,6), drop=randInt(2,9);
+    return { prompt:`The temperature is ${start}°C and drops ${drop}°C. What is the new temperature?`,
+      answer:String(start-drop), explanation:`${start} − ${drop} = ${start-drop}°C.`,
+      subskill:'negative_numbers' };
+  }
+  const less=randInt(2,9), from=-randInt(1,6);
+  return { prompt:`What is ${less} less than ${from}?`, answer:String(from-less),
+    explanation:`${from} − ${less} = ${from-less}.`, subskill:'negative_numbers' };
+}
+
+function genEquivFraction(diff){
+  const base = diff==='easy' ? pick([[1,2],[1,5],[1,4],[3,4]])
+    : diff==='medium' ? pick([[2,3],[3,5],[2,5],[3,4],[5,6]])
+    : pick([[4,7],[5,8],[3,7],[5,9],[7,10]]);
+  const [n,d]=base;
+  const k = diff==='easy' ? pick([2,5,10]) : diff==='medium' ? randInt(2,6) : randInt(3,8);
+  const askNum=Math.random()<0.5;
+  return askNum
+    ? { prompt:`Complete the equivalent fraction.`, inputType:'fracEasy',
+        givenNum:n, givenDen:d, targetDen:d*k, answer:String(n*k),
+        explanation:`${n}/${d} = ${n*k}/${d*k} — both parts multiplied by ${k}.`,
+        subskill:'equivalent_fractions' }
+    : { prompt:`${n}/${d} = ${n*k}/? — what is the missing denominator?`,
+        answer:String(d*k),
+        explanation:`The numerator was multiplied by ${k}, so the denominator is ${d} × ${k} = ${d*k}.`,
+        subskill:'equivalent_fractions' };
+}
+
+function genFractionAddSub(diff){
+  const add=Math.random()<0.5;
+  if(diff==='easy'){
+    const d=pick([5,7,8,9,10]);
+    const a=randInt(1,d-2), b=randInt(1,d-1-a);
+    return add
+      ? { prompt:`${a}/${d} + ${b}/${d} = ?`, answer:`${a+b}/${d}`,
+          explanation:`Same denominator, so add the numerators: ${a+b}/${d}.`, subskill:'fraction_addition' }
+      : { prompt:`${a+b}/${d} − ${b}/${d} = ?`, answer:`${a}/${d}`,
+          explanation:`Same denominator, so subtract the numerators: ${a}/${d}.`, subskill:'fraction_subtraction' };
+  }
+  // Related denominators — one is a multiple of the other, so no hunting for a common one.
+  const small = diff==='medium' ? pick([[1,4],[1,3],[1,2]]) : pick([[1,2],[1,4],[3,4],[1,3]]);
+  const [sn,sd]=small;
+  const k = diff==='medium' ? pick([2,3]) : pick([2,4]);
+  const bd=sd*k, bn=randInt(1,bd-1);
+  const asSmall=sn*k;
+  if(add){
+    const total=bn+asSmall; if(total>=bd) return genFractionAddSub(diff);
+    return { prompt:`${bn}/${bd} + ${sn}/${sd} = ?`, answer:`${total}/${bd}`,
+      explanation:`${sn}/${sd} = ${asSmall}/${bd}, so ${bn}/${bd} + ${asSmall}/${bd} = ${total}/${bd}.`,
+      subskill:'fraction_addition' };
+  }
+  const bigger=Math.max(bn,asSmall)+randInt(0,1);
+  if(bigger<=asSmall || bigger>=bd) return genFractionAddSub(diff);
+  return { prompt:`${bigger}/${bd} − ${sn}/${sd} = ?`, answer:`${bigger-asSmall}/${bd}`,
+    explanation:`${sn}/${sd} = ${asSmall}/${bd}, so ${bigger}/${bd} − ${asSmall}/${bd} = ${bigger-asSmall}/${bd}.`,
+    subskill:'fraction_subtraction' };
+}
+
+// The equivalences a Year 6 should simply know.
+const FDP_FACTS=[
+  {f:'1/2',d:0.5,p:50},{f:'1/4',d:0.25,p:25},{f:'3/4',d:0.75,p:75},
+  {f:'1/5',d:0.2,p:20},{f:'2/5',d:0.4,p:40},{f:'3/5',d:0.6,p:60},{f:'4/5',d:0.8,p:80},
+  {f:'1/10',d:0.1,p:10},{f:'3/10',d:0.3,p:30},{f:'1/100',d:0.01,p:1},
+];
+function genFracDecPct(diff){
+  const fact=pick(FDP_FACTS);
+  if(diff==='easy'){
+    const asPct=Math.random()<0.5;
+    return asPct
+      ? { prompt:`${fact.f} = ___%`, answer:String(fact.p),
+          explanation:`${fact.f} = ${fact.d} = ${fact.p}%.`, subskill:'fdp_equivalence' }
+      : { prompt:`${fact.d} = ___%`, answer:String(fact.p),
+          explanation:`${fact.d} = ${fact.p}%.`, subskill:'fdp_equivalence' };
+  }
+  if(diff==='medium'){
+    return { prompt:`${fact.p}% as a decimal = ?`, answer:String(fact.d),
+      explanation:`${fact.p}% means ${fact.p} out of 100, which is ${fact.d}.`, subskill:'fdp_equivalence' };
+  }
+  // Select-all with distractors that look right — the classic 0.14 for a quarter.
+  const decoyDec = Number((fact.d/2).toFixed(3));
+  const decoyPct = fact.p<10 ? fact.p*10 : Math.round(fact.p/2);
+  const opts=shuffleArr([`${fact.p}%`, String(fact.d), `${decoyPct}%`, String(decoyDec)]
+    .filter((v,i,a)=>a.indexOf(v)===i));
+  const want=opts.filter(o=> o===`${fact.p}%` || o===String(fact.d));
+  return { prompt:`Select all the values equal to ${fact.f}.`, inputType:'multi',
+    choices:opts, answer:want.join(','),
+    explanation:`${fact.f} = ${fact.d} = ${fact.p}%.`, subskill:'fdp_equivalence' };
+}
+
+function genPercentOf(diff){
+  if(diff==='easy'){
+    const pct=pick([10,50,25]); const base=pick([20,40,60,70,80,100,120]);
+    if((base*pct)%100!==0) return genPercentOf(diff);
+    return { prompt:`${pct}% of ${base} = ?`, answer:String(base*pct/100),
+      explanation: pct===50?`Half of ${base} is ${base/2}.` : pct===10?`A tenth of ${base} is ${base/10}.`
+        : `A quarter of ${base} is ${base/4}.`, subskill:'percentage_of_quantity' };
+  }
+  if(diff==='medium'){
+    const pct=pick([20,25,75,10,50]); const base=pick([40,60,80,120,160,200]);
+    if((base*pct)%100!==0) return genPercentOf(diff);
+    return { prompt:`${pct}% of ${base} = ?`, answer:String(base*pct/100),
+      explanation:`10% of ${base} is ${base/10}, so ${pct}% is ${base*pct/100}.`,
+      subskill:'percentage_of_quantity' };
+  }
+  // Hard: build from 10% and 5%, which is the mental pathway.
+  const pct=pick([15,35,45,12.5,5]); const base=pick([40,60,80,120,160,200,64]);
+  const ans=base*pct/100;
+  if(!Number.isInteger(ans)) return genPercentOf(diff);
+  return { prompt:`${pct}% of ${base} = ?`, answer:String(ans),
+    explanation: pct===12.5?`12.5% is an eighth: ${base} ÷ 8 = ${ans}.`
+      :`10% of ${base} is ${base/10}, and 5% is ${base/20}, so ${pct}% is ${ans}.`,
+    subskill:'percentage_of_quantity' };
+}
+
+function genDecimalAddSub(diff){
+  const add=Math.random()<0.5;
+  const mk=(dp,lo,hi)=>Number((randInt(lo,hi)/Math.pow(10,dp)).toFixed(dp));
+  const exact=v=>Number(Number(v).toPrecision(12));
+  if(diff==='easy'){
+    const a=mk(1,11,99), b=mk(1,11,99);
+    return add ? { prompt:`${a} + ${b} = ?`, answer:String(exact(a+b)),
+        explanation:`${a} + ${b} = ${exact(a+b)}`, subskill:'decimal_addition' }
+      : { prompt:`${exact(a+b)} − ${b} = ?`, answer:String(a),
+        explanation:`${exact(a+b)} − ${b} = ${a}`, subskill:'decimal_subtraction' };
+  }
+  if(diff==='medium'){
+    const a=mk(2,101,9999)/1, b=mk(1,101,999);
+    return add ? { prompt:`${a} + ${b} = ?`, answer:String(exact(a+b)),
+        explanation:`Line up the decimal points: ${exact(a+b)}`, subskill:'decimal_addition' }
+      : { prompt:`${exact(a+b)} − ${b} = ?`, answer:String(a),
+        explanation:`Line up the decimal points: ${a}`, subskill:'decimal_subtraction' };
+  }
+  // Hard: different numbers of decimal places, which is where alignment matters.
+  const a=Number((randInt(1000,9999)/100).toFixed(2));
+  const b=Number((randInt(1000,9999)/1000).toFixed(3));
+  return add ? { prompt:`${a} + ${b} = ?`, answer:String(exact(a+b)),
+      explanation:`${a} has 2 decimal places and ${b} has 3 — line up the points: ${exact(a+b)}`,
+      subskill:'decimal_addition' }
+    : { prompt:`${exact(a+b)} − ${b} = ?`, answer:String(a),
+      explanation:`Line up the decimal points: ${a}`, subskill:'decimal_subtraction' };
+}
+
+function genDecimalMulDiv(diff){
+  const mul=Math.random()<0.5;
+  const exact=v=>Number(Number(v).toPrecision(12));
+  if(diff==='easy'){
+    const a=Number((randInt(11,99)/10).toFixed(1)), b=randInt(2,6);
+    return mul ? { prompt:`${a} × ${b} = ?`, answer:String(exact(a*b)),
+        explanation:`${a} × ${b} = ${exact(a*b)}`, subskill:'decimal_multiplication' }
+      : { prompt:`${exact(a*b)} ÷ ${b} = ?`, answer:String(a),
+        explanation:`${exact(a*b)} ÷ ${b} = ${a}`, subskill:'decimal_division' };
+  }
+  const b = diff==='medium' ? randInt(2,6) : randInt(4,8);
+  const a = diff==='medium' ? Number((randInt(101,999)/10).toFixed(1))
+    : Number((randInt(101,999)/100).toFixed(2));
+  return mul ? { prompt:`${a} × ${b} = ?`, answer:String(exact(a*b)),
+      explanation:`${a} × ${b} = ${exact(a*b)}`, subskill:'decimal_multiplication' }
+    : { prompt:`${exact(a*b)} ÷ ${b} = ?`, answer:String(a),
+      explanation:`${exact(a*b)} ÷ ${b} = ${a}`, subskill:'decimal_division' };
+}
+
+function genOrderOps(diff){
+  if(diff==='easy'){
+    const a=randInt(2,9), b=randInt(2,9), c=randInt(2,9);
+    if(Math.random()<0.5)
+      return { prompt:`${a} + ${b} × ${c} = ?`, answer:String(a+b*c),
+        explanation:`Multiply first: ${b} × ${c} = ${b*c}, then add ${a}.`, subskill:'order_of_operations' };
+    // Subtraction form: the product must be smaller than the first number, or a Year 6
+    // meets a negative answer in a question that is not about negatives.
+    const prod=b*c, first=prod+randInt(1,20);
+    return { prompt:`${first} − ${b} × ${c} = ?`, answer:String(first-prod),
+      explanation:`Multiply first: ${b} × ${c} = ${prod}, then ${first} − ${prod} = ${first-prod}.`,
+      subskill:'order_of_operations' };
+  }
+  if(diff==='medium'){
+    const b=randInt(2,9), c=b*randInt(2,6), a=randInt(5,20);
+    return { prompt:`${a} + ${c} ÷ ${b} = ?`, answer:String(a+c/b),
+      explanation:`Divide first: ${c} ÷ ${b} = ${c/b}, then add ${a}.`, subskill:'order_of_operations' };
+  }
+  const a=randInt(4,12), b=randInt(2,6), c=randInt(3,8), d=randInt(2,9);
+  return { prompt:`${a} + ${b} × ${c} − ${d} = ?`, answer:String(a+b*c-d),
+    explanation:`${b} × ${c} = ${b*c} first, then ${a} + ${b*c} − ${d} = ${a+b*c-d}.`,
+    subskill:'order_of_operations' };
+}
+
+function genVolume(diff){
+  const l = diff==='easy'? randInt(2,5) : diff==='medium'? randInt(3,8) : randInt(4,12);
+  const w = diff==='easy'? randInt(2,4) : randInt(2,6);
+  const h = diff==='easy'? randInt(2,4) : randInt(2,7);
+  if(diff!=='easy' && Math.random()<0.35){
+    // Capacity from volume — 1 mL = 1 cm³, which is the fact being tested.
+    const v=l*w*h*randInt(2,9);
+    return { prompt:`A container has a volume of ${v} cm³. What is its capacity in millilitres? (1 mL = 1 cm³)`,
+      answer:String(v), explanation:`1 mL = 1 cm³, so ${v} cm³ holds ${v} mL.`, subskill:'volume_capacity' };
+  }
+  return { prompt:`A rectangular prism is ${l} cm long, ${w} cm wide and ${h} cm high. What is its volume in cm³?`,
+    answer:String(l*w*h), explanation:`${l} × ${w} × ${h} = ${l*w*h} cm³.`, subskill:'volume' };
 }
 
 // ---------- Year 3: measurement, 3D shapes, fact families ----------
@@ -2789,6 +3278,16 @@ function genFactFamily(diff){
 
 // ---------- Q20 FRACTION OF A COLLECTION ----------
 function genFractionOf(diff, _strategy, year){
+  if(+year===6){
+    const sets = diff==='easy' ? [[1,2,24],[1,5,20],[1,4,28],[1,3,27],[1,10,90]]
+      : diff==='medium' ? [[2,3,30],[3,5,50],[3,4,40],[2,5,45],[5,6,36]]
+      : [[5,6,42],[7,10,80],[3,8,64],[4,9,72],[5,8,56],[7,12,84]];
+    const [n,d,total]=pick(sets);
+    return { prompt:`What is`, fracOfLead:true, fracNum:n, fracDen:d, ofTotal:total,
+      answer:String(total*n/d),
+      explanation:`${total} ÷ ${d} = ${total/d}, then × ${n} = ${total*n/d}.`,
+      subskill:'fraction_of_quantity' };
+  }
   if(+year===3){
     // A unit fraction of a small collection, and always a whole-number answer.
     const den = diff==='easy' ? pick([2,4]) : pick([2,3,4,5]);
@@ -3337,6 +3836,19 @@ const SKILLS = {
   MIXED_IMPROPER:   { title:'Mixed and improper fractions' },
   PROBABILITY:      { title:'Chance and probability' },
   STATISTICS:       { title:'Data and averages' },
+  PRIME_COMPOSITE:  { title:'Prime and composite numbers' },
+  HCF_LCM:          { title:'HCF and LCM' },
+  PRIME_FACTORS:    { title:'Prime factorisation' },
+  POWERS_TEN:       { title:'Multiplying and dividing by powers of 10' },
+  INTEGERS:         { title:'Positive and negative numbers' },
+  EQUIV_FRACTION:   { title:'Equivalent fractions' },
+  FRACTION_ADD_SUB: { title:'Adding and subtracting fractions' },
+  FDP:              { title:'Fractions, decimals and percentages' },
+  PERCENT_OF:       { title:'Percentage of a quantity' },
+  DECIMAL_ADD_SUB:  { title:'Adding and subtracting decimals' },
+  DECIMAL_MUL_DIV:  { title:'Multiplying and dividing decimals' },
+  ORDER_OPS:        { title:'Order of operations' },
+  VOLUME:           { title:'Volume and capacity' },
   MEASUREMENT:      { title:'Measuring length, mass and capacity' },
   SHAPES_3D:        { title:'3D shapes' },
   FACT_FAMILY:      { title:'Fact families' },
@@ -3361,7 +3873,15 @@ const YEAR_PLANS = {
       'MULTIPLICATION','DIVISION','COMPARE_FRACTION','VISUAL_FRACTION','FRAC_DEC',
       'ORDER_DECIMAL','COINS','AREA_PERIMETER','TIME','SIMPLIFY_FRACTION','METRIC_CONVERT',
       'ANGLES','FRACTION_OF','MISSING_NUMBER','MIXED_IMPROPER','PROBABILITY','STATISTICS'],
-  // Years 5 and 6 have no plan of their own yet and resolve to Year 4 — see planForYear.
+  // Year 6: 24 questions, weighted hard toward number fluency. Nets, transformations,
+  // spinners, coordinates and timetables are deliberately absent — each needs a drawing
+  // where a small rendering error makes the question unanswerable, and the underlying
+  // skill is already covered in a cleaner text form (chance, data) or belongs elsewhere.
+  6: ['PRIME_COMPOSITE','FACTORS','HCF_LCM','PRIME_FACTORS','ADDITION','SUBTRACTION',
+      'MULTIPLICATION','DIVISION','POWERS_TEN','INTEGERS','EQUIV_FRACTION','SIMPLIFY_FRACTION',
+      'FRACTION_ADD_SUB','FRACTION_OF','FDP','PERCENT_OF','DECIMAL_ADD_SUB','DECIMAL_MUL_DIV',
+      'ORDER_OPS','SEQUENCE','METRIC_CONVERT','AREA_PERIMETER','VOLUME','ANGLES'],
+  // Year 5 still resolves to Year 4 — see planForYear.
 };
 
 // Weeks generated before skill codes existed carry only a slot number. Every
@@ -3464,6 +3984,20 @@ const SLOTS=[
   {skill:'MEASUREMENT',      title:'Measuring length, mass and capacity', gen:genMeasurement},
   {skill:'SHAPES_3D',        title:'3D shapes',                    gen:genShapes3D},
   {skill:'FACT_FAMILY',      title:'Fact families',                gen:genFactFamily},
+  // Year 6 only.
+  {skill:'PRIME_COMPOSITE',  title:'Prime and composite numbers',  gen:genPrimeComposite},
+  {skill:'HCF_LCM',          title:'HCF and LCM',                  gen:genHcfLcm},
+  {skill:'PRIME_FACTORS',    title:'Prime factorisation',          gen:genPrimeFactors},
+  {skill:'POWERS_TEN',       title:'Powers of 10',                 gen:genPowersOfTenY6},
+  {skill:'INTEGERS',         title:'Positive and negative numbers',gen:genIntegers},
+  {skill:'EQUIV_FRACTION',   title:'Equivalent fractions',         gen:genEquivFraction},
+  {skill:'FRACTION_ADD_SUB', title:'Adding and subtracting fractions', gen:genFractionAddSub},
+  {skill:'FDP',              title:'Fractions, decimals, percentages', gen:genFracDecPct},
+  {skill:'PERCENT_OF',       title:'Percentage of a quantity',     gen:genPercentOf},
+  {skill:'DECIMAL_ADD_SUB',  title:'Adding and subtracting decimals',  gen:genDecimalAddSub},
+  {skill:'DECIMAL_MUL_DIV',  title:'Multiplying and dividing decimals',gen:genDecimalMulDiv},
+  {skill:'ORDER_OPS',        title:'Order of operations',          gen:genOrderOps},
+  {skill:'VOLUME',           title:'Volume and capacity',          gen:genVolume},
 ];
 function buildQuestion(slotIdx, diff, strategyKey, year){
   const list = slotsForYear(year);
@@ -3510,7 +4044,10 @@ function normalize(s){ return String(s==null?'':s).trim().toLowerCase().replace(
 // match. Anything that is not a clean number returns null and falls back to the old
 // exact text comparison, so words, labels and times are untouched.
 function numVal(s){
-  const t=String(s==null?'':s).trim().replace(/[\s,]/g,'');
+  // U+2212 MINUS SIGN and the en dash both arrive from iPad keyboards, autocorrect and
+  // copy-paste. A student who has the right answer should not lose it to a character that
+  // looks identical on screen — this is the same failure as 0.50 being marked wrong.
+  const t=String(s==null?'':s).trim().replace(/[\s,]/g,'').replace(/[\u2212\u2013\u2014]/g,'-');
   if(!/^-?(\d+\.?\d*|\.\d+)$/.test(t)) return null;
   const n=Number(t);
   return isFinite(n) ? n : null;
@@ -4664,7 +5201,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.48';
+const BUILD = '2026-08-10.49';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
