@@ -4029,7 +4029,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.18';
+const BUILD = '2026-08-10.19';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -8162,6 +8162,7 @@ function renderMyLiveSession(){
 // A student hosting their own race. Deliberately scoped to their OWN teacher's students:
 // teacherUid is copied from their profile and the rules refuse anything else, so a race
 // can never reach a child in another teacher's class. hostUid marks who may start it.
+const STUDENT_RACE_SECONDS = 60;
 async function hostStudentRace(){
   if(!S.profile || !S.profile.teacherUid){ S.toast='You need to be in a class to start a race.'; render(); return; }
   try{
@@ -8170,7 +8171,10 @@ async function hostStudentRace(){
       hostUid: S.user.uid,
       hostName: S.profile.displayName || '',
       level: studentRaceLevel(S.profile, 'medium'),   // only a fallback; each racer uses their own
-      status: 'lobby', createdAt: serverTimestamp(), durationSec: 300,
+      // A student challenge is a quick duel between friends, not the class event — one
+      // minute, so it can be run again and again at lunchtime without eating the hour.
+      // The teacher's own races stay at five minutes.
+      status: 'lobby', createdAt: serverTimestamp(), durationSec: STUDENT_RACE_SECONDS,
       classId: S.profile.classId || null
     });
     await joinLiveGame(ref.id);
@@ -8182,7 +8186,7 @@ function renderStartRaceCard(sub){
     <div class="mmc-card" style="text-align:center;">
       <div style="font-size:34px;">🐎</div>
       <h3>Challenge your class</h3>
-      <div class="meta">${esc(sub || "Start a race and anyone in your class can join. Everyone gets questions at their own level, so it's a fair race.")}</div>
+      <div class="meta">${esc(sub || "Start a one-minute race and anyone in your class can join. Everyone gets questions at their own level, so it's a fair race.")}</div>
     </div>
   `);
   const btn=el('<button class="mmc-btn gold" style="width:100%;font-size:16px;padding:12px;margin-top:6px;">🏁 Start a race</button>');
@@ -8206,7 +8210,7 @@ function renderStudentLiveGame(){
         <div class="mmc-card">
           <h3>🐎 ${room.hostUid ? esc((room.hostName||'A classmate')+"'s race") : 'Race'} starting soon!</h3>
           <div class="meta">${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} waiting · Room: <code class="mmc-code">${esc(room.id.slice(0,6))}</code></div>
-          <div class="meta">You'll get questions at your own level.</div>
+          <div class="meta">${room.hostUid ? 'One minute' : 'Five minutes'} · questions at your own level.</div>
           <button class="mmc-btn gold" id="mmc-live-join">Join ▶</button>
         </div>
       `);
@@ -8245,7 +8249,7 @@ function renderStudentLiveGame(){
   if(room.status==='active'){
     if(!joined){
       wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">🐎</div>This race already started — you can watch, or start your own.</div>'));
-      wrap.appendChild(renderStartRaceCard('That race is already running. Start your own and your classmates can join yours instead.'));
+      wrap.appendChild(renderStartRaceCard('That race is already running. Start your own one-minute race and your classmates can join yours instead.'));
       wrap.appendChild(renderLiveLeaderboardCard('Live leaderboard', room, false));
       return wrap;
     }
