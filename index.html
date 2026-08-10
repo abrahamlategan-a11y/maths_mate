@@ -598,7 +598,11 @@
   #mmc.mmc-pro .mmc-classpick select:hover { border-color:var(--pro-mute); }
   #mmc.mmc-pro .mmc-stu, #mmc.mmc-pro .mmc-stu-head {
     display:grid;
-    grid-template-columns: minmax(120px,1.4fr) 104px 100px 108px 120px 128px;
+    /* Six data columns plus a fixed actions column. The Year select was added on
+       10 August without widening this, which pushed Rank onto a second line and the
+       buttons onto a third, and left every header from Class onward describing the
+       wrong control. */
+    grid-template-columns: minmax(110px,1.3fr) 96px 92px 104px 84px 116px 92px;
     align-items:center; column-gap:10px;
   }
   /* The action buttons get their own line spanning the full width, right-aligned.
@@ -613,7 +617,34 @@
   #mmc.mmc-pro .mmc-clsrow:last-child { border-bottom:0; }
   #mmc.mmc-pro .mmc-clsrow .mmc-stu-name { flex:1; min-width:120px; }
   #mmc.mmc-pro .mmc-clsrow .mmc-stu-actions { margin-left:auto; }
-  #mmc.mmc-pro .mmc-stu-actions { grid-column:1 / -1; justify-content:flex-end; }
+  #mmc.mmc-pro .mmc-stu-actions { justify-content:flex-end; }
+  /* The expanded strip spans the full row underneath it. Rank, password reset and delete
+     live here: a once-a-term decision and two destructive actions had no business sitting
+     in every row, one misclick from wiping a child's history. */
+  /* Teacher-facing profile. Deliberately plain: the .mmc-pro palette, no coloured fills,
+     no emoji cards. A teacher may read this to a parent or print it; the child's own
+     dashboard is the place for trophies. */
+  .mmc-ov-figs { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:0; border:1px solid var(--paper-line); border-radius:8px; overflow:hidden; margin:12px 0 18px; }
+  .mmc-ov-fig { padding:12px 14px; border-right:1px solid var(--paper-line); }
+  .mmc-ov-fig:last-child { border-right:0; }
+  .mmc-ov-figlabel { font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-soft); }
+  .mmc-ov-fignum { font-size:24px; font-weight:800; margin-top:2px; }
+  .mmc-ov-figsub { font-size:12px; color:var(--ink-soft); }
+  .mmc-ov-cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:18px; }
+  .mmc-ov-h { font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-soft); margin:18px 0 6px; }
+  .mmc-ov-list { width:100%; border-collapse:collapse; font-size:14px; }
+  .mmc-ov-list td { padding:6px 0; border-bottom:1px solid var(--paper-line); }
+  .mmc-ov-list td:last-child { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .mmc-ov-pick { width:100%; border-collapse:collapse; font-size:14px; }
+  .mmc-ov-pick td { padding:9px 8px; border-bottom:1px solid var(--paper-line); cursor:pointer; }
+  .mmc-ov-pick tr:hover td { background:var(--pro-wash,#FAF9F7); }
+  .mmc-ov-action { padding:10px 12px; border-left:3px solid var(--ink-soft); background:var(--pro-wash,#FAF9F7); margin-bottom:8px; font-size:14px; }
+  .mmc-stu-more {
+    grid-column:1 / -1; display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:10px 0 4px; margin-top:6px; border-top:1px dashed var(--paper-line);
+  }
+  .mmc-stu-morelabel { font-size:12px; font-weight:700; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.04em; }
+  .mmc-stu-more select { max-width:170px; }
   #mmc.mmc-pro .mmc-stu { padding:9px 0; border-bottom:1px solid var(--pro-soft); }
   #mmc.mmc-pro .mmc-stu:last-child { border-bottom:0; }
   #mmc.mmc-pro .mmc-stu-head { padding:0 0 8px; margin-top:14px; border-bottom:1px solid var(--pro-line); }
@@ -3986,7 +4017,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.13';
+const BUILD = '2026-08-10.14';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -4316,6 +4347,7 @@ const S = {
   weeks:[], results:[], profiles:{},
   previewStudentUid:null, previewSaved:null, setupLinkFor:null, timeOverride:null, teacherTab:'home', weeksView:'create', studentsView:'list', editingClasses:false, editingDraftId:null, showArchivedWeeks:false,
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null, ttDetailUid:null,
+  stuExpandedUid:null, overviewUid:null,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
   quickDeployDone:null, resetPasswordResult:null,
@@ -5908,6 +5940,7 @@ function renderLedger(){
     <button class="mmc-tab" data-gv="byweek">By Week</button>
     <button class="mmc-tab" data-gv="byquestion">By Question</button>
     <button class="mmc-tab" data-gv="timetable">Times Tables</button>
+    <button class="mmc-tab" data-gv="overview">Student Overviews</button>
   </div>`);
   const view=S.gradebookView||'summary';
   subtabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.gv===view) b.classList.add('active');
@@ -5916,7 +5949,11 @@ function renderLedger(){
   bar.appendChild(subtabs);
   bar.appendChild(renderClassPicker());
   wrap.appendChild(bar);
-  wrap.appendChild(view==='summary' ? renderLedgerSummary() : view==='byweek' ? renderLedgerByWeek() : view==='timetable' ? renderTeacherTimetable() : renderLedgerByQuestion());
+  wrap.appendChild(view==='summary' ? renderLedgerSummary()
+    : view==='byweek' ? renderLedgerByWeek()
+    : view==='timetable' ? renderTeacherTimetable()
+    : view==='overview' ? renderStudentOverviews()
+    : renderLedgerByQuestion());
   return wrap;
 }
 
@@ -6301,6 +6338,140 @@ function renderTTStudentDetailRow(uid, mine, ins){
   }
   tr.appendChild(td);
   return tr;
+}
+
+// ---------- Student Overviews (teacher-facing profile) ----------
+// The child's dashboard shows trophies and colour because a nine-year-old needs to want
+// to look at it. A teacher needs the same information as evidence: plain figures, plain
+// language, printable, and something you could read aloud to a parent. Same underlying
+// analysis (computeSkillStats / computeTTInsights / computeBadgeInfo) — different audience.
+function renderStudentOverviews(){
+  const wrap=el('<div></div>');
+  const uids=classFilteredStudentUids().sort((a,b)=>
+    ((S.profiles[a]&&S.profiles[a].displayName)||'').localeCompare((S.profiles[b]&&S.profiles[b].displayName)||''));
+  if(!uids.length){ wrap.appendChild(el('<div class="mmc-empty">No students in this class yet.</div>')); return wrap; }
+  if(S.overviewUid && uids.indexOf(S.overviewUid)!==-1){
+    const back=el('<a href="#" style="color:var(--sky-deep);font-size:13px;">← all students</a>');
+    back.onclick=(e)=>{ e.preventDefault(); S.overviewUid=null; render(); };
+    wrap.appendChild(back);
+    wrap.appendChild(renderOverviewProfile(S.overviewUid));
+    return wrap;
+  }
+  wrap.appendChild(el('<div class="meta" style="margin-bottom:10px;">Select a student for a full picture — strengths, growth areas, times-tables aptitude and what to focus on next.</div>'));
+  const table=el('<table class="mmc-ov-pick"><tbody></tbody></table>');
+  const tb=table.querySelector('tbody');
+  uids.forEach(uid=>{
+    const p=S.profiles[uid]||{};
+    const mine=(S.ttAttempts||[]).filter(a=>a.uid===uid);
+    const res=(S.results||[]).filter(r=>r.uid===uid);
+    const avg = res.length ? Math.round(res.reduce((sum,r)=>sum+(r.total? r.score/r.total:0),0)/res.length*100) : null;
+    const ins=computeTTInsights(mine);
+    const focus = ins.items[0] ? ttInsightShort(ins.items[0]) : '—';
+    const tr=el(`<tr>
+      <td style="font-weight:700;">${esc(p.displayName||uid)}</td>
+      <td class="meta">Year ${studentYear(p)}${p.group? ' · '+esc(groupLabel(p.group)) : ''}</td>
+      <td class="meta">${res.length} set${res.length===1?'':'s'}</td>
+      <td>${avg==null? '<span class="meta">—</span>' : avg+'%'}</td>
+      <td class="meta">${esc(focus)}</td>
+    </tr>`);
+    tr.onclick=()=>{ S.overviewUid=uid; render(); };
+    tb.appendChild(tr);
+  });
+  wrap.appendChild(table);
+  return wrap;
+}
+
+function overviewKeyFigures(res, tt, badge){
+  const avg = res.length ? Math.round(res.reduce((s,r)=>s+(r.total? r.score/r.total:0),0)/res.length*100) : null;
+  const ttAcc = badge.avgAccuracy;
+  const last = [...res.map(r=>r.submittedAt?.seconds||0), ...tt.map(a=>a.submittedAt?.seconds||0)].sort((a,b)=>b-a)[0]||0;
+  const days = last ? Math.floor((Date.now()/1000-last)/86400) : null;
+  return [
+    { label:'Sets completed', num:String(res.length), sub:'' },
+    { label:'Average score', num: avg==null?'—':avg+'%', sub:'across all sets' },
+    { label:'Times tables', num:String(tt.length), sub:'sessions' },
+    { label:'Timed accuracy', num: badge.total? ttAcc+'%' : '—', sub:'challenges only' },
+    { label:'Last active', num: days==null?'—':(days<1?'Today':days===1?'Yesterday':days+'d'), sub: days==null?'never':'ago' },
+  ];
+}
+
+function renderOverviewProfile(uid){
+  const p=S.profiles[uid]||{};
+  const name=p.displayName||uid;
+  const first=String(name).split(/\s+/)[0];
+  const res=(S.results||[]).filter(r=>r.uid===uid);
+  const tt=(S.ttAttempts||[]).filter(a=>a.uid===uid);
+  const badge=computeBadgeInfo(tt,p);
+  const stats=computeSkillStats(res, S.weeks, (S.allSkillPracticeRecords||[]).filter(r=>r.uid===uid));
+  const {strengths, weaknesses}=pickStrengthsAndWeaknesses(stats);
+  const ttIns=computeTTInsights(tt);
+  const wrap=el('<div></div>');
+
+  wrap.appendChild(el(`<h3 style="margin:10px 0 2px;">${esc(name)}</h3>
+    <div class="meta">Year ${studentYear(p)}${p.group? ' · '+esc(groupLabel(p.group)):''} · Times-tables rank: ${esc(badge.tier.label)}${badge.pinnedBy? ' (pinned)':''}</div>`));
+
+  const figs=el('<div class="mmc-ov-figs"></div>');
+  overviewKeyFigures(res,tt,badge).forEach(f=>figs.appendChild(el(
+    `<div class="mmc-ov-fig"><div class="mmc-ov-figlabel">${esc(f.label)}</div><div class="mmc-ov-fignum">${esc(f.num)}</div><div class="mmc-ov-figsub">${esc(f.sub)}</div></div>`)));
+  wrap.appendChild(figs);
+
+  // Suggested focus first — it is the reason a teacher opened this page.
+  wrap.appendChild(el('<div class="mmc-ov-h">Suggested focus</div>'));
+  const actions=[];
+  weaknesses.slice(0,2).forEach(w=>actions.push(
+    `${first} is at ${Math.round(w.overallAccuracy*100)}% on ${w.title.toLowerCase()} across ${w.total} question${w.total===1?'':'s'}. Set a targeted practice session, or hold that question back next set and teach it first.`));
+  ttIns.items.slice(0,1).forEach(it=>actions.push(ttInsightSentence(first,it)+
+    (it.kind==='turnaround'? '' : ` They can drill this under "Pick your own" on the Training Ground.`)));
+  if(!res.length && !tt.length) actions.push(`${first} has not completed anything yet — check they can sign in.`);
+  if(!actions.length) actions.push(`Nothing is standing out for ${first} at the moment. Working solidly across the board.`);
+  actions.forEach(a=>wrap.appendChild(el(`<div class="mmc-ov-action">${esc(a)}</div>`)));
+
+  const cols=el('<div class="mmc-ov-cols"></div>');
+  const mkList=(title, rows, emptyMsg)=>{
+    const box=el('<div></div>');
+    box.appendChild(el(`<div class="mmc-ov-h" style="margin-top:14px;">${esc(title)}</div>`));
+    if(!rows.length){ box.appendChild(el(`<div class="meta">${esc(emptyMsg)}</div>`)); return box; }
+    const t=el('<table class="mmc-ov-list"><tbody></tbody></table>');
+    rows.forEach(r=>t.querySelector('tbody').appendChild(el(
+      `<tr><td>${esc(r.title)}</td><td>${esc(r.right)}</td></tr>`)));
+    box.appendChild(t); return box;
+  };
+  cols.appendChild(mkList('Strengths',
+    strengths.map(x=>({title:x.title, right:Math.round(x.overallAccuracy*100)+'% of '+x.total})),
+    'No clear strengths yet — needs a longer track record.'));
+  cols.appendChild(mkList('Growth areas',
+    weaknesses.map(x=>({title:x.title, right:Math.round(x.overallAccuracy*100)+'% of '+x.total})),
+    'Nothing flagged.'));
+  wrap.appendChild(cols);
+
+  wrap.appendChild(el('<div class="mmc-ov-h">Times tables</div>'));
+  const bestOf=(lvl)=>{ const at=tt.filter(a=>a.level===lvl); if(!at.length) return '—';
+    const b=at.reduce((x,a)=>a.score>x.score?a:x, at[0]); return `${b.score}/${b.attempted} (${b.accuracy}%)`; };
+  const ttT=el('<table class="mmc-ov-list"><tbody></tbody></table>');
+  [['Best Easy',bestOf('easy')],['Best Medium',bestOf('medium')],['Best Hard',bestOf('hard')],
+   ['Sessions',String(tt.length)],['Timed accuracy', badge.total? badge.avgAccuracy+'%':'—']]
+   .forEach(([a,b])=>ttT.querySelector('tbody').appendChild(el(`<tr><td>${esc(a)}</td><td>${esc(b)}</td></tr>`)));
+  wrap.appendChild(ttT);
+  if(ttIns.items.length){
+    const t2=el('<table class="mmc-ov-list" style="margin-top:8px;"><tbody></tbody></table>');
+    ttIns.items.forEach(it=>t2.querySelector('tbody').appendChild(el(
+      `<tr><td>${esc(it.kind==='turnaround'?'Turnarounds':it.kind==='wrong'?'Needs work':'Accurate but slow')}</td><td>${esc(ttInsightShort(it))}</td></tr>`)));
+    wrap.appendChild(t2);
+  }
+
+  wrap.appendChild(el('<div class="mmc-ov-h">Recent activity</div>'));
+  const feed=[]
+    .concat(res.map(r=>({t:r.submittedAt?.seconds||0, what:(r.weekLabel||'Practice set'), detail:`${r.score}/${r.total}`})))
+    .concat(tt.map(a=>({t:a.submittedAt?.seconds||0, what:`Times tables · ${a.level==='custom'?(a.customLabel||'custom'):a.level}${a.mode==='practice'?' (practice)':''}`, detail:`${a.score}/${a.attempted}`})))
+    .sort((a,b)=>b.t-a.t).slice(0,8);
+  if(!feed.length) wrap.appendChild(el('<div class="meta">Nothing recorded yet.</div>'));
+  else {
+    const ft=el('<table class="mmc-ov-list"><tbody></tbody></table>');
+    feed.forEach(f=>ft.querySelector('tbody').appendChild(el(
+      `<tr><td>${esc(f.what)}<span class="meta"> · ${f.t? new Date(f.t*1000).toLocaleDateString():'—'}</span></td><td>${esc(f.detail)}</td></tr>`)));
+    wrap.appendChild(ft);
+  }
+  return wrap;
 }
 
 function renderTeacherActivity(){
@@ -7036,8 +7207,9 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
       <span>Username</span>
       <span>Password</span>
       <span>${S.classes.length>1?'Class':''}</span>
+      <span>Year</span>
       <span>Group</span>
-      <span>Rank</span>
+      <span></span>
     </div>`));
     const ul=el('<div></div>');
     existing.sort((a,b)=>(a[1].displayName||'').localeCompare(b[1].displayName||'')).forEach(([uid,p])=>{
@@ -7055,20 +7227,29 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
           <option value="">Unassigned</option>
           ${STUDENT_GROUPS.map(g=>`<option value="${g.key}" ${p.group===g.key?'selected':''}>${esc(g.label)}</option>`).join('')}
         </select>
-        <select data-act="rank" title="Pin a rank for a student who is working hard without the numbers moving. A pinned rank can only lift, never demote.">
-          <option value="">Rank: earned</option>
-          <option value="upandcomer" ${p.rankOverride==='upandcomer'?'selected':''}>Pin: Up and Comer</option>
-          <option value="expert" ${p.rankOverride==='expert'?'selected':''}>Pin: Expert</option>
-        </select>
         <div class="mmc-stu-actions">
-          <button class="mmc-btn ghost sm" data-act="dash">Dashboard</button>
-          <button class="mmc-btn ghost sm" data-act="preview">Student view</button>
-          <button class="mmc-btn ghost sm" data-act="reset">Reset</button>
-          <button class="mmc-btn danger sm" data-act="delete">Delete</button>
+          <button class="mmc-btn ghost sm" data-act="more" title="More options">⋯</button>
         </div>
+        ${S.stuExpandedUid===uid ? `<div class="mmc-stu-more">
+          <span class="mmc-stu-morelabel">Pin rank</span>
+          <select data-act="rank" title="Pin a rank for a student working hard without the numbers moving. A pinned rank can only lift, never demote.">
+            <option value="">Earned</option>
+            <option value="upandcomer" ${p.rankOverride==='upandcomer'?'selected':''}>Up and Comer</option>
+            <option value="expert" ${p.rankOverride==='expert'?'selected':''}>Expert</option>
+          </select>
+          <button class="mmc-btn ghost sm" data-act="preview">Student view</button>
+          <button class="mmc-btn ghost sm" data-act="reset">Reset password</button>
+          <button class="mmc-btn danger sm" data-act="delete">Delete student</button>
+        </div>` : ''}
       </div>`);
-      row.querySelector('[data-act="dash"]').onclick=()=>{ S.viewingStudentDashboardUid=uid; render(); };
-      row.querySelector('[data-act="preview"]').onclick=()=>startStudentPreview(uid);
+      row.querySelector('[data-act="more"]').onclick=()=>{
+        S.stuExpandedUid = (S.stuExpandedUid===uid ? null : uid); render();
+      };
+      // Everything below the ⋯ toggle only exists while that row is expanded, so every
+      // lookup has to tolerate null. Without this, each collapsed row throws on render
+      // and the whole Students tab goes blank.
+      const previewBtn=row.querySelector('[data-act="preview"]');
+      if(previewBtn) previewBtn.onclick=()=>startStudentPreview(uid);
       const rankSel=row.querySelector('[data-act="rank"]');
       if(rankSel) rankSel.onchange=async (e)=>{
         const v=e.target.value||null;
@@ -7090,13 +7271,16 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
         try{ await updateDoc(doc(db,'profiles',uid), {classId:e.target.value}); }
         catch(err){ S.toast='Could not move student — check your connection.'; render(); }
       };
-      row.querySelector('[data-act="group"]').onchange=async (e)=>{
+      const groupSel=row.querySelector('[data-act="group"]');
+      if(groupSel) groupSel.onchange=async (e)=>{
         const val=e.target.value||null;
         try{ await updateDoc(doc(db,'profiles',uid), {group:val}); }
         catch(err){ S.toast='Could not update group — check your connection.'; render(); }
       };
-      row.querySelector('[data-act="reset"]').onclick=()=>resetStudentPassword(uid, p.displayName, row.querySelector('[data-act="reset"]'));
-      row.querySelector('[data-act="delete"]').onclick=()=>deleteStudentAccount(uid, p.displayName, row.querySelector('[data-act="delete"]'));
+      const resetBtn=row.querySelector('[data-act="reset"]');
+      if(resetBtn) resetBtn.onclick=()=>resetStudentPassword(uid, p.displayName, resetBtn);
+      const delBtn=row.querySelector('[data-act="delete"]');
+      if(delBtn) delBtn.onclick=()=>deleteStudentAccount(uid, p.displayName, delBtn);
       ul.appendChild(row);
     });
     list.appendChild(ul);
