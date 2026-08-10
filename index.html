@@ -3375,6 +3375,12 @@ const LEGACY_SLOT_SKILLS = ['PLACE_VALUE','SEQUENCE','ROUNDING','ORDER_WHOLE','F
 function planForYear(year){
   return YEAR_PLANS[year] || YEAR_PLANS[4];
 }
+// Falling back to Year 4 is fine going UP — a Year 5 or 6 doing Year 4 work is behind the
+// curriculum, not nonsense, and that is how the app has always behaved. Falling back
+// DOWNWARD is a different matter: handing a Pre-Primary class a Year 4 paper is absurd, so
+// those years have no practice sets until the curriculum is written for them.
+const LOWEST_PLANNED_YEAR = Math.min(...Object.keys(YEAR_PLANS).map(Number));
+function hasCurriculum(year){ return +year >= LOWEST_PLANNED_YEAR; }
 // The question list for a year, built from that year's plan by looking each skill up in
 // the master SLOTS array. SLOTS stays the single definition of how a skill is generated;
 // the plan decides which skills appear and in what order. Adding a year is therefore a
@@ -4658,7 +4664,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.44';
+const BUILD = '2026-08-10.47';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -5081,7 +5087,7 @@ const S = {
   weeks:[], results:[], profiles:{},
   previewStudentUid:null, previewSaved:null, setupLinkFor:null, timeOverride:null, teacherTab:'home', weeksView:'create', studentsView:'list', editingClasses:false, editingDraftId:null, showArchivedWeeks:false,
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null, ttDetailUid:null,
-  stuExpandedUid:null, overviewUid:null, raceLeft:null, newClass:null, setsFilter:'ALL',
+  stuExpandedUid:null, overviewUid:null, raceLeft:null, newClass:null, setsFilter:'ALL', justCreatedId:null,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
   quickDeployDone:null, resetPasswordResult:null,
@@ -6234,6 +6240,10 @@ function renderTeacherWeeks(){
       }
       // One class, one year — so this is back to one set per ability group.
       const yr=classYear(yearFrom);
+      if(!hasCurriculum(yr)){
+        S.toast = `No practice sets for ${yearLabel(yr)} yet — the curriculum starts at Year 3. Use the Fast Facts Training Ground for that class.`;
+        btn.disabled=false; btn.textContent='Deploy now'; render(); return;
+      }
       for(const [group,difficulty] of pairs){
         await addDoc(collection(db,'weeks'), { label, difficulty, status:'published', createdAt:serverTimestamp(),
           teacherUid:S.user.uid, yearLevel:yr,
@@ -6308,7 +6318,8 @@ function renderTeacherWeeks(){
                 ${WORD_PROBLEM_STRATEGIES.map(s=>`<option value="${s.key}" ${S.genForm.strategy===s.key?'selected':''}>${esc(s.label)}</option>`).join('')}
               </select></div>
           </div>
-          <button class="mmc-btn gold" id="mmc-gen-btn" style="margin-top:14px;">Generate ${slotsForYear(classYear((S.classes||[]).find(c=>c.id===S.currentClassId))).length} questions</button>
+          <div class="meta" id="mmc-gen-count" style="margin:12px 0 0;font-weight:700;color:var(--ink);"></div>
+          <button class="mmc-btn gold" id="mmc-gen-btn" style="margin-top:8px;">Generate questions</button>
           <div class="meta" style="margin:8px 0 0;">Nothing is published yet — you'll be able to check every question, regenerate any you don't like, and either publish straight away or schedule it for later.</div>
         </div>
       </div>
@@ -6339,17 +6350,39 @@ function renderTeacherWeeks(){
     syncDifficulty();
   });
   syncDifficulty();
+  // The old label read "Generate 24 questions" whatever you were about to make, because it
+  // asked the CURRENTLY SELECTED class rather than the class this form is targeting. It
+  // now follows the same path the generator does, and updates as you change the selection.
+  const genCountEl=form.querySelector('#mmc-gen-count');
+  const syncGenCount=()=>{
+    if(!genCountEl) return;
+    const ids = !allClassCb ? (S.showAllClasses ? [] : (S.currentClassId?[S.currentClassId]:[]))
+      : (allClassCb.checked ? [] : classCbs.filter(cb=>cb.checked).map(cb=>cb.value));
+    const from = (ids && ids.length===1) ? (S.classes||[]).find(c=>c.id===ids[0])
+      : (S.currentClassId ? (S.classes||[]).find(c=>c.id===S.currentClassId) : (S.classes||[])[0]);
+    const y = classYear(from);
+    if(!hasCurriculum(y)){
+      genCountEl.style.color='var(--incorrect)';
+      genCountEl.textContent = `There are no practice sets for ${yearLabel(y)} yet — the curriculum starts at Year 3. ${yearLabel(y)} students can still use the Fast Facts Training Ground and the Racing Ground.`;
+    } else {
+      genCountEl.style.color='var(--ink)';
+      const note = YEAR_PLANS[y] ? '' : ` (Year 4 content — ${yearLabel(y)} has no curriculum of its own yet)`;
+      genCountEl.textContent = `This will make ${slotsForYear(y).length} questions for ${yearLabel(y)}${from?` · ${from.name}`:''}${note}.`;
+    }
+  };
   const allClassCb=form.querySelector('#mmc-gen-class-all');
   const classCbs=[...form.querySelectorAll('.mmc-gen-class-cb')];
   if(allClassCb){
     // If any specific class was pre-checked (matching the current view), reflect that in "All classes" too.
     if(classCbs.some(cb=>cb.checked)) allClassCb.checked=false;
-    allClassCb.onchange=()=>{ if(allClassCb.checked) classCbs.forEach(cb=>cb.checked=false); };
+    allClassCb.onchange=()=>{ if(allClassCb.checked) classCbs.forEach(cb=>cb.checked=false); syncGenCount(); };
     classCbs.forEach(cb=>cb.onchange=()=>{
       if(cb.checked) allClassCb.checked=false;
       if(classCbs.every(c=>!c.checked)) allClassCb.checked=true;
+      syncGenCount();
     });
   }
+  syncGenCount();   // and on first render, not only after a change
   form.querySelector('#mmc-gen-btn').onclick=async ()=>{
     // Nothing is preselected, so a teacher must choose deliberately rather than
     // discovering after publishing that it went to the wrong class or group.
@@ -6383,6 +6416,10 @@ function renderTeacherWeeks(){
     // two classes instead — far simpler for everyone, and it removes any doubt about who
     // a generated paper is for.
     const years = [classYear(yearFrom)];
+    if(!hasCurriculum(years[0])){
+      S.toast = `No practice sets for ${yearLabel(years[0])} yet — the curriculum starts at Year 3. Use the Fast Facts Training Ground for that class.`;
+      render(); return;
+    }
     try{
       let firstRef=null;
       for(const yr of years){
@@ -6396,6 +6433,11 @@ function renderTeacherWeeks(){
         if(!firstRef) firstRef=r;
       }
       const ref=firstRef;
+      // Grouping sets by class put a new one inside its group, which for a teacher with
+      // several classes is a long way down the page. It is pinned to the top until
+      // reviewed, and the filter jumps to its class so it is definitely on screen.
+      S.justCreatedId = ref ? ref.id : null;
+      S.setsFilter = (classIds && classIds.length===1) ? classIds[0] : 'ALL';
 
       S.rotationOverride=null; S.timeOverride=null;
       S.editingDraftId=ref.id;
@@ -6435,12 +6477,26 @@ function renderTeacherWeeks(){
     wrap.appendChild(el('<div class="mmc-empty">No sets for that class yet.</div>'));
     return wrap;
   }
+  const fresh = S.justCreatedId ? shown.find(w=>w.id===S.justCreatedId) : null;
+  if(fresh){
+    const banner=el(`<div class="mmc-setgroup" style="border-bottom-color:var(--gold);">
+      <span class="mmc-setgroup-name">✨ Just created — check it over</span>
+      <span class="mmc-setgroup-count">${visibleQuestions(fresh).length} questions</span>
+    </div>`);
+    wrap.appendChild(banner);
+    wrap.appendChild(renderWeekCard(fresh));
+    const done=el('<button class="mmc-btn ghost sm" style="margin:2px 0 6px;">Done reviewing — file it with the others</button>');
+    done.onclick=()=>{ S.justCreatedId=null; render(); };
+    wrap.appendChild(done);
+  }
   groupWeeksByClass(shown).forEach(g=>{
+    const weeks = fresh ? g.weeks.filter(w=>w.id!==fresh.id) : g.weeks;
+    if(!weeks.length) return;
     wrap.appendChild(el(`<div class="mmc-setgroup">
       <span class="mmc-setgroup-name">${esc(g.title)}</span>
-      <span class="mmc-setgroup-count">${g.weeks.length} set${g.weeks.length===1?'':'s'}</span>
+      <span class="mmc-setgroup-count">${weeks.length} set${weeks.length===1?'':'s'}</span>
     </div>`));
-    g.weeks.forEach(week=> wrap.appendChild(renderWeekCard(week)));
+    weeks.forEach(week=> wrap.appendChild(renderWeekCard(week)));
   });
   return wrap;
 }
