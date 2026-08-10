@@ -176,6 +176,13 @@
   .mmc-animalbtn span { display:block; font-size:26px; line-height:1.1; }
   .mmc-animalbtn small { font-size:11px; font-weight:700; color:var(--ink-soft); }
   @media (prefers-reduced-motion:reduce){ .mmc-golden::after { animation:none; display:none; } }
+  .mmc-plainrow {
+    font-size:15.5px; font-weight:600; padding:9px 12px; margin-bottom:7px;
+    border-radius:10px; border:2px solid var(--ink); box-shadow:2px 2px 0 var(--ink);
+  }
+  .mmc-plainrow.good { background:#E7F9EE; }
+  .mmc-plainrow.up   { background:#EAF2FF; }
+  .mmc-plainrow.work { background:#FFF4E0; }
   .mmc-pwwrap { position:relative; }
   .mmc-pwwrap input { padding-right:44px !important; }
   .mmc-pweye {
@@ -3565,6 +3572,63 @@ function progressBadgeFor(skill){
 // The times-tables section of the dashboard. ONE function for both audiences: a student
 // reads "you", a teacher reads the child's name. Splitting them is how the two views end
 // up quietly disagreeing about the same child.
+// Turns both analytics systems into sentences a child can act on. Weekly-set skills and
+// fast-facts micro-skills go in the same three buckets, because a child does not think of
+// them as separate systems — they think "am I good at this or not".
+//
+// Thresholds are deliberately lower than the teacher's. A child who has done a little needs
+// to see SOMETHING; showing an empty page to someone who has been working is the fastest
+// way to make them stop.
+function studentPlainInsights(skillStats, ttAttempts){
+  const nailed=[], climbing=[], work=[];
+  const stats=(skillStats||[]).filter(x=>x.total>=2 && !(SKILLS[x.skill] && SKILLS[x.skill].retired));
+
+  stats.slice().sort((a,b)=>b.overallAccuracy-a.overallAccuracy).forEach(x=>{
+    const pct=Math.round(x.overallAccuracy*100);
+    const name=String(x.title).toLowerCase();
+    if(pct>=85 && nailed.length<4) nailed.push(`${name} — ${pct}% right`);
+    else if(x.trend==='improving' && climbing.length<3) climbing.push(`${name} is coming good — ${pct}% now`);
+    else if(pct<60 && work.length<4) work.push(`${name} — ${pct}% so far`);
+  });
+
+  // Fast facts speak in specifics: a table, a bond, a strategy.
+  const ins=computeTTInsights(ttAttempts||[]);
+  ins.items.forEach(it=>{
+    if(it.kind==='turnaround'){ work.push(`${it.weak} — you know ${it.strong}, and it's the same answer`); return; }
+    const what=ttGroupLabel(it.op,it.table);
+    if(it.kind==='wrong') work.push(`${what} — ${it.accuracy}% right so far`);
+    else work.push(`${what} — you get these right, they just take you a bit longer`);
+  });
+  // And the strong end of fast facts, which the insight engine never reports because it
+  // only ever surfaces problems.
+  const strongFacts=ttStrongGroups(ttAttempts||[]);
+  strongFacts.slice(0,3).forEach(g=>{
+    if(nailed.length<6) nailed.push(`${ttGroupLabel(g.op,g.table)} — ${g.accuracy}% right`);
+  });
+  return { nailed:nailed.slice(0,5), climbing:climbing.slice(0,3), work:work.slice(0,5) };
+}
+
+// The mirror of computeTTInsights: what a student is genuinely GOOD at. The insight engine
+// only ever looks for problems, so nothing anywhere told a child what they had mastered.
+function ttStrongGroups(attempts){
+  const acc={};
+  (attempts||[]).forEach(a=>{
+    const f=a && a.facts; if(!f) return;
+    Object.keys(f).forEach(k=>{
+      const e=f[k]; if(!Array.isArray(e)||e.length<2) return;
+      ttFactGroups(k).forEach(g=>{
+        const gk=`${g.op}:${g.table}`;
+        const t=acc[gk]||[0,0]; t[0]+=e[0]||0; t[1]+=e[1]||0; acc[gk]=t;
+      });
+    });
+  });
+  return Object.keys(acc).map(gk=>{
+    const [seen,ok]=acc[gk]; const [op,table]=gk.split(':');
+    return { op, table:(op==='skill'?table:Number(table)), seen, accuracy:Math.round((ok/seen)*100) };
+  }).filter(g=>g.seen>=TT_MIN_SAMPLE && g.accuracy>=90)
+    .sort((a,b)=>b.accuracy-a.accuracy || b.seen-a.seen);
+}
+
 function renderTTDashboardSection(ttAttempts, forTeacher, studentName){
   const ins=computeTTInsights(ttAttempts||[]);
   const done=(ttAttempts||[]).length;
@@ -3702,25 +3766,35 @@ function renderStudentDashboard(opts){
     });
   }
 
-  wrap.appendChild(el(`<h3 style="margin:22px 0 10px;">📈 Progress by skill</h3>`));
-  const progressWrap=el('<div></div>');
-  withData.slice().sort((a,b)=>b.total-a.total).forEach(s=>{
-    const badge=progressBadgeFor(s);
-    const pct=Math.round(s.overallAccuracy*100);
-    const barColor = badge.emoji==='🔴'?'#E85C0A':badge.emoji==='🟢'?'#2E9E4F':badge.emoji==='🟡'?'#F5B700':'#ccc';
-    progressWrap.appendChild(el(`
-      <div style="margin-bottom:10px;">
-        <div class="mmc-row" style="justify-content:space-between;margin-bottom:3px;">
-          <div style="font-weight:700;font-size:13px;">${badge.emoji} ${esc(s.title)}</div>
-          <div class="meta" style="margin:0;">${badge.label} · ${pct}%</div>
-        </div>
-        <div style="background:var(--paper-line);border-radius:8px;height:8px;overflow:hidden;">
-          <div style="background:${barColor};height:100%;width:${pct}%;"></div>
-        </div>
-      </div>
-    `));
-  });
-  wrap.appendChild(progressWrap);
+  // A row of 24 coloured bars tells a ten-year-old nothing they can act on. They cannot
+  // read "Metric conversions 58%" and know what to do tomorrow. Plain sentences about a
+  // handful of specific things — what they've nailed, what's coming good, what to work on —
+  // are the whole point of a dashboard aimed at a child.
+  const plain = studentPlainInsights(withData, ttAttempts);
+  if(plain.nailed.length){
+    wrap.appendChild(el(`<h3 style="margin:22px 0 8px;">💪 You're nailing these</h3>`));
+    const box=el('<div></div>');
+    plain.nailed.forEach(x=>box.appendChild(el(
+      `<div class="mmc-plainrow good">✅ ${esc(x)}</div>`)));
+    wrap.appendChild(box);
+  }
+  if(plain.climbing.length){
+    wrap.appendChild(el(`<h3 style="margin:22px 0 8px;">📈 Getting better</h3>`));
+    const box=el('<div></div>');
+    plain.climbing.forEach(x=>box.appendChild(el(
+      `<div class="mmc-plainrow up">↗ ${esc(x)}</div>`)));
+    wrap.appendChild(box);
+  }
+  if(plain.work.length){
+    wrap.appendChild(el(`<h3 style="margin:22px 0 8px;">🎯 Worth a bit of practice</h3>`));
+    const box=el('<div></div>');
+    plain.work.forEach(x=>box.appendChild(el(
+      `<div class="mmc-plainrow work">🔧 ${esc(x)}</div>`)));
+    wrap.appendChild(box);
+  }
+  if(!plain.nailed.length && !plain.climbing.length && !plain.work.length){
+    wrap.appendChild(el(`<div class="meta" style="margin-top:18px;">Keep practising — as you do more, this page will tell you exactly what you're good at and what to work on.</div>`));
+  }
   return wrap;
 }
 async function equipHorseOption(field, value){
@@ -3987,7 +4061,7 @@ function computeTTInsights(attempts){
     const [seen,ok]=acc[gk]; if(seen<TT_MIN_SAMPLE) return;
     const a=ok/seen; if(a>=TT_WEAK_ACC) return;
     const [op,table]=gk.split(':');
-    out.push({ kind:'wrong', op, table:Number(table), accuracy:Math.round(a*100), seen,
+    out.push({ kind:'wrong', op, table:(op==='skill'? table : Number(table)), accuracy:Math.round(a*100), seen,
       severity: (TT_WEAK_ACC-a)*2 + Math.min(seen,30)/100 });
   });
   // 2. Right but slow — real, and invisible to a score.
@@ -3998,7 +4072,7 @@ function computeTTInsights(attempts){
     const avg=ms/seen, ratio=avg/baseline;
     if(ratio<TT_SLOW_RATIO) return;
     const [op,table]=gk.split(':');
-    out.push({ kind:'slow', op, table:Number(table), seconds:Math.round(avg/100)/10,
+    out.push({ kind:'slow', op, table:(op==='skill'? table : Number(table)), seconds:Math.round(avg/100)/10,
       ratio:Math.round(ratio*10)/10, seen, severity:(ratio-TT_SLOW_RATIO)+0.15 });
   });
   // 3. Turnarounds — knows 6 x 7, blanks on 7 x 6. Same answer, so this is about
@@ -4336,7 +4410,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.31';
+const BUILD = '2026-08-10.32';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -5502,6 +5576,43 @@ function renderTeacherHome(){
   // Keep one of each kind so the panel doesn't fill with five near-identical
   // per-student notes, then show the strongest five.
   const seen={};
+  // ---- Fast facts: the sharpest signals available, and they were not feeding this panel
+  // at all. "Five students can't divide by 6" is Monday's lesson; "17 of 17 haven't done
+  // Week 2" is an administrative reminder. Both matter, but the first is the one a teacher
+  // opens this page for, so it scores above the admin notes.
+  try{
+    const clsIns = computeTTClassInsights(S.ttAttempts, roster);
+    clsIns.slice(0,2).forEach(g=>{
+      const names=g.students.map(u=>(S.profiles[u]&&S.profiles[u].displayName||'').split(/\s+/)[0]).filter(Boolean);
+      const who = names.length<=3 ? names.join(', ') : `${names.slice(0,3).join(', ')} and ${names.length-3} more`;
+      const kind = (g.kinds.wrong||0) >= (g.kinds.slow||0) ? 'getting wrong' : 'slow on';
+      notes.push({ score:90+g.count, k:'Whole-class gap', good:false,
+        t:`${g.count} students are ${kind} ${ttGroupLabel(g.op,g.table)} — ${who}.` });
+    });
+    // A real win, named. The panel had almost nothing positive that was about LEARNING
+    // rather than effort, and a teacher deserves to be told what is working.
+    let bestWin=null;
+    roster.forEach(uid=>{
+      const strong=ttStrongGroups((S.ttAttempts||[]).filter(a=>a.uid===uid));
+      strong.forEach(g=>{ if(g.seen>=10 && (!bestWin || g.seen>bestWin.g.seen)) bestWin={uid,g}; });
+    });
+    if(bestWin){
+      const nm=((S.profiles[bestWin.uid]&&S.profiles[bestWin.uid].displayName)||'').split(/\s+/)[0];
+      notes.push({ score:70, k:'Nailed it', good:true,
+        t:`${nm} has ${ttGroupLabel(bestWin.g.op,bestWin.g.table)} cold — ${bestWin.g.accuracy}% across ${bestWin.g.seen} attempts.` });
+    }
+    // Someone who has genuinely turned a corner.
+    roster.forEach(uid=>{
+      const ins=computeTTInsights((S.ttAttempts||[]).filter(a=>a.uid===uid));
+      const turn=ins.items.find(x=>x.kind==='turnaround');
+      if(turn){
+        const nm=((S.profiles[uid]&&S.profiles[uid].displayName)||'').split(/\s+/)[0];
+        notes.push({ score:66, k:'Same answer, both ways', good:false,
+          t:`${nm} knows ${turn.strong} but not ${turn.weak} — worth two minutes on turnarounds.` });
+      }
+    });
+  }catch(e){ /* insights must never take the home page down */ }
+
   const show = notes.sort((a,b)=>b.score-a.score)
     .filter(n=>{ if(seen[n.k]) return false; seen[n.k]=1; return true; })
     .slice(0,5);
@@ -6798,7 +6909,17 @@ function renderOverviewProfile(uid){
   ttIns.items.slice(0,1).forEach(it=>actions.push(ttInsightSentence(first,it)+
     (it.kind==='turnaround'? '' : ` They can drill this under "Pick your own" on the Training Ground.`)));
   if(!res.length && !tt.length) actions.push(`${first} has not completed anything yet — check they can sign in.`);
-  if(!actions.length) actions.push(`Nothing is standing out for ${first} at the moment. Working solidly across the board.`);
+  if(!actions.length){
+    // Say something useful rather than "nothing standing out", which reads as "no data"
+    // when it actually means "nothing has crossed a threshold yet".
+    const worst = stats.filter(x=>x.total>=1 && !(SKILLS[x.skill]&&SKILLS[x.skill].retired))
+                       .sort((a,b)=>a.overallAccuracy-b.overallAccuracy)[0];
+    if(worst && worst.overallAccuracy<0.85){
+      actions.push(`${first} is working solidly overall. The weakest area so far is ${worst.title.toLowerCase()} at ${Math.round(worst.overallAccuracy*100)}% across ${worst.total} question${worst.total===1?'':'s'} — worth a closer look once there's more to go on.`);
+    } else if(res.length || tt.length){
+      actions.push(`${first} is working solidly across the board — nothing needs attention right now.`);
+    }
+  }
   actions.forEach(a=>wrap.appendChild(el(`<div class="mmc-ov-action">${esc(a)}</div>`)));
 
   const cols=el('<div class="mmc-ov-cols"></div>');
@@ -6811,40 +6932,50 @@ function renderOverviewProfile(uid){
       `<tr><td>${esc(r.title)}</td><td>${esc(r.right)}</td></tr>`)));
     box.appendChild(t); return box;
   };
-  cols.appendChild(mkList('Strengths',
-    strengths.map(x=>({title:x.title, right:Math.round(x.overallAccuracy*100)+'% of '+x.total})),
-    'No clear strengths yet — needs a longer track record.'));
-  cols.appendChild(mkList('Growth areas',
-    weaknesses.map(x=>({title:x.title, right:Math.round(x.overallAccuracy*100)+'% of '+x.total})),
-    'Nothing flagged.'));
+  // A student with one set completed clears no statistical threshold, so this page used to
+  // say "no clear strengths yet" to a teacher looking at a child who had plainly been
+  // working. That is technically correct and practically useless. When nothing qualifies,
+  // show the best and worst anyway and label it as early — a teacher can weigh a small
+  // sample themselves, but they cannot weigh a blank page.
+  const withAny = stats.filter(x=>x.total>=1 && !(SKILLS[x.skill] && SKILLS[x.skill].retired));
+  const early = strengths.length===0 && weaknesses.length===0 && withAny.length>0;
+  const bySkill = withAny.slice().sort((a,b)=>b.overallAccuracy-a.overallAccuracy || b.total-a.total);
+  const strengthRows = strengths.length
+    ? strengths.map(x=>({title:x.title, right:Math.round(x.overallAccuracy*100)+'% of '+x.total}))
+    : bySkill.filter(x=>x.overallAccuracy>=0.8).slice(0,4)
+        .map(x=>({title:x.title, right:Math.round(x.overallAccuracy*100)+'% of '+x.total}));
+  const growthRows = weaknesses.length
+    ? weaknesses.map(x=>({title:x.title, right:Math.round(x.overallAccuracy*100)+'% of '+x.total}))
+    : bySkill.slice().reverse().filter(x=>x.overallAccuracy<0.7).slice(0,4)
+        .map(x=>({title:x.title, right:Math.round(x.overallAccuracy*100)+'% of '+x.total}));
+  if(early) wrap.appendChild(el(`<div class="meta" style="margin-top:14px;">Early days — the figures below come from a small number of questions, so treat them as a first impression rather than a pattern.</div>`));
+  cols.appendChild(mkList(early?'Strengths so far':'Strengths', strengthRows,
+    'Nothing above 80% yet.'));
+  cols.appendChild(mkList(early?'Watch these':'Growth areas', growthRows,
+    'Nothing below 70%.'));
   wrap.appendChild(cols);
 
-  wrap.appendChild(el('<div class="mmc-ov-h">Fast facts</div>'));
-  const bestOf=(lvl)=>{ const at=tt.filter(a=>a.level===lvl); if(!at.length) return '—';
-    const b=at.reduce((x,a)=>a.score>x.score?a:x, at[0]); return `${b.score}/${b.attempted} (${b.accuracy}%)`; };
-  const ttT=el('<table class="mmc-ov-list"><tbody></tbody></table>');
-  [['Best Easy',bestOf('easy')],['Best Medium',bestOf('medium')],['Best Hard',bestOf('hard')],
-   ['Sessions',String(tt.length)],['Timed accuracy', badge.total? badge.avgAccuracy+'%':'—']]
-   .forEach(([a,b])=>ttT.querySelector('tbody').appendChild(el(`<tr><td>${esc(a)}</td><td>${esc(b)}</td></tr>`)));
-  wrap.appendChild(ttT);
-  if(ttIns.items.length){
-    const t2=el('<table class="mmc-ov-list" style="margin-top:8px;"><tbody></tbody></table>');
-    ttIns.items.forEach(it=>t2.querySelector('tbody').appendChild(el(
-      `<tr><td>${esc(it.kind==='turnaround'?'Turnarounds':it.kind==='wrong'?'Needs work':'Accurate but slow')}</td><td>${esc(ttInsightShort(it))}</td></tr>`)));
-    wrap.appendChild(t2);
-  }
-
-  wrap.appendChild(el('<div class="mmc-ov-h">Recent activity</div>'));
-  const feed=[]
-    .concat(res.map(r=>({t:r.submittedAt?.seconds||0, what:(r.weekLabel||'Practice set'), detail:`${r.score}/${r.total}`})))
-    .concat(tt.map(a=>({t:a.submittedAt?.seconds||0, what:`Fast facts · ${a.level==='custom'?(a.customLabel||'custom'):a.level}${a.mode==='practice'?' (practice)':''}`, detail:`${a.score}/${a.attempted}`})))
-    .sort((a,b)=>b.t-a.t).slice(0,8);
-  if(!feed.length) wrap.appendChild(el('<div class="meta">Nothing recorded yet.</div>'));
-  else {
-    const ft=el('<table class="mmc-ov-list"><tbody></tbody></table>');
-    feed.forEach(f=>ft.querySelector('tbody').appendChild(el(
-      `<tr><td>${esc(f.what)}<span class="meta"> · ${f.t? new Date(f.t*1000).toLocaleDateString():'—'}</span></td><td>${esc(f.detail)}</td></tr>`)));
-    wrap.appendChild(ft);
+  // The fast-facts score table and the activity log are gone. A parent does not need to
+  // know their child scored 74/91 on 7 August; they need to know what their child is good
+  // at and what to help with. The scores are still on the Fast Facts gradebook tab for a
+  // teacher who wants them.
+  const strongFacts = ttStrongGroups(tt);
+  const factWins = strongFacts.slice(0,4).map(g=>({ title:ttGroupLabel(g.op,g.table), right:g.accuracy+'% of '+g.seen }));
+  const factWork = ttIns.items.map(it=>({
+    title: it.kind==='turnaround' ? `${it.weak} (knows ${it.strong})` : ttGroupLabel(it.op,it.table),
+    right: it.kind==='wrong' ? it.accuracy+'% of '+it.seen
+         : it.kind==='slow'  ? it.seconds+'s each'
+         : 'one way only' }));
+  if(factWins.length || factWork.length){
+    const cols2=el('<div class="mmc-ov-cols"></div>');
+    cols2.appendChild(mkList('Fast facts — secure', factWins, 'Not enough recorded yet.'));
+    cols2.appendChild(mkList('Fast facts — needs work', factWork, 'Nothing flagged.'));
+    wrap.appendChild(cols2);
+  } else {
+    wrap.appendChild(el('<div class="mmc-ov-h">Fast facts</div>'));
+    wrap.appendChild(el(`<div class="meta">${tt.length
+      ? `${esc(first)} has done ${tt.length} session${tt.length===1?'':'s'}, but per-question tracking only started recently, so there is no breakdown yet. It will fill in over the next few sessions.`
+      : `${esc(first)} has not done any fast facts practice yet.`}</div>`));
   }
   return wrap;
 }
