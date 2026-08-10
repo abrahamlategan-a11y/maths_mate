@@ -934,7 +934,12 @@ function genFracHalf(diff){
     explanation:`${n}/${d} compared to 1/2: ${n}×2=${left} vs ${d}, so it is ${sign} 1/2.` };
 }
 const GRID_SIZES = [ {rows:2,cols:5},{rows:4,cols:5},{rows:5,cols:6},{rows:5,cols:8},{rows:5,cols:10},{rows:6,cols:10},{rows:8,cols:10},{rows:10,cols:10} ];
-function genShadedGrid(diff){
+function genShadedGrid(diff, _strategy, year){
+  // Year 3 meets halves, quarters and eighths, then thirds. Anything finer is Year 4.
+  if(+year===3) return genShadedGridY4(diff==='hard' ? 'medium' : 'easy');
+  return genShadedGridY4(diff);
+}
+function genShadedGridY4(diff){
   if(diff==='easy'){
     // Denominator is prefilled and varies (10, 20, 25, 50, 100) so students meet
     // several "wholes", and they only type the numerator.
@@ -1145,7 +1150,11 @@ const PURCHASE_ITEMS=[
   {name:'a bottle of water', range:[150,300]}, {name:'a comic book', range:[400,800]},
   {name:'a sticker pack', range:[100,250]}, {name:'a yoyo', range:[300,600]},
 ];
-function genCoins(diff){
+function genCoins(diff, _strategy, year){
+  if(+year===3) return genCoinsY4('easy');
+  return genCoinsY4(diff);
+}
+function genCoinsY4(diff){
   if(diff==='easy'){
     // Amounts reachable with a handful of coins; running total shown.
     let target;
@@ -1289,7 +1298,11 @@ function drawCutoutShape(sh){
   return svgWrap(`${rects}`, w, h);
 }
 
-function genArea(diff){
+function genArea(diff, _strategy, year){
+  if(+year===3) return genAreaY4('easy');
+  return genAreaY4(diff);
+}
+function genAreaY4(diff){
   if(diff==='easy'){
     // Area stays between 4 and 16 squares so it's countable at a glance.
     let w=randInt(2,8), h=randInt(2,8), unit='cm';
@@ -2016,7 +2029,21 @@ function genWordProblem(diff, strategyKey){
 
 // ---------- Q1 PARTITIONING (expanded notation) ----------
 // Blanks adapt to NON-ZERO place values only: 40 305 has three parts, not five.
-function genPartition(diff){
+function genPartition(diff, _strategy, year){
+  // Year 3 partitions 3-digit numbers only, and never into decimal places — a Year 3
+  // has not met decimals. Easy keeps a round tens digit so the three parts are clean.
+  if(+year===3){
+    const h=randInt(1,9), t=diff==='easy'?randInt(1,9):randInt(0,9), o=diff==='easy'?randInt(1,9):randInt(0,9);
+    const num=h*100+t*10+o;
+    const parts=[h*100, t*10, o].filter(v=>v>0);
+    return { prompt:`Complete the partitioning.`, inputType:'parts',
+      partsLead:`${formatGrouped(num)} =`, partsJoin:'+',
+      parts:parts.map(()=>({})), answer:parts.join(','),
+      explanation:`${formatGrouped(num)} = ${parts.join(' + ')}` };
+  }
+  return genPartitionY4(diff);
+}
+function genPartitionY4(diff){
   let num, parts=[];
   if(diff==='easy'){
     // 3 digits, no zero digits
@@ -2067,7 +2094,20 @@ function genPartition(diff){
 
 // ---------- Q2 NUMBER PATTERNS ----------
 // Constant step only. Direction, step size, missing position and start all vary.
-function genSequenceV2(diff){
+function genSequenceV2(diff, _strategy, year){
+  if(+year===3){
+    // Skip counting is the Year 3 objective — 2s, 5s and 10s first, then 3s and 4s.
+    const step = diff==='easy' ? pick([2,5,10]) : diff==='medium' ? pick([2,3,5,10]) : pick([3,4,5,10]);
+    const start = step*randInt(1,10);
+    const terms=[]; for(let i=0;i<5;i++) terms.push(start+i*step);
+    const blankIdx=randInt(1,3); const answer=terms[blankIdx];
+    const display=terms.map((t,i)=> i===blankIdx? '?' : String(t)).join(', ');
+    return { prompt:`Fill in the missing number: ${display}`, answer:String(answer),
+      explanation:`The pattern counts up by ${step}, so the missing number is ${answer}.` };
+  }
+  return genSequenceY4(diff);
+}
+function genSequenceY4(diff){
   const stepPool = diff==='easy' ? [2,5,10]
     : diff==='medium' ? [20,25,50,100]
     : [25,50,75,125,150,250];
@@ -2102,7 +2142,18 @@ function genSequenceV2(diff){
 
 // ---------- Q3 ROUNDING ----------
 // Target place is genuinely random within the allowed set for the level.
-function genRoundingV2(diff){
+function genRoundingV2(diff, _strategy, year){
+  if(+year===3){
+    // Year 3 rounds to the nearest 10 and 100. Thousands belong to Year 4.
+    const num = diff==='easy' ? randInt(11,99) : randInt(101,999);
+    const roundTo = diff==='easy' ? 10 : (diff==='medium' ? pick([10,100]) : 100);
+    const rounded = Math.round(num/roundTo)*roundTo;
+    return { prompt:`Round ${formatGrouped(num)} to the nearest ${roundTo}.`, answer:String(rounded),
+      explanation:`${formatGrouped(num)} rounds to ${formatGrouped(rounded)} (nearest ${roundTo}).` };
+  }
+  return genRoundingY4(diff);
+}
+function genRoundingY4(diff){
   const opts = diff==='easy' ? [10,100]
     : diff==='medium' ? [10,100,1000,10000]
     : [10,100,1000,10000,100000];
@@ -2123,7 +2174,11 @@ function genRoundingV2(diff){
 
 // ---------- Q4 ORDERING WHOLE NUMBERS ----------
 // Four deliberately confusable numbers built from the same digit pool.
-function genOrderingV2(diff){
+function genOrderingV2(diff, _strategy, year){
+  if(+year===3) return genOrderingY4(diff==='hard' ? 'medium' : 'easy');
+  return genOrderingY4(diff);
+}
+function genOrderingY4(diff){
   // The four numbers must be genuinely confusable: they share a leading prefix
   // and differ only in the last few digits, so ordering them needs real
   // place-value attention rather than a glance at the first digit.
@@ -2204,7 +2259,22 @@ function genFactorsV2(diff){
 }
 
 // ---------- Q6 ADDITION ----------
-function genAdditionV2(diff){
+function genAdditionV2(diff, _strategy, year){
+  if(+year===3){
+    // Year 3 adds within 1000. Easy is 2-digit; Hard introduces a third addend but
+    // every number stays inside three digits.
+    if(diff==='easy'){ const a=randInt(11,99), b=randInt(11,99);
+      return { prompt:`${a} + ${b} = ?`, answer:String(a+b), explanation:`${a} + ${b} = ${a+b}` }; }
+    if(diff==='medium'){ const a=randInt(101,899), b=randInt(11,99);
+      return { prompt:`${formatGrouped(a)} + ${b} = ?`, answer:String(a+b),
+        explanation:`${formatGrouped(a)} + ${b} = ${formatGrouped(a+b)}` }; }
+    const a=randInt(101,499), b=randInt(101,399), c=randInt(11,99);
+    return { prompt:`${a} + ${b} + ${c} = ?`, answer:String(a+b+c),
+      explanation:`${a} + ${b} + ${c} = ${formatGrouped(a+b+c)}` };
+  }
+  return genAdditionY4(diff);
+}
+function genAdditionY4(diff){
   if(diff==='easy'){ const a=randInt(100,999),b=randInt(100,999);
     return { prompt:`${formatGrouped(a)} + ${formatGrouped(b)} = ?`, answer:String(a+b),
       explanation:`${formatGrouped(a)} + ${formatGrouped(b)} = ${formatGrouped(a+b)}` }; }
@@ -2226,7 +2296,20 @@ function needsBorrow(a,b){
   for(let i=0;i<B.length;i++){ if(parseInt(B[i],10) > parseInt(A[i]||'0',10)) return true; }
   return false;
 }
-function genSubtractionV2(diff){
+function genSubtractionV2(diff, _strategy, year){
+  if(+year===3){
+    // The answer is always positive by construction, and regrouping appears from
+    // Medium up — that is the actual Year 3 skill, not the size of the numbers.
+    if(diff==='easy'){ const b=randInt(11,49), a=b+randInt(11,50);
+      return { prompt:`${a} − ${b} = ?`, answer:String(a-b), explanation:`${a} − ${b} = ${a-b}` }; }
+    const b = diff==='medium' ? randInt(11,99) : randInt(101,399);
+    const a = b + randInt(50,500);
+    return { prompt:`${formatGrouped(a)} − ${formatGrouped(b)} = ?`, answer:String(a-b),
+      explanation:`${formatGrouped(a)} − ${formatGrouped(b)} = ${formatGrouped(a-b)}` };
+  }
+  return genSubtractionY4(diff);
+}
+function genSubtractionY4(diff){
   const wantZero = Math.random()<0.67;
   for(let attempt=0; attempt<300; attempt++){
     let a,b;
@@ -2283,7 +2366,17 @@ function genPowersOfTen(diff, op){
     subskill:(mult?'mult':'div')+'_powers_of_ten'+(diff==='hard'?'_decimal':'')
   };
 }
-function genMultiplicationV2(diff){
+function genMultiplicationV2(diff, _strategy, year){
+  if(+year===3){
+    // The same four tables the Year 3 times-tables ladder uses, so the weekly set and
+    // the Training Ground are teaching the same facts. No powers-of-ten rotation:
+    // multiplying by 100 is a Year 4 idea.
+    const table = diff==='easy' ? pick([2,5,10]) : diff==='medium' ? pick([2,3,5,10]) : pick([2,3,4,5,10]);
+    const n = diff==='easy' ? randInt(1,6) : randInt(1,10);
+    return Math.random()<0.5
+      ? { prompt:`${table} × ${n} = ?`, answer:String(table*n), explanation:`${table} × ${n} = ${table*n}` }
+      : { prompt:`${n} × ${table} = ?`, answer:String(table*n), explanation:`${n} × ${table} = ${table*n}` };
+  }
   if(rotationIndex()%3===2) return genPowersOfTen(diff,'mult');
   if(diff==='easy'){ const a=randInt(12,99), b=randInt(2,9);
     return { prompt:`${a} × ${b} = ?`, answer:String(a*b), explanation:`${a} × ${b} = ${formatGrouped(a*b)}` }; }
@@ -2299,7 +2392,14 @@ function genMultiplicationV2(diff){
 }
 
 // ---------- Q9 DIVISION (synchronised rotation) ----------
-function genDivisionV2(diff){
+function genDivisionV2(diff, _strategy, year){
+  if(+year===3){
+    // Exact division inside the same tables — Year 3 does not meet remainders.
+    const divisor = diff==='easy' ? pick([2,5,10]) : diff==='medium' ? pick([2,3,5,10]) : pick([2,3,4,5,10]);
+    const quotient = diff==='easy' ? randInt(1,6) : randInt(1,10);
+    return { prompt:`${divisor*quotient} ÷ ${divisor} = ?`, answer:String(quotient),
+      explanation:`${divisor*quotient} ÷ ${divisor} = ${quotient}` };
+  }
   if(rotationIndex()%3===2) return genPowersOfTen(diff,'div');
   if(diff==='easy'){ const b=randInt(2,5), q=randInt(2,12);
     return { prompt:`${b*q} ÷ ${b} = ?`, answer:String(q), explanation:`${b*q} ÷ ${b} = ${q}` }; }
@@ -2349,7 +2449,19 @@ function genConversionV2(diff){
 }
 
 // ---------- Q20 FRACTION OF A COLLECTION ----------
-function genFractionOf(diff){
+function genFractionOf(diff, _strategy, year){
+  if(+year===3){
+    // A unit fraction of a small collection, and always a whole-number answer.
+    const den = diff==='easy' ? pick([2,4]) : pick([2,3,4,5]);
+    const q = diff==='easy' ? pick([2,3,4,5]) : randInt(2,10);
+    const total = den*q;
+    return { prompt:`What is`, fracOfLead:true, answer:String(q),
+      fracNum:1, fracDen:den, ofTotal:total,
+      explanation:`${total} ÷ ${den} = ${q}` };
+  }
+  return genFractionOfY4(diff);
+}
+function genFractionOfY4(diff){
   if(diff==='easy'){
     const den=pick([2,3,4]); const q=pick([4,5,6,7,8,10]);
     const total=den*q;
@@ -2378,7 +2490,12 @@ function genFractionOf(diff){
 }
 
 // ---------- Q21 MISSING NUMBER EQUATIONS ----------
-function genMissingNumber(diff){
+function genMissingNumber(diff, _strategy, year){
+  // Year 3 solves a single-operation equation. The two-operation Hard variant is Year 4.
+  if(+year===3) return genMissingNumberY4(diff==='hard' ? 'medium' : 'easy');
+  return genMissingNumberY4(diff);
+}
+function genMissingNumberY4(diff){
   const op=pick(['+','-','×','÷']);
   if(diff!=='hard'){
     const big = diff==='medium';
@@ -2531,11 +2648,20 @@ const AMPM_CTX_HARD=[
   {t:'12:00', ev:'The clock strikes midday', a:'pm'},
 ];
 function pad2(n){ return String(n).padStart(2,'0'); }
-function genTime(diff){
+function genTime(diff, _strategy, year){
+  // Year 3 reads o'clock, half past, quarter past/to and five-minute intervals. The
+  // duration and am/pm families are Year 4, so Year 3 always gets the clock face.
+  if(+year===3) return genTimeY4(diff==='hard' ? 'medium' : 'easy', 0);
+  return genTimeY4(diff);
+}
+function genTimeY4(diff, familyOverride){
   // Normally rotates with the set count. The override exists so a teacher can
   // preview a specific family without publishing three sets to reach it.
   const forced = (typeof S!=='undefined' && S.timeOverride) ? S.timeOverride : null;
-  const family = forced==='clock' ? 0 : forced==='ampm' ? 1 : forced==='duration' ? 2
+  // familyOverride is how Year 3 pins this to the clock face. It must win over the
+  // rotation, or a Year 3 set would still serve duration questions every third week.
+  const family = (familyOverride!=null) ? familyOverride
+    : forced==='clock' ? 0 : forced==='ampm' ? 1 : forced==='duration' ? 2
     : rotationIndex() % 3;   // 0 clock, 1 am/pm, 2 duration
 
   if(family===1){
@@ -2658,7 +2784,11 @@ const CHANCE_CTX=[
   {thing:'card',    place:'a pile', verb:'Turning over'},
 ];
 const CHANCE_COLOURS=['red','blue','yellow','green','purple','orange'];
-function genProbability(diff){
+function genProbability(diff, _strategy, year){
+  if(+year===3) return genProbabilityY4('easy');
+  return genProbabilityY4(diff);
+}
+function genProbabilityY4(diff){
   if(diff==='easy'){
     // Likelihood language from a described situation.
     const c=pick(CHANCE_CTX);
@@ -2770,7 +2900,13 @@ function listWithUnits(vals, unit){
   if(parts.length<2) return parts.join('');
   return parts.slice(0,-1).join(', ')+' and '+parts[parts.length-1];
 }
-function genStatistics(diff){
+function genStatistics(diff, _strategy, year){
+  // Reading and comparing a simple data display. Averages are a Year 4 idea, and the
+  // Y4 Hard branch is where means live — Year 3 never reaches it.
+  if(+year===3) return genStatisticsY4('easy');
+  return genStatisticsY4(diff);
+}
+function genStatisticsY4(diff){
   if(diff==='hard'){
     const c=pick(MEAN_CONTEXTS);
     const n=pick([4,5]);
@@ -2867,10 +3003,19 @@ const SKILLS = {
 
 // Which skills each year level gets, in the order they appear in the week.
 const YEAR_PLANS = {
+  // Year 3: 16 questions, not 24. Decimals are not introduced until Year 4, so
+  // FRAC_DEC, ORDER_DECIMAL, SIMPLIFY_FRACTION and MIXED_IMPROPER have no place here —
+  // they are omitted rather than made "easier", because they are not easier, they are
+  // a year early. FACTORS and METRIC_CONVERT go for the same reason. 16 is also closer
+  // to Year 3 stamina than 24.
+  3: ['PARTITION','SEQUENCE','ROUNDING','ORDER_WHOLE','ADDITION','SUBTRACTION',
+      'MULTIPLICATION','DIVISION','VISUAL_FRACTION','FRACTION_OF','COINS','TIME',
+      'AREA_PERIMETER','MISSING_NUMBER','PROBABILITY','STATISTICS'],
   4: ['PARTITION','SEQUENCE','ROUNDING','ORDER_WHOLE','FACTORS','ADDITION','SUBTRACTION',
       'MULTIPLICATION','DIVISION','COMPARE_FRACTION','VISUAL_FRACTION','FRAC_DEC',
       'ORDER_DECIMAL','COINS','AREA_PERIMETER','TIME','SIMPLIFY_FRACTION','METRIC_CONVERT',
       'ANGLES','FRACTION_OF','MISSING_NUMBER','MIXED_IMPROPER','PROBABILITY','STATISTICS'],
+  // Years 5 and 6 have no plan of their own yet and resolve to Year 4 — see planForYear.
 };
 
 // Weeks generated before skill codes existed carry only a slot number. Every
@@ -2883,6 +3028,31 @@ const LEGACY_SLOT_SKILLS = ['PLACE_VALUE','SEQUENCE','ROUNDING','ORDER_WHOLE','F
 
 function planForYear(year){
   return YEAR_PLANS[year] || YEAR_PLANS[4];
+}
+// The question list for a year, built from that year's plan by looking each skill up in
+// the master SLOTS array. SLOTS stays the single definition of how a skill is generated;
+// the plan decides which skills appear and in what order. Adding a year is therefore a
+// plan entry, not a second copy of every generator.
+const SLOTS_BY_YEAR = {};
+function slotsForYear(year){
+  const y = (YEAR_PLANS[year] ? +year : DEFAULT_YEAR);
+  if(SLOTS_BY_YEAR[y]) return SLOTS_BY_YEAR[y];
+  const bySkill={}; SLOTS.forEach(sl=>{ bySkill[sl.skill]=sl; });
+  const list = planForYear(y).map(code=>bySkill[code]).filter(Boolean);
+  // A plan naming a skill with no generator would silently shorten every set for that
+  // year, so fail loudly in the console rather than quietly serving fewer questions.
+  if(list.length !== planForYear(y).length){
+    const missing = planForYear(y).filter(c=>!bySkill[c]);
+    console.error('YEAR_PLANS['+y+'] names skills with no generator:', missing);
+  }
+  SLOTS_BY_YEAR[y]=list;
+  return list;
+}
+// The year a week was built for. Older weeks predate the field and are Year 4 by
+// definition, which is what DEFAULT_YEAR gives.
+function weekYear(week){
+  const y = week && week.yearLevel;
+  return (YEAR_LEVELS.indexOf(+y)!==-1) ? +y : DEFAULT_YEAR;
 }
 function skillTitle(code){
   return (SKILLS[code] && SKILLS[code].title) || code || 'Unknown';
@@ -2939,8 +3109,12 @@ const SLOTS=[
   {skill:'PROBABILITY',      title:'Chance and probability',       gen:genProbability},
   {skill:'STATISTICS',       title:'Data and averages',            gen:genStatistics},
 ];
-function buildQuestion(slotIdx, diff, strategyKey){
-  const slot=SLOTS[slotIdx]; const q=slot.gen(diff, strategyKey);
+function buildQuestion(slotIdx, diff, strategyKey, year){
+  const list = slotsForYear(year);
+  const slot = list[slotIdx] || SLOTS[slotIdx];
+  // Year reaches the generator as a third argument. Generators that don't care simply
+  // ignore it, which is why adding Year 3 didn't require rewriting all of them.
+  const q = slot.gen(diff, strategyKey, year);
   return { id:uid('q'), slot:slotIdx+1, title:slot.title,
     skill: slot.skill || LEGACY_SLOT_SKILLS[slotIdx] || null,
     subskill: q.subskill || null,
@@ -2969,7 +3143,9 @@ function buildQuestion(slotIdx, diff, strategyKey){
     fracNum:q.fracNum!=null?q.fracNum:null, fracDen:q.fracDen!=null?q.fracDen:null,
     ofTotal:q.ofTotal!=null?q.ofTotal:null };
 }
-function generateWeekQuestions(diff, strategyKey){ return SLOTS.map((s,i)=>buildQuestion(i,diff,strategyKey)); }
+function generateWeekQuestions(diff, strategyKey, year){
+  return slotsForYear(year).map((s,i)=>buildQuestion(i,diff,strategyKey,year));
+}
 
 function normalize(s){ return String(s==null?'':s).trim().toLowerCase().replace(/\s+/g,''); }
 // A child who types 0.50, .5 or 00.5 has done the maths correctly; only the spelling
@@ -3537,6 +3713,23 @@ function renderSettingsTab(){
 
 // ---------- Timetable Challenge ----------
 const TT_RANGES = { easy:[1,10], medium:[1,12], hard:[4,15] };
+// Year 3 gets its own ladder: doubles/fives/tens/threes, then all tables to 10, then what
+// Year 4 calls Medium. Years 4, 5 and 6 share the existing ladder — times-tables skill
+// caps out at the Year 4 level, so there is nothing above it to build.
+const TT_RANGES_Y3 = { easy:'core', medium:[1,10], hard:[1,12] };
+const TT_Y3_CORE = [2,5,10,3];
+// Year lives on the STUDENT, not the class — a Year 3/4 composite has both in one room,
+// so the class can only ever supply a default. Anything unrecognised falls back to Year 4,
+// which is exactly the behaviour every existing student already has.
+function studentYear(profile){
+  const y = profile && profile.yearLevel;
+  return (YEAR_LEVELS.indexOf(+y)!==-1) ? +y : DEFAULT_YEAR;
+}
+function ttRangesFor(year){ return (+year===3) ? TT_RANGES_Y3 : TT_RANGES; }
+const TT_LEVEL_BLURB = {
+  3: { easy:'2, 5, 10 and 3 times tables', medium:'all tables to 10', hard:'tables to 12, multiply & divide' },
+  4: { easy:'1–10 times tables', medium:'1–12, multiply & divide', hard:'4–15, multiply & divide' },
+};
 // ---------- Times-table fact tracking ----------
 // ttAttempts used to record only a final score, so nothing could say WHICH facts a child
 // struggles with. Each session now carries a small tally per fact — seen, correct, total
@@ -3734,11 +3927,20 @@ function ttQuestionFor(t, idx){
       ? genTTCustomQuestion(t.custom, idx)
       : genTTCustomQuestion({tables:[2,5,10], mult:true, div:false}, idx);
   }
-  return genTTQuestion(t.level, idx);
+  return genTTQuestion(t.level, idx, t.year);
 }
-function genTTQuestion(level, idx){
-  // An unrecognised level would otherwise destructure undefined and throw.
-  const [lo,hi] = TT_RANGES[level] || TT_RANGES.medium;
+function genTTQuestion(level, idx, year){
+  const ranges = ttRangesFor(year);
+  const spec = ranges[level] || ranges.medium;
+  // Year 3 Easy is a named set of tables rather than a range: the point is the four
+  // tables a Year 3 is expected to know, not "any number between 1 and 10".
+  if(spec==='core'){
+    const table = pick(TT_Y3_CORE), n = randInt(1,10);
+    return Math.random()<0.5
+      ? { prompt:`${table} × ${n}`, answer:table*n, isDivision:false, level }
+      : { prompt:`${n} × ${table}`, answer:table*n, isDivision:false, level };
+  }
+  const [lo,hi] = spec;
   const isDivision = level!=='easy' && idx%2===1;
   if(!isDivision){
     const a=randInt(lo,hi), b=randInt(lo,hi);
@@ -3749,7 +3951,9 @@ function genTTQuestion(level, idx){
   // that made it feel too hard. The quotient ranges wide (2-50) so results genuinely vary —
   // some easy quick wins (64 ÷ 8), some proper stretch (245 ÷ 5) — instead of every question
   // being a big number.
-  if(level==='hard'){
+  // The wide 2-50 quotient spread is a Year 4 Hard feature. For Year 3 it would produce
+  // 245 ÷ 5, which is not a Year 3 question — they get the ordinary in-table division.
+  if(level==='hard' && +year!==3){
     const divisor=randInt(2,12), quotient=randInt(2,50); const dividend=divisor*quotient;
     return { prompt:`${dividend} ÷ ${divisor}`, answer:quotient, isDivision:true, level };
   }
@@ -3782,7 +3986,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.11';
+const BUILD = '2026-08-10.13';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -5206,7 +5410,7 @@ function renderTeacherWeeks(){
       for(const [group,difficulty] of pairs){
         await addDoc(collection(db,'weeks'), { label, difficulty, status:'published', createdAt:serverTimestamp(),
           teacherUid:S.user.uid, yearLevel:classYear(yearFrom),
-          questions:generateWeekQuestions(difficulty,'random'), targetGroups:[group], classIds });
+          questions:generateWeekQuestions(difficulty,'random',classYear(yearFrom)), targetGroups:[group], classIds });
       }
       S.quickDeployDone=label;
       S.quickDeployCount=pairs.length;
@@ -5276,7 +5480,7 @@ function renderTeacherWeeks(){
                 ${WORD_PROBLEM_STRATEGIES.map(s=>`<option value="${s.key}" ${S.genForm.strategy===s.key?'selected':''}>${esc(s.label)}</option>`).join('')}
               </select></div>
           </div>
-          <button class="mmc-btn gold" id="mmc-gen-btn" style="margin-top:14px;">Generate ${SLOTS.length} questions</button>
+          <button class="mmc-btn gold" id="mmc-gen-btn" style="margin-top:14px;">Generate ${slotsForYear(classYear((S.classes||[]).find(c=>c.id===S.currentClassId))).length} questions</button>
           <div class="meta" style="margin:8px 0 0;">Nothing is published yet — you'll be able to check every question, regenerate any you don't like, and either publish straight away or schedule it for later.</div>
         </div>
       </div>
@@ -5349,7 +5553,7 @@ function renderTeacherWeeks(){
     const weekData={ label, difficulty, status:'draft', createdAt:serverTimestamp(), teacherUid:S.user.uid,
       yearLevel:classYear(yearFrom),
       timeOverride: S.timeOverride||null, rotationOverride: S.rotationOverride||null,
-      questions:generateWeekQuestions(difficulty, strategy), targetGroups, classIds };
+      questions:generateWeekQuestions(difficulty, strategy, classYear(yearFrom)), targetGroups, classIds };
     try{
       const ref=await addDoc(collection(db,'weeks'), weekData);
       S.rotationOverride=null; S.timeOverride=null;
@@ -5770,7 +5974,7 @@ function renderGradebookDetail(){
     const card=el(`
       <div class="mmc-card" style="border-color:var(--purple);">
         <div class="mmc-row" style="justify-content:space-between;">
-          <h3>Q${d.slot} history · ${esc(studentName)}</h3>
+          <h3>${esc(d.skill ? skillTitle(d.skill) : ('Q'+d.slot))} history · ${esc(studentName)}</h3>
           <button class="mmc-btn ghost sm" id="mmc-gb-close">✕ Close</button>
         </div>
       </div>
@@ -5779,7 +5983,9 @@ function renderGradebookDetail(){
     const pubWeeks=S.weeks.filter(isWeekLive).sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
     let any=false;
     pubWeeks.forEach(w=>{
-      const q=(w.questions||[]).find(x=>x.slot===d.slot);
+      // Match on skill when we have one — a Year 3 set and a Year 4 set put the same
+      // skill at different slot numbers, so slot matching would show the wrong question.
+      const q=(w.questions||[]).find(x=> d.skill ? skillOfQuestion(x)===d.skill : x.slot===d.slot);
       if(!q) return;
       const rec=S.results.find(r=>r.uid===d.uid && r.weekId===w.id);
       if(!rec) return;
@@ -5921,7 +6127,12 @@ function renderLedgerByQuestion(){
 
   const pubWeeks = S.weeks.filter(isWeekLive);
   const qidToSlotByWeek={};
-  pubWeeks.forEach(w=>{ const m={}; (w.questions||[]).forEach(q=>{ m[q.id]=q.slot; }); qidToSlotByWeek[w.id]=m; });
+  // Keyed by SKILL CODE, not slot number. Once Year 3 sets exist alongside Year 4 ones,
+  // "Q5" means Factors in one and Addition in the other — the same column would have been
+  // averaging two different skills together. Skill codes are stable across years, which is
+  // what the registry was built for, and it means a child's Addition history follows them
+  // from Year 3 into Year 4 instead of resetting.
+  pubWeeks.forEach(w=>{ const m={}; (w.questions||[]).forEach(q=>{ m[q.id]=skillOfQuestion(q); }); qidToSlotByWeek[w.id]=m; });
 
   const studentUids = classFilteredStudentUids().sort((a,b)=>(S.profiles[a].displayName||'').localeCompare(S.profiles[b].displayName||''));
   if(studentUids.length===0){ wrap.appendChild(el('<div class="mmc-empty">No students yet.</div>')); return wrap; }
@@ -5931,20 +6142,27 @@ function renderLedgerByQuestion(){
   const thead=el('<thead><tr></tr></thead>');
   const trh=thead.querySelector('tr');
   trh.appendChild(el('<th>Student</th>'));
-  // Driven by SLOTS.length, not a hardcoded 20 — this view was silently omitting
-  // questions 21-24 once the Year 4 set grew.
-  const SLOT_COUNT = SLOTS.length;
-  for(let s=1;s<=SLOT_COUNT;s++) trh.appendChild(el(`<th title="${esc(SLOTS[s-1].title)}">Q${s}</th>`));
+  // Columns are the skills actually present in these students' sets, in plan order, so a
+  // Year 3 class shows 16 columns and a Year 4 class shows 24 — never a grid of dashes for
+  // skills that year never sees. A mixed class shows the union.
+  const present = new Set();
+  pubWeeks.forEach(w=>(w.questions||[]).forEach(q=>{ const c=skillOfQuestion(q); if(c) present.add(c); }));
+  const ordered = [];
+  [3,4].forEach(y=>planForYear(y).forEach(c=>{ if(present.has(c) && ordered.indexOf(c)===-1) ordered.push(c); }));
+  present.forEach(c=>{ if(ordered.indexOf(c)===-1) ordered.push(c); });   // retired skills last
+  const COLS = ordered;
+  const SLOT_COUNT = COLS.length;
+  COLS.forEach((code,i)=> trh.appendChild(el(`<th title="${esc(skillTitle(code))}">Q${i+1}</th>`)));
   table.appendChild(thead);
   const tbody=el('<tbody></tbody>');
 
   const avgRow=el('<tr style="background:var(--bg);font-weight:700;"></tr>');
   avgRow.appendChild(el('<td>Class average</td>'));
-  for(let s=1;s<=SLOT_COUNT;s++){
+  COLS.forEach((code)=>{
     let avgCorrect=0, avgTotal=0;
     S.results.forEach(rec=>{
       const map=qidToSlotByWeek[rec.weekId]; if(!map) return;
-      (rec.answers||[]).forEach(a=>{ if(map[a.qId]===s){ avgTotal++; if(a.correct) avgCorrect++; } });
+      (rec.answers||[]).forEach(a=>{ if(map[a.qId]===code){ avgTotal++; if(a.correct) avgCorrect++; } });
     });
     if(avgTotal===0) avgRow.appendChild(el('<td style="color:var(--ink-soft);">—</td>'));
     else {
@@ -5952,18 +6170,18 @@ function renderLedgerByQuestion(){
       const emoji = pct>=80?'🟩':(pct>=50?'🟧':'🟥');
       avgRow.appendChild(el(`<td title="${avgCorrect}/${avgTotal} correct across the class">${emoji} ${pct}%</td>`));
     }
-  }
+  });
   tbody.appendChild(avgRow);
 
   studentUids.forEach(uid=>{
     const tr=el('<tr></tr>');
     tr.appendChild(el(`<td>${esc(S.profiles[uid].displayName||uid)}</td>`));
     const myResults = S.results.filter(r=>r.uid===uid);
-    for(let s=1;s<=SLOT_COUNT;s++){
+    COLS.forEach((code)=>{
       let correctCount=0, total=0;
       myResults.forEach(rec=>{
         const map=qidToSlotByWeek[rec.weekId]; if(!map) return;
-        (rec.answers||[]).forEach(a=>{ if(map[a.qId]===s){ total++; if(a.correct) correctCount++; } });
+        (rec.answers||[]).forEach(a=>{ if(map[a.qId]===code){ total++; if(a.correct) correctCount++; } });
       });
       if(total===0){ tr.appendChild(el('<td style="color:var(--ink-soft);">—</td>')); }
       else {
@@ -5971,11 +6189,11 @@ function renderLedgerByQuestion(){
         const emoji = pct>=80?'🟩':(pct>=50?'🟧':'🟥');
         const td=el('<td></td>');
         const btn=el(`<button type="button" title="${correctCount}/${total} correct" style="background:none;border:none;cursor:pointer;font-weight:700;">${emoji} ${pct}%</button>`);
-        btn.onclick=()=>{ S.gradebookDetail={type:'question', uid, slot:s}; render(); };
+        btn.onclick=()=>{ S.gradebookDetail={type:'question', uid, skill:code}; render(); };
         td.appendChild(btn);
         tr.appendChild(td);
       }
-    }
+    });
     tbody.appendChild(tr);
   });
   table.appendChild(tbody);
@@ -6755,6 +6973,10 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
     for(let i=0;i<lines.length;i++){
       const parts=lines[i].split(/\s+/); const first=parts[0]; const last=parts.slice(1).join(' ');
       const fullName=lines[i];
+      // Which class these students land in, resolved once. A new student inherits that
+      // class's year as a STARTING POINT only — it is stored on their own profile and can
+      // be changed per student, which is what a composite class needs.
+      const newClassId = (S.showAllClasses ? (S.classes[0] && S.classes[0].id) : S.currentClassId) || null;
       let attempt=0, done=false, lastErr=null;
       while(!done && attempt<25){
         attempt++;
@@ -6763,7 +6985,7 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
         try{
           const cred=await createUserWithEmailAndPassword(auth,email,password);
           await updateProfile(cred.user,{displayName:fullName});
-          await setDoc(doc(db,'profiles',cred.user.uid),{displayName:fullName, username, email, createdByTeacher:true, teacherUid:S.user.uid, currentPassword:password, classId: (S.showAllClasses? (S.classes[0]&&S.classes[0].id) : S.currentClassId) || null});
+          await setDoc(doc(db,'profiles',cred.user.uid),{displayName:fullName, username, email, createdByTeacher:true, teacherUid:S.user.uid, currentPassword:password, classId: newClassId, yearLevel: classYear((S.classes||[]).find(c=>c.id===newClassId))});
           await signInWithEmailAndPassword(auth,teacherEmail,teacherPass);
           S.bulkResults.push({name:fullName, username, password, status:'ok'});
           done=true;
@@ -6826,6 +7048,9 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
         ${S.classes.length>1 ? `<select data-act="class">
           ${S.classes.map(c=>`<option value="${c.id}" ${p.classId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}
         </select>` : '<span></span>'}
+        <select data-act="year" title="Year level. Set per student so a composite class can hold more than one year. Controls which times-tables ladder they get.">
+          ${YEAR_LEVELS.map(y=>`<option value="${y}" ${studentYear(p)===y?'selected':''}>Year ${y}</option>`).join('')}
+        </select>
         <select data-act="group">
           <option value="">Unassigned</option>
           ${STUDENT_GROUPS.map(g=>`<option value="${g.key}" ${p.group===g.key?'selected':''}>${esc(g.label)}</option>`).join('')}
@@ -6851,6 +7076,13 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
           S.toast = v ? `${p.displayName} is pinned at ${v==='expert'?'Expert':'Up and Comer'}.`
                       : `${p.displayName} is back to their earned rank.`;
         }catch(err){ S.toast='Could not update — check your connection.'; }
+        render();
+      };
+      const yearSel=row.querySelector('[data-act="year"]');
+      if(yearSel) yearSel.onchange=async (e)=>{
+        try{ await updateDoc(doc(db,'profiles',uid), {yearLevel:+e.target.value});
+          S.toast=`${p.displayName} is now Year ${e.target.value}.`;
+        }catch(err){ S.toast='Could not update year — check your connection.'; }
         render();
       };
       const classSel=row.querySelector('[data-act="class"]');
@@ -7090,7 +7322,11 @@ function renderStatusUpgradePanel(currentTierKey){
 function renderTimetableTab(){
   const wrap=el('<div></div>');
   wrap.appendChild(renderStatusBanner());
-  const levels=[{k:'easy',label:'Easy',desc:'1–10 times tables'},{k:'medium',label:'Medium',desc:'1–12, multiply & divide'},{k:'hard',label:'Hard',desc:'4–15, multiply & divide'}];
+  // Descriptions follow the student's year, so a Year 3 is never told their Easy is
+  // "1-10 times tables" when it is actually the 2s, 5s, 10s and 3s.
+  const myYear = studentYear(S.profile);
+  const blurb = TT_LEVEL_BLURB[myYear===3?3:4];
+  const levels=[{k:'easy',label:'Easy',desc:blurb.easy},{k:'medium',label:'Medium',desc:blurb.medium},{k:'hard',label:'Hard',desc:blurb.hard}];
   const cardsRow=el('<div class="mmc-row"></div>');
   levels.forEach(lv=>{
     const best=bestTTScore(lv.k);
@@ -7236,7 +7472,7 @@ function renderTTCustomCard(){
 }
 
 function startTTChallenge(level, custom){
-  S.tt = { mode:'challenge', active:true, finished:false, level, custom:custom||null, timeLeft:300,
+  S.tt = { mode:'challenge', active:true, finished:false, level, custom:custom||null, year:studentYear(S.profile), timeLeft:300,
            score:0, attempted:0, qIndex:0, currentQ:null, lastResult:null, typedValue:'',
            facts:{}, questionStartedAt:Date.now() };
   S.tt.currentQ = ttQuestionFor(S.tt, 0);
@@ -7248,7 +7484,7 @@ function startTTChallenge(level, custom){
 // shares S.tt and submitTTAnswer with the timed challenge so the two can't drift apart —
 // `mode` is the only difference, and it is checked rather than duplicated.
 function startTTPractice(level, custom){
-  S.tt = { mode:'practice', active:true, finished:false, level, custom:custom||null, timeLeft:null,
+  S.tt = { mode:'practice', active:true, finished:false, level, custom:custom||null, year:studentYear(S.profile), timeLeft:null,
            score:0, attempted:0, qIndex:0, currentQ:null, lastResult:null, reveal:null, typedValue:'',
            facts:{}, questionStartedAt:Date.now() };
   S.tt.currentQ = ttQuestionFor(S.tt, 0);
@@ -7588,7 +7824,7 @@ function syncMyLiveSession(){
     if(!joined) return;
     if(S.myLive && S.myLive.gameId===room.id) return;
     if(S.myLive && S.myLive.timerHandle) clearInterval(S.myLive.timerHandle);
-    S.myLive = { gameId:room.id, level:room.level, answering:true, qIndex:0, currentQ:genTTQuestion(room.level,0),
+    S.myLive = { gameId:room.id, level:room.level, answering:true, qIndex:0, currentQ:genTTQuestion(room.level,0,studentYear(S.profile)),
       score:0, attempted:0, position:0, questionStartedAt:Date.now(), timerHandle:null, typedValue:'' };
     startMyLiveTimer();
   }
@@ -7617,7 +7853,7 @@ async function submitMyLiveAnswer(given){
   } else {
     S.myLive.position = Math.max(0, S.myLive.position - 0.8);
   }
-  S.myLive.qIndex++; S.myLive.currentQ=genTTQuestion(S.myLive.level, S.myLive.qIndex); S.myLive.questionStartedAt=Date.now();
+  S.myLive.qIndex++; S.myLive.currentQ=genTTQuestion(S.myLive.level, S.myLive.qIndex, studentYear(S.profile)); S.myLive.questionStartedAt=Date.now();
   render();
   try{ await updateDoc(doc(db,'liveGames',S.myLive.gameId,'participants',S.user.uid), {score:S.myLive.score, attempted:S.myLive.attempted, position:S.myLive.position}); }
   catch(e){ S.toast='Score sync error: '+e.message; render(); }
@@ -7778,7 +8014,8 @@ function startSkillPractice(slot){
     : q.inputType==='multi'
     ? {given:[], checked:false, correct:false}
     : {given: q.inputType==='coins' ? [] : '', checked:false, correct:false});
-  S.skillSession={ slot, title: SLOTS[slot-1] ? SLOTS[slot-1].title : `Skill ${slot}`, difficulty, questions, quiz, index:0, finished:false };
+  const myList = slotsForYear(studentYear(S.profile));
+  S.skillSession={ slot, title: (myList[slot-1]||SLOTS[slot-1]||{}).title || `Skill ${slot}`, difficulty, questions, quiz, index:0, finished:false };
   render();
 }
 async function finishSkillPractice(){
