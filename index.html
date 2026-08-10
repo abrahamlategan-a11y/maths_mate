@@ -3450,11 +3450,11 @@ function renderTTDashboardSection(ttAttempts, forTeacher, studentName){
   if(!done) return null;                       // never done any — nothing honest to say
   const first = forTeacher ? String(studentName||'This student').split(/\s+/)[0] : null;
   const wrap=el('<div></div>');
-  wrap.appendChild(el(`<h3 style="margin:22px 0 10px;">⏱ Times tables</h3>`));
+  wrap.appendChild(el(`<h3 style="margin:22px 0 10px;">⏱ Fast facts</h3>`));
   if(!ins.items.length){
     wrap.appendChild(el(`<div class="meta">${ins.hasData
-      ? (forTeacher ? `Nothing standing out for ${esc(first)} in times tables at the moment.`
-                    : 'Nothing standing out in your times tables right now — keep going.')
+      ? (forTeacher ? `Nothing standing out for ${esc(first)} in fast facts at the moment.`
+                    : 'Nothing standing out in your fast facts right now — keep going.')
       : (forTeacher ? `${esc(first)} has done ${done} session${done===1?'':'s'}, but none since per-question tracking started, so there is no breakdown yet.`
                     : 'Do a few more sessions and this will show you exactly which tables to work on.')}</div>`));
     return wrap;
@@ -3742,7 +3742,7 @@ function renderSettingsTab(){
   return wrap;
 }
 
-// ---------- Timetable Challenge ----------
+// ---------- Fast Facts Training Ground ----------
 const TT_RANGES = { easy:[1,10], medium:[1,12], hard:[4,15] };
 // Year 3 gets its own ladder: doubles/fives/tens/threes, then all tables to 10, then what
 // Year 4 calls Medium. Years 4, 5 and 6 share the existing ladder — times-tables skill
@@ -4201,7 +4201,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.24';
+const BUILD = '2026-08-10.25';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -5013,7 +5013,7 @@ function renderAuth(){
       <p class="mmc-pitch-line">Weekly maths practice for primary classrooms. Quick to set, marks itself, and shows you exactly who's getting it and who isn't.</p>
       <div class="mmc-pitch-grid">
         <div class="pp pp1"><b>Key skills</b><span>Tests understanding right across the year level.</span></div>
-        <div class="pp pp2"><b>Times tables fluency</b><span>Builds automaticity with the operations that matter.</span></div>
+        <div class="pp pp2"><b>Fast facts fluency</b><span>Builds automaticity with the operations that matter.</span></div>
         <div class="pp pp3"><b>Differentiated</b><span>Every student practises at their own level.</span></div>
         <div class="pp pp4"><b>Feedback that tells you something</b><span>Strengths, gaps and progress — not just a percentage.</span></div>
       </div>
@@ -6140,7 +6140,7 @@ function renderLedger(){
     <button class="mmc-tab" data-gv="summary">Summary</button>
     <button class="mmc-tab" data-gv="byweek">By Week</button>
     <button class="mmc-tab" data-gv="byquestion">By Question</button>
-    <button class="mmc-tab" data-gv="timetable">Times Tables</button>
+    <button class="mmc-tab" data-gv="timetable">Fast Facts</button>
     <button class="mmc-tab" data-gv="overview">Student Overviews</button>
   </div>`);
   const view=S.gradebookView||'summary';
@@ -6558,7 +6558,7 @@ function renderStudentOverviews(){
     wrap.appendChild(renderOverviewProfile(S.overviewUid));
     return wrap;
   }
-  wrap.appendChild(el('<div class="meta" style="margin-bottom:10px;">Select a student for a full picture — strengths, growth areas, times-tables aptitude and what to focus on next.</div>'));
+  wrap.appendChild(el('<div class="meta" style="margin-bottom:10px;">Select a student for a full picture — strengths, growth areas, fast facts aptitude and what to focus on next.</div>'));
   const table=el('<table class="mmc-ov-pick"><tbody></tbody></table>');
   const tb=table.querySelector('tbody');
   uids.forEach(uid=>{
@@ -6590,7 +6590,7 @@ function overviewKeyFigures(res, tt, badge){
   return [
     { label:'Sets completed', num:String(res.length), sub:'' },
     { label:'Average score', num: avg==null?'—':avg+'%', sub:'across all sets' },
-    { label:'Times tables', num:String(tt.length), sub:'sessions' },
+    { label:'Fast facts', num:String(tt.length), sub:'sessions' },
     { label:'Timed accuracy', num: badge.total? ttAcc+'%' : '—', sub:'challenges only' },
     { label:'Last active', num: days==null?'—':(days<1?'Today':days===1?'Yesterday':days+'d'), sub: days==null?'never':'ago' },
   ];
@@ -6609,7 +6609,7 @@ function renderOverviewProfile(uid){
   const wrap=el('<div></div>');
 
   wrap.appendChild(el(`<h3 style="margin:10px 0 2px;">${esc(name)}</h3>
-    <div class="meta">${esc(yearLabel(studentYear(p)))}${p.group? ' · '+esc(groupLabel(p.group)):''} · Times-tables rank: ${esc(badge.tier.label)}${badge.pinnedBy? ' (pinned)':''}</div>`));
+    <div class="meta">${esc(yearLabel(studentYear(p)))}${p.group? ' · '+esc(groupLabel(p.group)):''} · Fast facts rank: ${esc(badge.tier.label)}${badge.pinnedBy? ' (pinned)':''}</div>`));
 
   const figs=el('<div class="mmc-ov-figs"></div>');
   overviewKeyFigures(res,tt,badge).forEach(f=>figs.appendChild(el(
@@ -6645,7 +6645,7 @@ function renderOverviewProfile(uid){
     'Nothing flagged.'));
   wrap.appendChild(cols);
 
-  wrap.appendChild(el('<div class="mmc-ov-h">Times tables</div>'));
+  wrap.appendChild(el('<div class="mmc-ov-h">Fast facts</div>'));
   const bestOf=(lvl)=>{ const at=tt.filter(a=>a.level===lvl); if(!at.length) return '—';
     const b=at.reduce((x,a)=>a.score>x.score?a:x, at[0]); return `${b.score}/${b.attempted} (${b.accuracy}%)`; };
   const ttT=el('<table class="mmc-ov-list"><tbody></tbody></table>');
@@ -6663,7 +6663,7 @@ function renderOverviewProfile(uid){
   wrap.appendChild(el('<div class="mmc-ov-h">Recent activity</div>'));
   const feed=[]
     .concat(res.map(r=>({t:r.submittedAt?.seconds||0, what:(r.weekLabel||'Practice set'), detail:`${r.score}/${r.total}`})))
-    .concat(tt.map(a=>({t:a.submittedAt?.seconds||0, what:`Times tables · ${a.level==='custom'?(a.customLabel||'custom'):a.level}${a.mode==='practice'?' (practice)':''}`, detail:`${a.score}/${a.attempted}`})))
+    .concat(tt.map(a=>({t:a.submittedAt?.seconds||0, what:`Fast facts · ${a.level==='custom'?(a.customLabel||'custom'):a.level}${a.mode==='practice'?' (practice)':''}`, detail:`${a.score}/${a.attempted}`})))
     .sort((a,b)=>b.t-a.t).slice(0,8);
   if(!feed.length) wrap.appendChild(el('<div class="meta">Nothing recorded yet.</div>'));
   else {
@@ -6686,7 +6686,7 @@ function renderTeacherActivity(){
 
   const feed = []
     .concat((S.ttAttempts||[]).filter(a=>inClass(a.uid)).map(a=>({
-      uid:a.uid, t:secs(a), kind:'Times tables',
+      uid:a.uid, t:secs(a), kind:'Fast facts',
       detail:`${esc(a.level||'')} · ${a.score}/${a.attempted} · ${a.accuracy}%` })))
     .concat((S.results||[]).filter(r=>inClass(r.uid)).map(r=>({
       uid:r.uid, t:secs(r), kind:'Practice set',
@@ -6983,7 +6983,7 @@ async function clearWeeklyResultsForClass(classId, btnEl){
   }
   S.toast = failed
     ? `Cleared ${done} results, ${failed} could not be removed — try again.`
-    : `Cleared ${done} skills records for ${name}. Times tables, ranks and unlocks untouched.`;
+    : `Cleared ${done} skills records for ${name}. Fast facts, ranks and unlocks untouched.`;
   if(btnEl){ btnEl.disabled=false; btnEl.textContent='Clear weekly results'; }
   render();
 }
@@ -7421,7 +7421,7 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
         ${S.classes.length>1 ? `<select data-act="class">
           ${S.classes.map(c=>`<option value="${c.id}" ${p.classId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}
         </select>` : '<span></span>'}
-        <select data-act="year" title="Year level. Set per student so a composite class can hold more than one year. Controls which times-tables ladder they get.">
+        <select data-act="year" title="Year level. Set per student so a composite class can hold more than one year. Controls which fast facts and curriculum they get.">
           ${YEAR_LEVELS.map(y=>`<option value="${y}" ${studentYear(p)===y?'selected':''}>${esc(yearLabel(y))}</option>`).join('')}
         </select>
         <select data-act="group">
@@ -7498,7 +7498,7 @@ function renderStudent(){
   syncMyLiveSession();
   if(S.myLive && S.myLive.answering) return renderMyLiveSession();
   const wrap=el('<div></div>');
-  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-st="dashboard">My Dashboard</button><button class="mmc-tab" data-st="weekly">Skills Practice</button><button class="mmc-tab" data-st="timetable">Times Table Training Ground</button><button class="mmc-tab" data-st="live">🐎 Racing Ground</button><button class="mmc-tab" data-st="settings">⚙️ Settings</button></div>`);
+  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-st="dashboard">My Dashboard</button><button class="mmc-tab" data-st="weekly">Skills Practice</button><button class="mmc-tab" data-st="timetable">Fast Facts Training Ground</button><button class="mmc-tab" data-st="live">🐎 Racing Ground</button><button class="mmc-tab" data-st="settings">⚙️ Settings</button></div>`);
   tabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.st===S.studentTab) b.classList.add('active');
     b.onclick=()=>{ S.studentTab=b.dataset.st; render(); }; });
   wrap.appendChild(tabs);
@@ -7600,7 +7600,7 @@ function renderWeeklyPassport(){
   return wrap;
 }
 
-// ---------- Timetable Challenge UI ----------
+// ---------- Fast Facts Training Ground UI ----------
 function bestTTScore(level){
   const attempts=S.ttAttempts.filter(a=>a.level===level);
   if(attempts.length===0) return null;
@@ -7730,7 +7730,7 @@ function renderTimetableTab(){
     card.querySelector('[data-go="challenge"]').onclick=()=>startTTChallenge(lv.k);
     cardsRow.appendChild(card);
   });
-  wrap.appendChild(el('<h3 style="font-family:Fredoka,sans-serif;margin:4px 0 12px;">Times Table Training Ground</h3>'));
+  wrap.appendChild(el('<h3 style="font-family:Fredoka,sans-serif;margin:4px 0 12px;">Fast Facts Training Ground</h3>'));
   wrap.appendChild(el(`<div class="meta" style="margin-bottom:10px;">
     <strong>🐢 Practice</strong> — ${TT_PRACTICE_TOTAL} questions, no clock, take your time. It shows you the answer when you get one wrong.<br>
     <strong>⏱ Challenge</strong> — 5 minutes, answer as many as you can. Both build your race status, but only the Challenge counts towards your accuracy.
