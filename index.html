@@ -4176,18 +4176,32 @@ function studentRaceLevel(profile, fallback){
   const g = profile && profile.group;
   return GROUP_LEVEL[g] || fallback || 'medium';
 }
-function raceBoostAmount(level, isDivision, elapsedSec){
+// The track is 100 units long whatever the race lasts, so the distance covered per answer
+// has to scale with the clock. These numbers were tuned for a five-minute race; a
+// one-minute race left the leader at 30/100 and nobody ever crossed the line. Scaling by
+// duration fixes it: simulated over 500 one-minute races the leader now crosses at about
+// 53 seconds — right at the end, rather than finishing early and standing still.
+const RACE_TUNED_FOR_SECONDS = 300;
+function raceBoostAmount(level, isDivision, elapsedSec, durationSec){
   const base = { easy:1.0, medium:1.3, hard:1.7 }[level] + (isDivision?0.3:0);
   const speedFactor = Math.max(0.3, 1 - elapsedSec/12);
-  return base * speedFactor;
+  const dur = (typeof durationSec==='number' && durationSec>0) ? durationSec : RACE_TUNED_FOR_SECONDS;
+  // 60s races get roughly x3 here; the 5-minute class race is unchanged at x1.
+  const distanceScale = Math.min(6, Math.max(1, (RACE_TUNED_FOR_SECONDS/dur) * 0.6));
+  return base * speedFactor * distanceScale;
 }
+// The horse track is PRESENTATION — the leaderboard ranks by correct answers, so helping
+// a trailing horse move doesn't change who wins. That is exactly why it can be generous:
+// a child who spent a minute trying and finished on 4% of the track learns that trying was
+// pointless. Simulated over 500 races: the back marker now ends around halfway instead of
+// a fifth of the way, and the leader still crosses first every time.
 function raceRubberBandMultiplier(myPos, allPositions){
   if(allPositions.length<2) return 1;
   const maxPos=Math.max(...allPositions), minPos=Math.min(...allPositions);
   const spread=maxPos-minPos;
   if(spread<5) return 1;
   const behindRatio=(maxPos-myPos)/spread; // 0 = leader, 1 = last place
-  return 0.7 + behindRatio*0.8; // leader gets 0.7x, last place gets up to 1.5x
+  return 0.95 + behindRatio*4.55;          // leader 0.95x, last place up to 5.5x
 }
 
 // ---------------------------------------------------------------------------
@@ -4201,7 +4215,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.26';
+const BUILD = '2026-08-10.28';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -4539,7 +4553,7 @@ const S = {
   weeks:[], results:[], profiles:{},
   previewStudentUid:null, previewSaved:null, setupLinkFor:null, timeOverride:null, teacherTab:'home', weeksView:'create', studentsView:'list', editingClasses:false, editingDraftId:null, showArchivedWeeks:false,
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null, ttDetailUid:null,
-  stuExpandedUid:null, overviewUid:null,
+  stuExpandedUid:null, overviewUid:null, raceLeft:null,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
   quickDeployDone:null, resetPasswordResult:null,
@@ -8258,6 +8272,7 @@ function syncMyLiveSession(){
     return;
   }
   if(room.status==='lobby') return;
+  if(S.raceLeft===room.id) return;   // they chose to stop; don't drag them back in
   if(room.status==='active'){
     const joined = S.liveParticipants.some(p=>p.id===S.user.uid);
     if(!joined) return;
@@ -8290,7 +8305,9 @@ async function submitMyLiveAnswer(given){
   const allPositions = S.liveParticipants.map(p=>p.position||0);
   const rubberBand = raceRubberBandMultiplier(S.myLive.position, allPositions.length? allPositions : [S.myLive.position]);
   if(correct){
-    const boost = raceBoostAmount(S.myLive.currentQ.level, S.myLive.currentQ.isDivision, elapsedSec) * rubberBand;
+    const room0 = currentLiveRoom();
+    const boost = raceBoostAmount(S.myLive.currentQ.level, S.myLive.currentQ.isDivision, elapsedSec,
+                                  room0 ? room0.durationSec : null) * rubberBand;
     S.myLive.position = Math.min(100, S.myLive.position + boost);
   } else {
     S.myLive.position = Math.max(0, S.myLive.position - 0.8);
@@ -8326,7 +8343,25 @@ function renderMyLiveSession(){
       </div>
     </div>
   `);
+  // Quitting keeps the score already earned on the leaderboard — those answers were real
+  // and deleting them would be dishonest. It just stops this player answering.
+  const exits=el('<div class="mmc-row" style="gap:8px;justify-content:flex-end;margin:-4px 0 10px;"></div>');
+  const quit=el('<button class="mmc-btn ghost sm">← Leave race</button>');
+  quit.onclick=()=>{
+    if(!confirm('Leave this race? Your score so far stays on the leaderboard.')) return;
+    if(S.myLive && S.myLive.timerHandle) clearInterval(S.myLive.timerHandle);
+    if(S.myLive) S.myLive.answering=false;
+    S.raceLeft = room ? room.id : null;
+    render();
+  };
+  exits.appendChild(quit);
+  if(room && room.hostUid===S.user.uid){
+    const endAll=el('<button class="mmc-btn danger sm">■ End race for everyone</button>');
+    endAll.onclick=()=>endHostedRaceNow(room);
+    exits.appendChild(endAll);
+  }
   wrap.appendChild(head);
+  wrap.appendChild(exits);
   const chase=renderChaseCallout(S.user.uid);
   if(chase) wrap.appendChild(chase);
   const qbox=el(`
@@ -8372,6 +8407,7 @@ function renderMyLiveSession(){
 // can never reach a child in another teacher's class. hostUid marks who may start it.
 const STUDENT_RACE_SECONDS = 60;
 async function hostStudentRace(){
+  S.raceLeft=null;
   if(!S.profile || !S.profile.teacherUid){ S.toast='You need to be in a class to start a race.'; render(); return; }
   try{
     const ref = await addDoc(collection(db,'liveGames'), {
@@ -8403,6 +8439,36 @@ function renderStartRaceCard(sub){
   return card;
 }
 
+// ---------- Leaving and ending a race ----------
+// Every state a student can be in now has a way out. Before this, joining a lobby was a
+// one-way door: no leave, no quit, and only the clock could end a race. That is fine in a
+// classroom where a teacher is driving, and not fine at all when children run their own.
+async function leaveLiveGame(gameId){
+  try{
+    await deleteDoc(doc(db,'liveGames',gameId,'participants',S.user.uid));
+    if(S.myLive && S.myLive.gameId===gameId){
+      if(S.myLive.timerHandle) clearInterval(S.myLive.timerHandle);
+      S.myLive=null;
+    }
+    S.lobbyReadyForRoom=null;
+  }catch(e){ S.toast='Could not leave — check your connection.'; }
+  render();
+}
+// The host ending an active race early. Everyone's screen follows, because isRaceOver
+// reads the room status.
+async function endHostedRaceNow(room){
+  if(!room || room.hostUid!==S.user.uid) return;
+  if(!confirm('End this race now for everyone?')) return;
+  try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended'}); }
+  catch(e){ S.toast='Could not end the race — check your connection.'; render(); }
+}
+// One consistent exit control, so every state offers the same affordance in the same place.
+function raceExitButton(label, onClick, danger){
+  const b=el(`<button class="mmc-btn ${danger?'danger':'ghost'} sm" style="width:100%;margin-top:10px;">${esc(label)}</button>`);
+  b.onclick=onClick;
+  return b;
+}
+
 function renderStudentLiveGame(){
   const wrap=el('<div></div>');
   const room=currentLiveRoom();
@@ -8412,6 +8478,16 @@ function renderStudentLiveGame(){
     return wrap;
   }
   const joined = S.liveParticipants.some(p=>p.id===S.user.uid);
+  // Someone who walked away mid-race watches the rest rather than being dumped back into
+  // it by syncMyLiveSession on the next render.
+  if(S.raceLeft===room.id && room.status==='active'){
+    wrap.appendChild(el(`<div class="mmc-card"><h3>You left this race</h3><div class="meta">Your score is still on the leaderboard. You can rejoin, or wait for the next one.</div></div>`));
+    const back=el('<button class="mmc-btn gold sm" style="width:100%;margin-bottom:10px;">↩ Rejoin the race</button>');
+    back.onclick=()=>{ S.raceLeft=null; render(); };
+    wrap.appendChild(back);
+    wrap.appendChild(renderLiveLeaderboardCard('Live leaderboard', room, false));
+    return wrap;
+  }
   if(room.status==='lobby'){
     if(!joined){
       const card=el(`
@@ -8440,6 +8516,7 @@ function renderStudentLiveGame(){
               : `Waiting for ${room.hostUid? esc(room.hostName||'the host') : 'your teacher'} to start… ${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} ready.`}</div>
           </div>
         `));
+        if(!iAmHost) wrap.appendChild(raceExitButton('← Leave this race', ()=>leaveLiveGame(room.id)));
         if(iAmHost){
           const cancel=el('<button class="mmc-btn ghost sm" style="width:100%;margin-bottom:8px;">✕ Cancel this race</button>');
           cancel.onclick=async ()=>{
@@ -8462,6 +8539,10 @@ function renderStudentLiveGame(){
         const readyBtn=el('<button class="mmc-btn gold" style="width:100%;font-size:16px;padding:12px;">I\'m Ready! 🏁</button>');
         readyBtn.onclick=async ()=>{ await syncParticipantCustomization(room.id); S.lobbyReadyForRoom=room.id; render(); };
         wrap.appendChild(readyBtn);
+        wrap.appendChild(raceExitButton(room.hostUid===S.user.uid ? '✕ Cancel this race' : '← Leave this race',
+          room.hostUid===S.user.uid
+            ? async ()=>{ try{ await updateDoc(doc(db,'liveGames',room.id),{status:'ended'}); }catch(e){ S.toast='Could not cancel — check your connection.'; render(); } }
+            : ()=>leaveLiveGame(room.id)));
       }
     }
     return wrap;
@@ -8491,6 +8572,8 @@ function renderStudentLiveGame(){
   return wrap;
 }
 async function joinLiveGame(gameId){
+  // Clear any "I left" marker — joining is an explicit decision to be in this race.
+  S.raceLeft=null;
   try{
     await setDoc(doc(db,'liveGames',gameId,'participants',S.user.uid), {
       uid:S.user.uid, name:S.profile? S.profile.displayName : S.user.email,
