@@ -3754,11 +3754,19 @@ const TT_Y3_CORE = [2,5,10,3];
 // which is exactly the behaviour every existing student already has.
 function studentYear(profile){
   const y = profile && profile.yearLevel;
+  // Explicit emptiness check FIRST. Once Pre-Primary became year 0, `+null` and `+false`
+  // both evaluate to 0 — a valid year — so a profile that hadn't loaded, or a student with
+  // no year set, would silently resolve to Pre-Primary and be served addition instead of
+  // their real level. Absence must mean DEFAULT_YEAR, never zero.
+  if(y===null || y===undefined || y==='') return DEFAULT_YEAR;
   return (YEAR_LEVELS.indexOf(+y)!==-1) ? +y : DEFAULT_YEAR;
 }
 function ttRangesFor(year){ return (+year===3) ? TT_RANGES_Y3 : TT_RANGES; }
 const TT_LEVEL_BLURB = {
-  3: { easy:'2, 5, 10 and 3 times tables', medium:'all tables to 10', hard:'tables to 12, multiply & divide' },
+  0: { easy:'within 5, one more and one less', medium:'bonds to 5 and doubles', hard:'bonds to 10 and within 10' },
+  1: { easy:'bonds to 10 and doubles', medium:'within 20, and skip counting', hard:'within 20, with missing numbers' },
+  2: { easy:'facts to 20 and the 2 times table', medium:'two-digit, bridging ten', hard:'crossing tens both ways' },
+  3: { easy:'2, 3, 4, 5, 10 tables and division', medium:'tables, and adding tens', hard:'tables, and clever shortcuts' },
   4: { easy:'1–10 times tables', medium:'1–12, multiply & divide', hard:'4–15, multiply & divide' },
 };
 // ---------- Times-table fact tracking ----------
@@ -3776,6 +3784,10 @@ const TT_LEVEL_BLURB = {
 const TT_MAX_MS = 30000;   // longer than this means they walked away, not that they're slow
 function ttFactKey(q){
   if(!q || !q.prompt) return null;
+  // A tagged question records against its MICRO-SKILL, not its numbers. "Needs work on
+  // bonds to 10" is actionable; "needs work on 7 + 3" is not, and there are hundreds of
+  // those. Tables still record per fact so turnarounds stay visible.
+  if(q.skill && !/^X\d+$/.test(q.skill) && q.skill!=='DIV_RELATED') return 's'+q.skill;
   const md=String(q.prompt).match(/^(\d+) ÷ (\d+)$/);
   if(md){ const divisor=Number(md[2]); const quotient=Number(md[1])/divisor;
     return Number.isInteger(quotient) ? `d${divisor}_${quotient}` : null; }
@@ -3791,12 +3803,20 @@ function ttRecordFact(t, q, correct, ms){
   if(!t.facts) t.facts={};
   const e = t.facts[key] || [0,0,0];
   e[0]++; if(correct) e[1]++;
-  if(typeof ms==='number' && ms>0 && ms<=TT_MAX_MS) e[2]+=Math.round(ms);
+  // Time is only meaningful for facts a student is expected to RECALL. A Year 1 spending
+  // six seconds on 13 − 5 is applying a strategy and doing exactly the right thing; timing
+  // that and calling it slow would be both wrong and discouraging. Untagged questions
+  // (the times tables) keep their timing, which is where speed genuinely signals fluency.
+  const timeIsMeaningful = (q.skill===undefined) || q.recall===true;
+  if(timeIsMeaningful && typeof ms==='number' && ms>0 && ms<=TT_MAX_MS) e[2]+=Math.round(ms);
   t.facts[key]=e;
 }
 // Which tables a fact belongs to. A multiplication fact belongs to BOTH its operands, so
 // 6 × 7 counts toward the 6s and the 7s. Division belongs only to its divisor.
 function ttFactGroups(key){
+  // Skill-tagged facts group by the skill itself — that IS the actionable unit.
+  if(key.charAt(0)==='s' && key.length>1 && key.charAt(1)===key.charAt(1).toUpperCase() && !/^\d/.test(key.charAt(1)))
+    return [{ table:key.slice(1), op:'skill' }];
   const d=key.match(/^d(\d+)_(\d+)$/);
   if(d) return [{table:Number(d[1]), op:'div'}];
   const m=key.match(/^m(\d+)_(\d+)$/);
@@ -3880,7 +3900,10 @@ function computeTTInsights(attempts){
 
 // Plain-English rendering of one insight. Shared by the student card, the teacher table
 // and the CSV export so the three can never describe the same child differently.
-function ttGroupLabel(op, table){ return op==='div' ? `dividing by ${table}` : `the ${table} times table`; }
+function ttGroupLabel(op, table){
+  if(op==='skill') return factSkillLabel(table);
+  return op==='div' ? `dividing by ${table}` : `the ${table} times table`;
+}
 function ttInsightShort(it){
   if(!it) return '';
   if(it.kind==='turnaround') return `${it.weak} (knows ${it.strong})`;
@@ -3960,7 +3983,156 @@ function ttQuestionFor(t, idx){
   }
   return genTTQuestion(t.level, idx, t.year);
 }
+// Micro-skill tags. Recording an overall "mental facts" score tells a teacher nothing
+// actionable — "needs work on bonds to 10" does. `recall` marks facts a student is
+// expected to know AUTOMATICALLY at that year: only those feed the speed measure, because
+// a Year 1 taking six seconds over 13 − 5 is applying a strategy, not failing.
+const FACT_SKILLS = {
+  ONE_MORE:      { label:'one more',                 recall:true  },
+  ONE_LESS:      { label:'one less',                 recall:true  },
+  ADD_5:         { label:'adding within 5',          recall:true  },
+  SUB_5:         { label:'taking away within 5',     recall:true  },
+  BONDS_5:       { label:'number bonds to 5',        recall:true  },
+  BONDS_10:      { label:'number bonds to 10',       recall:true  },
+  DOUBLES_SMALL: { label:'small doubles',            recall:true  },
+  ADD_10:        { label:'adding within 10',         recall:true  },
+  SUB_10:        { label:'taking away within 10',    recall:true  },
+  DOUBLES:       { label:'doubles',                  recall:true  },
+  ADD_20:        { label:'adding within 20',         recall:false },
+  SUB_20:        { label:'taking away within 20',    recall:false },
+  MISSING:       { label:'missing numbers',          recall:false },
+  SKIP_2:        { label:'skip counting by 2s',      recall:false },
+  SKIP_5:        { label:'skip counting by 5s',      recall:false },
+  SKIP_10:       { label:'skip counting by 10s',     recall:false },
+  ADD_FACT_20:   { label:'addition facts to 20',     recall:true  },
+  SUB_FACT_20:   { label:'subtraction facts to 20',  recall:true  },
+  BRIDGE_10:     { label:'bridging ten',             recall:false },
+  TD_PLUS_ONES:  { label:'two-digit plus ones',      recall:false },
+  TD_MINUS_ONES: { label:'two-digit minus ones',     recall:false },
+  MENTAL_ADD:    { label:'mental addition',          recall:false },
+  MENTAL_SUB:    { label:'mental subtraction',       recall:false },
+  COMPENSATION:  { label:'compensating (near 100)',  recall:false },
+  X2:            { label:'the 2 times table',        recall:true  },
+  X3:            { label:'the 3 times table',        recall:true  },
+  X4:            { label:'the 4 times table',        recall:true  },
+  X5:            { label:'the 5 times table',        recall:true  },
+  X10:           { label:'the 10 times table',       recall:true  },
+  DIV_RELATED:   { label:'related division facts',   recall:true  },
+  FACT_FAMILY:   { label:'fact families',            recall:true  },
+};
+function factSkillLabel(code){ return (FACT_SKILLS[code] && FACT_SKILLS[code].label) || code; }
+// Weighted choice: [[weight, fn], ...]. Keeps each level's MIX explicit and readable
+// rather than buried in a chain of random comparisons.
+// The screens append " = ?" to every prompt, which worked while every question was
+// "7 × 8". Word prompts and missing-number equations already carry their own question —
+// "3 + ? = 9 = ?" is nonsense. Decided from the prompt itself so a new question type can
+// never forget to opt out.
+function ttPromptText(q){
+  const p = (q && q.prompt) ? String(q.prompt) : '';
+  return (/[?=]/.test(p)) ? p : p + ' = ?';
+}
+function ffPick(pairs){
+  const total=pairs.reduce((s,x)=>s+x[0],0);
+  let r=Math.random()*total;
+  for(const [w,fn] of pairs){ r-=w; if(r<=0) return fn(); }
+  return pairs[pairs.length-1][1]();
+}
+
+// Mental facts, Pre-Primary to Year 3, built to the Australian Curriculum progression.
+//
+// The governing idea is that "mental facts" is NOT "arithmetic in your head". Three
+// different things are being asked for, and they are tagged differently:
+//   - facts that should be recalled automatically  (recall:true — speed is meaningful)
+//   - facts still being built through strategy      (recall:false)
+//   - mental calculation using efficient strategy   (recall:false)
+//
+// Hard is harder because the STRATEGY is more sophisticated, never because the numbers
+// have more digits. 199 + 26 is a Year 3 Hard question because the efficient path is
+// 200 + 26 − 1, not because it is large.
+const Q = (prompt, answer, skill) => ({ prompt, answer, skill,
+  recall: !!(FACT_SKILLS[skill] && FACT_SKILLS[skill].recall), isDivision:/÷/.test(prompt) });
+
+function genFastFactQuestion(level, idx, year){
+  const y = +year;
+  // ---- shared shapes ----
+  const oneMore = (max)=>{ const n=randInt(1,max); return Q(`What is one more than ${n}?`, n+1, 'ONE_MORE'); };
+  const oneLess = (max)=>{ const n=randInt(2,max); return Q(`What is one less than ${n}?`, n-1, 'ONE_LESS'); };
+  const bonds   = (total, code)=>{ const a=randInt(1,total-1);
+    return Q(`What number goes with ${a} to make ${total}?`, total-a, code); };
+  const dbl     = (max, code)=>{ const n=randInt(1,max); return Q(`Double ${n}`, n*2, code); };
+  // For the 20 range, a uniform pick lands on 5 + 1 far too often — the point of "within
+  // 20" is crossing ten, so the total is drawn from the upper half of the range.
+  const addTo   = (max, code)=>{ const lo = max>10 ? Math.floor(max/2)+1 : 2;
+    const total=randInt(lo,max), a=randInt(1,total-1); return Q(`${a} + ${total-a}`, total, code); };
+  const subTo   = (max, code)=>{ const lo = max>10 ? Math.floor(max/2)+1 : 2;
+    const start=randInt(lo,max), b=randInt(1,start-1); return Q(`${start} − ${b}`, start-b, code); };
+  const missing = (max)=>{ const total=randInt(6,max), a=randInt(1,total-1);
+    return Q(`${a} + ? = ${total}`, total-a, 'MISSING'); };
+  const skip    = (step, code)=>{ const start=step*randInt(1,8), terms=[start,start+step,start+2*step];
+    return Q(`${terms.join(', ')}, ?`, start+3*step, code); };
+  const times   = (t, code)=>{ const n=randInt(1,10);
+    return Math.random()<0.5 ? Q(`${t} × ${n}`, t*n, code) : Q(`${n} × ${t}`, t*n, code); };
+  const divBy   = (t)=>{ const q2=randInt(1,10); return Q(`${t*q2} ÷ ${t}`, q2, 'DIV_RELATED'); };
+  // Bridging: the ones digits must cross ten, which is the whole point of the strategy.
+  const bridgeAdd = (code)=>{ const tens=randInt(1,8)*10, a=tens+randInt(2,9), b=randInt(2,9);
+    return (a%10)+b>10 ? Q(`${a} + ${b}`, a+b, code) : bridgeAdd(code); };
+  const bridgeSub = (code)=>{ const tens=randInt(2,9)*10, a=tens+randInt(1,7), b=randInt(2,9);
+    return b>(a%10) ? Q(`${a} − ${b}`, a-b, code) : bridgeSub(code); };
+
+  if(y===0){   // ---- PRE-PRIMARY: number relationships, not speed ----
+    if(level==='easy')   return ffPick([[3,()=>addTo(5,'ADD_5')],[3,()=>subTo(5,'SUB_5')],
+                                        [2,()=>oneMore(9)],[2,()=>oneLess(9)]]);
+    if(level==='medium') return ffPick([[3,()=>addTo(6,'ADD_5')],[3,()=>subTo(6,'SUB_5')],
+                                        [3,()=>bonds(5,'BONDS_5')],[2,()=>dbl(5,'DOUBLES_SMALL')]]);
+    return ffPick([[3,()=>addTo(9,'ADD_10')],[3,()=>subTo(9,'SUB_10')],
+                   [3,()=>bonds(10,'BONDS_10')],[2,()=>missing(10)]]);
+  }
+  if(y===1){   // ---- YEAR 1: bonds to 10, then strategies within 20 ----
+    if(level==='easy')   return ffPick([[3,()=>addTo(10,'ADD_10')],[3,()=>subTo(10,'SUB_10')],
+                                        [3,()=>bonds(10,'BONDS_10')],[2,()=>dbl(10,'DOUBLES')]]);
+    if(level==='medium') return ffPick([[4,()=>addTo(20,'ADD_20')],[4,()=>subTo(20,'SUB_20')],
+                                        [2,()=>dbl(10,'DOUBLES')],
+                                        [1,()=>skip(2,'SKIP_2')],[1,()=>skip(5,'SKIP_5')],[1,()=>skip(10,'SKIP_10')]]);
+    return ffPick([[3,()=>addTo(20,'ADD_20')],[3,()=>subTo(20,'SUB_20')],[3,()=>missing(20)],
+                   [1,()=>skip(2,'SKIP_2')],[1,()=>skip(5,'SKIP_5')],[1,()=>skip(10,'SKIP_10')]]);
+  }
+  if(y===2){   // ---- YEAR 2: automatic recall within 20, and the 2x table ----
+    if(level==='easy')   return ffPick([[4,()=>addTo(20,'ADD_FACT_20')],[4,()=>subTo(20,'SUB_FACT_20')],
+                                        [3,()=>times(2,'X2')]]);
+    if(level==='medium') return ffPick([[4,()=>bridgeAdd('TD_PLUS_ONES')],[4,()=>bridgeSub('TD_MINUS_ONES')],
+                                        [2,()=>times(2,'X2')],[2,()=>addTo(20,'ADD_FACT_20')]]);
+    // Hard: still two-digit, but now crossing tens both ways — 29 + 17, 54 - 18.
+    return ffPick([
+      [3,()=>bridgeAdd('BRIDGE_10')],
+      [3,()=>bridgeSub('BRIDGE_10')],
+      [2,()=>{ const a=randInt(21,49), b=randInt(11,29); return Q(`${a} + ${b}`, a+b, 'MENTAL_ADD'); }],
+      [2,()=>{ const b=randInt(11,29), ans=randInt(11,49); return Q(`${ans+b} − ${b}`, ans, 'MENTAL_SUB'); }],
+    ]);
+  }
+  // ---- YEAR 3: 2,3,4,5,10 tables with related division, plus mental strategy ----
+  const TABLES=[[2,'X2'],[3,'X3'],[4,'X4'],[5,'X5'],[10,'X10']];
+  const anyTable=()=>{ const [t,c]=pick(TABLES); return times(t,c); };
+  const anyDiv  =()=>{ const [t]=pick(TABLES); return divBy(t); };
+  if(level==='easy')   return ffPick([[4,anyTable],[3,anyDiv],
+                                      [2,()=>bridgeAdd('MENTAL_ADD')],[2,()=>bridgeSub('MENTAL_SUB')]]);
+  if(level==='medium') return ffPick([
+    [3,anyTable],[2,anyDiv],
+    // Adding and subtracting whole tens — partitioning, no regrouping needed.
+    [2,()=>{ const a=randInt(11,39)*10+randInt(0,9), b=randInt(2,7)*10; return Q(`${a} + ${b}`, a+b, 'MENTAL_ADD'); }],
+    [2,()=>{ const b=randInt(2,7)*10, ans=randInt(50,350); return Q(`${ans+b} − ${b}`, ans, 'MENTAL_SUB'); }],
+  ]);
+  // Hard: compensation. 199 + 26 wants 200 + 26 - 1; 402 - 98 wants 402 - 100 + 2.
+  return ffPick([
+    [3,anyTable],[2,anyDiv],
+    [3,()=>{ const near=pick([99,199,299,399]), b=randInt(12,48); return Q(`${near} + ${b}`, near+b, 'COMPENSATION'); }],
+    [3,()=>{ const near=pick([98,99,198,199]), ans=randInt(102,320); return Q(`${ans+near} − ${near}`, ans, 'COMPENSATION'); }],
+    [2,()=>{ const a=randInt(21,59), b=randInt(15,39); return Q(`${a} + ${b}`, a+b, 'MENTAL_ADD'); }],
+    [2,()=>{ const b=randInt(15,39), ans=randInt(15,49); return Q(`${ans+b} − ${b}`, ans, 'MENTAL_SUB'); }],
+  ]);
+}
+
 function genTTQuestion(level, idx, year){
+  if(FAST_FACT_YEARS.indexOf(+year)!==-1) return genFastFactQuestion(level, idx, year);
   const ranges = ttRangesFor(year);
   const spec = ranges[level] || ranges.medium;
   // Year 3 Easy is a named set of tables rather than a range: the point is the four
@@ -4029,7 +4201,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.22';
+const BUILD = '2026-08-10.24';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -4107,10 +4279,18 @@ async function ensureDefaultClass(){
 // Year level is stored per class so question generation can eventually scale
 // difficulty by year (3–6) rather than assuming Year 4. Existing classes have
 // no yearLevel and fall back to DEFAULT_YEAR until the teacher sets one.
-const YEAR_LEVELS=[3,4,5,6];
+// Pre-Primary is stored as 0 — it has to be a number so it sorts and compares with the
+// rest, and 0 sits naturally below Year 1. Never render it with "Year" in front; use
+// yearLabel(). DEFAULT_YEAR stays 4, so every existing student is untouched.
+const YEAR_LEVELS=[0,1,2,3,4,5,6];
 const DEFAULT_YEAR=4;
+const FAST_FACT_YEARS=[0,1,2,3];
+function yearLabel(y){ return (+y===0) ? 'Pre-Primary' : 'Year '+(+y); }
 function classYear(cls){
   const y=cls && cls.yearLevel;
+  // Same trap as studentYear: a null class gives `+null === 0`, which is now Pre-Primary.
+  // Every class created before year levels existed would have become Pre-Primary.
+  if(y===null || y===undefined || y==='') return DEFAULT_YEAR;
   return (YEAR_LEVELS.indexOf(+y)!==-1) ? +y : DEFAULT_YEAR;
 }
 async function createClass(name, yearLevel){
@@ -4152,7 +4332,7 @@ function renderClassPicker(opts){
   if(!S.classes.length) return el('<span></span>');
   const row=el('<div class="mmc-classpick"></div>');
   const select=el(`<select>
-    ${S.classes.map(c=>`<option value="${c.id}" ${!S.showAllClasses && S.currentClassId===c.id?'selected':''}>${esc(c.name)} · Year ${classYear(c)}</option>`).join('')}
+    ${S.classes.map(c=>`<option value="${c.id}" ${!S.showAllClasses && S.currentClassId===c.id?'selected':''}>${esc(c.name)} · ${esc(yearLabel(classYear(c)))}</option>`).join('')}
     ${opts.allowAll===false ? '' : `<option value="__all__" ${S.showAllClasses?'selected':''}>All classes</option>`}
   </select>`);
   select.onchange=(e)=>{
@@ -4173,7 +4353,7 @@ function renderClassSwitcher(){
   const left=el('<div class="mmc-row" style="align-items:center;gap:8px;"></div>');
   left.appendChild(el('<span style="font-weight:700;font-size:13px;">Viewing:</span>'));
   const select=el(`<select style="font-weight:700;padding:6px 10px;">
-    ${S.classes.map(c=>`<option value="${c.id}" ${!S.showAllClasses && S.currentClassId===c.id?'selected':''}>${esc(c.name)} · Year ${classYear(c)}</option>`).join('')}
+    ${S.classes.map(c=>`<option value="${c.id}" ${!S.showAllClasses && S.currentClassId===c.id?'selected':''}>${esc(c.name)} · ${esc(yearLabel(classYear(c)))}</option>`).join('')}
     <option value="__all__" ${S.showAllClasses?'selected':''}>All classes (combined)</option>
   </select>`);
   select.onchange=(e)=>{
@@ -6390,7 +6570,7 @@ function renderStudentOverviews(){
     const focus = ins.items[0] ? ttInsightShort(ins.items[0]) : '—';
     const tr=el(`<tr>
       <td style="font-weight:700;">${esc(p.displayName||uid)}</td>
-      <td class="meta">Year ${studentYear(p)}${p.group? ' · '+esc(groupLabel(p.group)) : ''}</td>
+      <td class="meta">${esc(yearLabel(studentYear(p)))}${p.group? ' · '+esc(groupLabel(p.group)) : ''}</td>
       <td class="meta">${res.length} set${res.length===1?'':'s'}</td>
       <td>${avg==null? '<span class="meta">—</span>' : avg+'%'}</td>
       <td class="meta">${esc(focus)}</td>
@@ -6429,7 +6609,7 @@ function renderOverviewProfile(uid){
   const wrap=el('<div></div>');
 
   wrap.appendChild(el(`<h3 style="margin:10px 0 2px;">${esc(name)}</h3>
-    <div class="meta">Year ${studentYear(p)}${p.group? ' · '+esc(groupLabel(p.group)):''} · Times-tables rank: ${esc(badge.tier.label)}${badge.pinnedBy? ' (pinned)':''}</div>`));
+    <div class="meta">${esc(yearLabel(studentYear(p)))}${p.group? ' · '+esc(groupLabel(p.group)):''} · Times-tables rank: ${esc(badge.tier.label)}${badge.pinnedBy? ' (pinned)':''}</div>`));
 
   const figs=el('<div class="mmc-ov-figs"></div>');
   overviewKeyFigures(res,tt,badge).forEach(f=>figs.appendChild(el(
@@ -7006,7 +7186,7 @@ function renderStudentsTab(mode){
       const count=Object.values(S.profiles||{}).filter(p=>p.username && p.classId===c.id).length;
       const r=el(`<div class="mmc-clsrow">
         <div class="mmc-stu-name">${esc(c.name)}</div>
-        <code class="mmc-stu-user">Year ${classYear(c)}</code>
+        <code class="mmc-stu-user">${esc(yearLabel(classYear(c)))}</code>
         <code class="mmc-stu-user">${count} student${count===1?'':'s'}</code>
         <div class="mmc-stu-actions">
           <button class="mmc-btn ghost sm" data-c="csv">Logins CSV</button>
@@ -7110,7 +7290,7 @@ function renderStudentsTab(mode){
       <div class="mmc-field"><label>Add them to</label>
         <div class="mmc-row" style="align-items:center;gap:8px;">
           <select id="mmc-bulk-class" style="font-weight:600;min-width:180px;">
-            ${S.classes.map(c=>`<option value="${c.id}" ${!S.showAllClasses && c.id===S.currentClassId?'selected':''}>${esc(c.name)} · Year ${classYear(c)}</option>`).join('')}
+            ${S.classes.map(c=>`<option value="${c.id}" ${!S.showAllClasses && c.id===S.currentClassId?'selected':''}>${esc(c.name)} · ${esc(yearLabel(classYear(c)))}</option>`).join('')}
             <option value="__new__">+ A new class…</option>
           </select>
           <span class="meta" style="margin:0;" id="mmc-bulk-classnote"></span>
@@ -7242,7 +7422,7 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
           ${S.classes.map(c=>`<option value="${c.id}" ${p.classId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}
         </select>` : '<span></span>'}
         <select data-act="year" title="Year level. Set per student so a composite class can hold more than one year. Controls which times-tables ladder they get.">
-          ${YEAR_LEVELS.map(y=>`<option value="${y}" ${studentYear(p)===y?'selected':''}>Year ${y}</option>`).join('')}
+          ${YEAR_LEVELS.map(y=>`<option value="${y}" ${studentYear(p)===y?'selected':''}>${esc(yearLabel(y))}</option>`).join('')}
         </select>
         <select data-act="group">
           <option value="">Unassigned</option>
@@ -7283,7 +7463,7 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
       const yearSel=row.querySelector('[data-act="year"]');
       if(yearSel) yearSel.onchange=async (e)=>{
         try{ await updateDoc(doc(db,'profiles',uid), {yearLevel:+e.target.value});
-          S.toast=`${p.displayName} is now Year ${e.target.value}.`;
+          S.toast=`${p.displayName} is now ${yearLabel(e.target.value)}.`;
         }catch(err){ S.toast='Could not update year — check your connection.'; }
         render();
       };
@@ -7530,7 +7710,7 @@ function renderTimetableTab(){
   // Descriptions follow the student's year, so a Year 3 is never told their Easy is
   // "1-10 times tables" when it is actually the 2s, 5s, 10s and 3s.
   const myYear = studentYear(S.profile);
-  const blurb = TT_LEVEL_BLURB[myYear===3?3:4];
+  const blurb = TT_LEVEL_BLURB[myYear] || TT_LEVEL_BLURB[4];
   const levels=[{k:'easy',label:'Easy',desc:blurb.easy},{k:'medium',label:'Medium',desc:blurb.medium},{k:'hard',label:'Hard',desc:blurb.hard}];
   const cardsRow=el('<div class="mmc-row"></div>');
   levels.forEach(lv=>{
@@ -7787,7 +7967,7 @@ function renderTTChallenge(){
   wrap.appendChild(head);
   const qbox=el(`
     <div class="mmc-card" style="text-align:center;">
-      <div style="font-family:'Fredoka',sans-serif;font-size:36px;font-weight:700;margin-bottom:16px;">${esc(t.currentQ.prompt)} = ?</div>
+      <div style="font-family:'Fredoka',sans-serif;font-size:${String(ttPromptText(t.currentQ)).length>18?'26px':'36px'};font-weight:700;margin-bottom:16px;">${esc(ttPromptText(t.currentQ))}</div>
       <div class="mmc-row" style="justify-content:center;">
         <input type="text" id="mmc-tt-input" class="${t.flash?('mmc-flash-'+t.flash):''}" autocomplete="off" inputmode="${KEYPAD_INPUTMODE}" value="${esc(t.typedValue||'')}" style="width:120px;text-align:center;font-size:22px;padding:10px;border-radius:8px;border:1.5px solid var(--paper-line);">
         <button class="mmc-btn gold" id="mmc-tt-submit">Go</button>
@@ -7802,7 +7982,7 @@ function renderTTChallenge(){
     qbox.innerHTML='';
     qbox.appendChild(el(`
       <div style="text-align:center;">
-        <div style="font-family:'Fredoka',sans-serif;font-size:30px;font-weight:700;margin-bottom:10px;">${esc(r.prompt)} = ${esc(r.answer)}</div>
+        <div style="font-family:'Fredoka',sans-serif;font-size:${String(r.prompt).length>18?'22px':'30px'};font-weight:700;margin-bottom:10px;">${esc(/[?=]/.test(String(r.prompt)) ? r.prompt.replace(/\?(?!.*[?=])/,r.answer) : r.prompt+' = '+r.answer)}</div>
         <div style="font-size:20px;font-weight:800;color:${r.correct?'var(--correct)':'var(--incorrect)'};margin-bottom:6px;">
           ${r.correct ? '✓ Correct!' : '✗ Not quite'}
         </div>
@@ -8143,7 +8323,7 @@ function renderMyLiveSession(){
   if(chase) wrap.appendChild(chase);
   const qbox=el(`
     <div class="mmc-card" style="text-align:center;">
-      <div style="font-family:'Baloo 2',sans-serif;font-size:36px;font-weight:700;margin-bottom:16px;">${esc(S.myLive.currentQ.prompt)} = ?</div>
+      <div style="font-family:'Baloo 2',sans-serif;font-size:${String(ttPromptText(S.myLive.currentQ)).length>18?'26px':'36px'};font-weight:700;margin-bottom:16px;">${esc(ttPromptText(S.myLive.currentQ))}</div>
       <div class="mmc-row" style="justify-content:center;">
         <input type="text" id="mmc-live-input" class="${S.myLive.flash?('mmc-flash-'+S.myLive.flash):''}" autocomplete="off" inputmode="${KEYPAD_INPUTMODE}" value="${esc(S.myLive.typedValue||'')}" style="width:120px;text-align:center;font-size:22px;padding:10px;border-radius:10px;border:2px solid var(--paper-line);">
         <button class="mmc-btn gold" id="mmc-live-submit">Go</button>
