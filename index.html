@@ -4664,7 +4664,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.47';
+const BUILD = '2026-08-10.48';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -6477,17 +6477,18 @@ function renderTeacherWeeks(){
     wrap.appendChild(el('<div class="mmc-empty">No sets for that class yet.</div>'));
     return wrap;
   }
-  const fresh = S.justCreatedId ? shown.find(w=>w.id===S.justCreatedId) : null;
+  // Pinned only while it is still a DRAFT. Publishing is the teacher saying "I have looked
+  // at this", so it needs no separate dismiss button — it simply drops into its class
+  // group the moment it goes live.
+  const fresh = S.justCreatedId
+    ? shown.find(w=>w.id===S.justCreatedId && w.status==='draft')
+    : null;
   if(fresh){
-    const banner=el(`<div class="mmc-setgroup" style="border-bottom-color:var(--gold);">
+    wrap.appendChild(el(`<div class="mmc-setgroup" style="border-bottom-color:var(--gold);">
       <span class="mmc-setgroup-name">✨ Just created — check it over</span>
       <span class="mmc-setgroup-count">${visibleQuestions(fresh).length} questions</span>
-    </div>`);
-    wrap.appendChild(banner);
+    </div>`));
     wrap.appendChild(renderWeekCard(fresh));
-    const done=el('<button class="mmc-btn ghost sm" style="margin:2px 0 6px;">Done reviewing — file it with the others</button>');
-    done.onclick=()=>{ S.justCreatedId=null; render(); };
-    wrap.appendChild(done);
   }
   groupWeeksByClass(shown).forEach(g=>{
     const weeks = fresh ? g.weeks.filter(w=>w.id!==fresh.id) : g.weeks;
