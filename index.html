@@ -4658,7 +4658,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.42';
+const BUILD = '2026-08-10.44';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -6567,8 +6567,9 @@ async function runAutoArchive(){
       const audience = roster.filter(uid=>{
         const p=S.profiles[uid]; if(!p||!p.username) return false;
         if(Array.isArray(w.classIds) && w.classIds.length && p.classId && w.classIds.indexOf(p.classId)===-1) return false;
-        if(Array.isArray(w.targetYears) && w.targetYears.length &&
-           w.targetYears.indexOf(studentYear(p))===-1) return false;
+        const wYears = (Array.isArray(w.targetYears) && w.targetYears.length) ? w.targetYears
+          : (w.yearLevel!==null && w.yearLevel!==undefined && w.yearLevel!=='' ? [+w.yearLevel] : null);
+        if(wYears && wYears.indexOf(studentYear(p))===-1) return false;
         if(Array.isArray(w.targetGroups) && w.targetGroups.length){
           const g = p.group || 'mainstream';
           if(w.targetGroups.indexOf(g)===-1) return false;
@@ -6644,6 +6645,14 @@ function buildWeekControlPanel(week, isEditing, suffix){
     pubBtn.onclick=()=>publishWeek(week);
     btnRow.appendChild(pubBtn);
   }
+  // Two buttons rather than one: a blank paper for the class, and a marked copy for the
+  // teacher. Wanting the answers is a different job from wanting the worksheet.
+  const printBtn=el('<button class="mmc-btn ghost sm" title="Opens your print dialog — choose Save as PDF there to keep a copy">🖨 Print</button>');
+  printBtn.onclick=()=>printWeekSheet(week, {answers:false});
+  btnRow.appendChild(printBtn);
+  const printAnsBtn=el('<button class="mmc-btn ghost sm" title="The same paper with an answer sheet on the back">🖨 + answers</button>');
+  printAnsBtn.onclick=()=>printWeekSheet(week, {answers:true});
+  btnRow.appendChild(printAnsBtn);
   const archiveBtn=el('<button class="mmc-btn ghost sm">Archive</button>');
   archiveBtn.onclick=()=>archiveWeekAction(week);
   btnRow.appendChild(archiveBtn);
@@ -6709,6 +6718,106 @@ async function toggleQuestionHidden(week, q){
   render();
 }
 
+// ---------- Printing a set ----------
+// Done through the browser rather than jsPDF. Half these questions carry an SVG — angles,
+// clocks, grids, 3D shapes, fraction bars — and jsPDF cannot draw SVG without another
+// library, which would mean another CDN on a school network that already blocks one.
+// Printed from an iframe the SVGs render natively, page breaks behave, and "Save as PDF"
+// is already in every print dialog.
+function printQuestionHTML(q, n){
+  const parts=[];
+  parts.push(`<div class="pq-n">${n}.</div>`);
+  const body=[];
+  // The stem, in whatever shape this question type uses.
+  if(q.partsLead!=null || q.partsTail!=null){
+    const boxes=(q.parts||[{}]).map(pt=>`<span class="pq-box">${pt && pt.label? `<i>${esc(pt.label)}</i>`:''}</span>`)
+      .join(` <b>${esc(q.partsJoin||'')}</b> `);
+    body.push(`<div class="pq-q">${esc(q.partsLead||'')} ${boxes} ${esc(q.partsTail||'')}</div>`);
+  } else if(q.fracOfLead){
+    body.push(`<div class="pq-q">What is <span class="pq-frac"><i>${esc(q.fracNum)}</i><i>${esc(q.fracDen)}</i></span> of ${esc(q.ofTotal)}?</div>`);
+  } else {
+    body.push(`<div class="pq-q">${esc(String(q.prompt||'')).replace(/\n/g,'<br>')}</div>`);
+  }
+  // The picture, if there is one.
+  if(q.svg) body.push(`<div class="pq-svg">${q.svg}</div>`);
+  // A given fraction shown alongside the prompt.
+  if(q.givenNum!=null && q.givenDen!=null)
+    body.push(`<div class="pq-given"><span class="pq-frac"><i>${esc(q.givenNum)}</i><i>${esc(q.givenDen)}</i></span></div>`);
+  if(q.showFracNum!=null)
+    body.push(`<div class="pq-given">${q.showWhole!=null?esc(q.showWhole)+' ':''}<span class="pq-frac"><i>${esc(q.showFracNum)}</i><i>${esc(q.showFracDen)}</i></span></div>`);
+  if(q.leftNum!=null && q.rightNum!=null)
+    body.push(`<div class="pq-given"><span class="pq-frac"><i>${esc(q.leftNum)}</i><i>${esc(q.leftDen)}</i></span> <b>&nbsp;___&nbsp;</b> <span class="pq-frac"><i>${esc(q.rightNum)}</i><i>${esc(q.rightDen)}</i></span></div>`);
+  // Options to choose from.
+  if(Array.isArray(q.choices) && q.choices.length)
+    body.push(`<div class="pq-opts">${q.choices.map((c,i)=>`<span class="pq-opt"><b>${String.fromCharCode(65+i)}</b> ${esc(c)}</span>`).join('')}</div>`);
+  if(Array.isArray(q.items) && q.items.length && q.inputType==='order')
+    body.push(`<div class="pq-opts">${q.items.map(c=>`<span class="pq-opt">${esc(typeof c==='object'? (c.deg!=null? c.deg+'°':JSON.stringify(c)) : c)}</span>`).join('')}</div>`);
+  if(Array.isArray(q.coins) && q.coins.length)
+    body.push(`<div class="pq-opts">${q.coins.map(c=>`<span class="pq-opt">${esc(c.l||c.label||'')}</span>`).join('')}</div>`);
+  // Somewhere to write.
+  if(!Array.isArray(q.choices) && q.partsLead==null && q.partsTail==null)
+    body.push('<div class="pq-line"></div>');
+  parts.push(`<div class="pq-body">${body.join('')}</div>`);
+  return `<div class="pq">${parts.join('')}</div>`;
+}
+
+function printWeekSheet(week, opts){
+  opts = opts || {};
+  const qs = visibleQuestions(week);
+  const cls = (S.classes||[]).find(c=>Array.isArray(week.classIds) && week.classIds.indexOf(c.id)!==-1);
+  const yrs = (Array.isArray(week.targetYears)&&week.targetYears.length) ? week.targetYears
+    : (week.yearLevel!=null && week.yearLevel!=='' ? [+week.yearLevel] : []);
+  const sub = [cls? cls.name : 'All classes', yrs.length? yrs.map(y=>yearLabel(y)).join(', '):'', week.difficulty]
+    .filter(Boolean).join(' · ');
+  const answers = opts.answers
+    ? `<div class="pg-break"></div><h2>Answers — ${esc(week.label)}</h2><ol class="pa">${
+        qs.map(q=>`<li>${esc(String(q.answer||'').replace(/,/g,', '))}${q.explanation?` <span class="pa-x">${esc(q.explanation)}</span>`:''}</li>`).join('')}</ol>`
+    : '';
+  const doc = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(week.label)}</title><style>
+    *{box-sizing:border-box;}
+    body{font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#111;margin:0;padding:18mm 14mm;}
+    h1{font-size:20pt;margin:0 0 2px;}
+    .sub{font-size:10pt;color:#555;margin-bottom:4px;}
+    .namebar{display:flex;gap:22px;font-size:10pt;color:#555;border-bottom:1.5px solid #111;padding-bottom:8px;margin-bottom:14px;}
+    .namebar span{flex:1;border-bottom:1px solid #bbb;padding-bottom:2px;}
+    .pq{display:flex;gap:9px;padding:9px 0;border-bottom:1px solid #e4e2dc;break-inside:avoid;page-break-inside:avoid;}
+    .pq-n{font-weight:700;min-width:22px;font-size:11pt;}
+    .pq-body{flex:1;}
+    .pq-q{font-size:12pt;line-height:1.45;}
+    .pq-svg{margin:6px 0;}
+    .pq-svg svg{max-height:90px;width:auto;}
+    .pq-given{margin:6px 0;font-size:13pt;}
+    .pq-box{display:inline-block;min-width:52px;border-bottom:1.5px solid #111;height:17px;vertical-align:middle;}
+    .pq-box i{font-size:7pt;color:#777;font-style:normal;display:block;text-align:center;}
+    .pq-frac{display:inline-block;text-align:center;vertical-align:middle;line-height:1.05;}
+    .pq-frac i{display:block;font-style:normal;padding:0 5px;}
+    .pq-frac i:first-child{border-bottom:1.5px solid #111;}
+    .pq-opts{margin-top:5px;font-size:10.5pt;color:#333;}
+    .pq-opt{display:inline-block;margin:2px 14px 2px 0;}
+    .pq-line{margin-top:9px;border-bottom:1px solid #bbb;height:15px;max-width:230px;}
+    .pg-break{page-break-before:always;}
+    h2{font-size:14pt;margin:0 0 8px;}
+    .pa{font-size:10.5pt;line-height:1.7;} .pa-x{color:#666;font-size:9pt;}
+    @page{margin:0;}
+  </style></head><body>
+    <h1>${esc(week.label)}</h1>
+    <div class="sub">${esc(sub)} · ${qs.length} question${qs.length===1?'':'s'}</div>
+    <div class="namebar"><span>Name</span><span>Date</span></div>
+    ${qs.map((q,i)=>printQuestionHTML(q,i+1)).join('')}
+    ${answers}
+  </body></html>`;
+  // An iframe rather than a popup: popup blockers do not interfere, and the app behind
+  // it is untouched.
+  const frame=document.createElement('iframe');
+  frame.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+  document.body.appendChild(frame);
+  const d=frame.contentWindow.document;
+  d.open(); d.write(doc); d.close();
+  const go=()=>{ try{ frame.contentWindow.focus(); frame.contentWindow.print(); }catch(e){}
+    setTimeout(()=>{ try{ document.body.removeChild(frame); }catch(e){} }, 1500); };
+  if(d.readyState==='complete') setTimeout(go,250); else frame.onload=()=>setTimeout(go,250);
+}
+
 function renderWeekCard(week){
   const isEditing = S.editingDraftId===week.id;
   const live = isWeekLive(week);
@@ -6718,8 +6827,10 @@ function renderWeekCard(week){
     : (live ? '<span style="color:#2E9E4F;font-size:12px;font-weight:700;">LIVE (scheduled)</span>'
       : (isScheduled ? `<span style="color:#8B5CF6;font-size:12px;font-weight:700;">⏰ SCHEDULED — ${esc(formatScheduledAt(week.scheduledAt))}</span>`
         : '<span style="color:#E85C0A;font-size:12px;font-weight:700;">DRAFT</span>'));
-  const yearText = (Array.isArray(week.targetYears) && week.targetYears.length)
-    ? week.targetYears.map(y=>yearLabel(y)).join(', ') + ' · ' : '';
+  const cardYears = (Array.isArray(week.targetYears) && week.targetYears.length)
+    ? week.targetYears
+    : (week.yearLevel!==null && week.yearLevel!==undefined && week.yearLevel!=='' ? [+week.yearLevel] : []);
+  const yearText = cardYears.length ? cardYears.map(y=>yearLabel(y)).join(', ') + ' · ' : '';
   const groupText = yearText + ((!week.targetGroups || week.targetGroups.length===0) ? 'All students'
     : week.targetGroups.map(g=>groupLabel(g)).join(', '));
   // Who is actually going to sit this set. Once sets are generated per year AND group,
@@ -6728,7 +6839,9 @@ function renderWeekCard(week){
   const forWhom = Object.entries(S.profiles||{}).filter(([uid,p])=>{
     if(!p || !p.username) return false;
     if(Array.isArray(week.classIds) && week.classIds.length && p.classId && week.classIds.indexOf(p.classId)===-1) return false;
-    if(Array.isArray(week.targetYears) && week.targetYears.length && week.targetYears.indexOf(studentYear(p))===-1) return false;
+    const wy = (Array.isArray(week.targetYears) && week.targetYears.length) ? week.targetYears
+      : (week.yearLevel!==null && week.yearLevel!==undefined && week.yearLevel!=='' ? [+week.yearLevel] : null);
+    if(wy && wy.indexOf(studentYear(p))===-1) return false;
     if(Array.isArray(week.targetGroups) && week.targetGroups.length &&
        week.targetGroups.indexOf(p.group||'mainstream')===-1) return false;
     return true;
@@ -8299,12 +8412,15 @@ async function deleteWeekProgress(weekId){
 function studentEffectiveGroup(){ return (S.profile && S.profile.group) || 'mainstream'; }
 function weekVisibleToMe(week){
   if(week.classIds && week.classIds.length>0 && S.profile && S.profile.classId && !week.classIds.includes(S.profile.classId)) return false;
-  // Year is checked BEFORE group. Sets are generated per year now, so a Year 3 student
-  // must never be shown the Year 4 version of the same week. Sets made before this
-  // existed carry no targetYears and stay visible to everyone, which is right — they
-  // were built for whatever year the class was at the time.
-  if(Array.isArray(week.targetYears) && week.targetYears.length &&
-     week.targetYears.indexOf(studentYear(S.profile))===-1) return false;
+  // A set belongs to exactly one year. Sets created before targetYears existed carry no
+  // such field, and letting those through to everyone meant a Year 3 student could open a
+  // 24-question Year 4 paper — which is exactly what happened. Every set has always
+  // recorded the yearLevel it was built for, so fall back to that. Only a set with
+  // neither field is treated as year-agnostic.
+  const setYears = (Array.isArray(week.targetYears) && week.targetYears.length)
+    ? week.targetYears
+    : (week.yearLevel!==null && week.yearLevel!==undefined && week.yearLevel!=='' ? [+week.yearLevel] : null);
+  if(setYears && setYears.indexOf(studentYear(S.profile))===-1) return false;
   if(!week.targetGroups || week.targetGroups.length===0) return true;
   return week.targetGroups.includes(studentEffectiveGroup());
 }
