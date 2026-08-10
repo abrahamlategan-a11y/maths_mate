@@ -3095,7 +3095,10 @@ function computeBadgeInfo(attempts, profile){
   // slower mode. So session COUNT and the recency clock use every attempt, while the
   // accuracy thresholds read timed challenges only. Records saved before practice mode
   // existed have no `mode` field and therefore count as timed, exactly as they always did.
-  const timedAttempts = attempts.filter(a=>a.mode!=='practice');
+  // Excluded from accuracy: untimed practice (answer is shown, runs at 90%+) AND custom
+  // sessions (the child picked the tables, so the score isn't comparable). Both still
+  // count as effort below. Easy/Medium/Hard are the only levels everyone faces equally.
+  const timedAttempts = attempts.filter(a=>a.mode!=='practice' && a.level!=='custom');
   const totalCorrect = timedAttempts.reduce((s,a)=>s+(a.score||0),0);
   const totalAttempted = timedAttempts.reduce((s,a)=>s+(a.attempted||0),0);
   const avgAccuracy = totalAttempted ? Math.round((totalCorrect/totalAttempted)*100) : 0;
@@ -3461,8 +3464,50 @@ function renderSettingsTab(){
 
 // ---------- Timetable Challenge ----------
 const TT_RANGES = { easy:[1,10], medium:[1,12], hard:[4,15] };
+// ---------- Custom times-table practice ----------
+// The child picks which tables to drill and whether to multiply, divide, or both.
+// Because THEY choose the difficulty, these sessions are recorded as level 'custom'
+// and count only toward effort — never toward the accuracy gates. Otherwise drilling
+// the 2s at speed would be the cheapest possible route to a rank.
+const TT_CUSTOM_TABLES=[2,3,4,5,6,7,8,9,10,11,12];
+function ttCustomValid(c){
+  return !!c && Array.isArray(c.tables) && c.tables.length>0 && (c.mult || c.div);
+}
+function ttCustomLabel(c){
+  if(!ttCustomValid(c)) return 'Custom';
+  const t=c.tables.slice().sort((a,b)=>a-b).join(', ');
+  const ops = c.mult && c.div ? '× and ÷' : c.mult ? '×' : '÷';
+  return `${t} ${ops}`;
+}
+function genTTCustomQuestion(c, idx){
+  const table = pick(c.tables);
+  const n = randInt(1,12);
+  // Alternate when both are on, so a session can't land on one operation by chance.
+  const useDiv = (c.mult && c.div) ? (idx%2===1) : !!c.div;
+  if(useDiv){
+    return { prompt:`${table*n} ÷ ${table}`, answer:n, isDivision:true, level:'custom' };
+  }
+  // Vary which side the chosen table sits on — 6 × 4 and 4 × 6 should both come up.
+  return Math.random()<0.5
+    ? { prompt:`${table} × ${n}`, answer:table*n, isDivision:false, level:'custom' }
+    : { prompt:`${n} × ${table}`, answer:table*n, isDivision:false, level:'custom' };
+}
+// Single entry point so a custom session and a levelled one can never drift apart.
+// A custom session with a broken config must NOT fall through to genTTQuestion — there
+// is no TT_RANGES['custom'], so that would throw and kill the session mid-race. The UI
+// disables the buttons until a table is picked, but the guarantee belongs here, not
+// in the interface.
+function ttQuestionFor(t, idx){
+  if(t.level==='custom'){
+    return ttCustomValid(t.custom)
+      ? genTTCustomQuestion(t.custom, idx)
+      : genTTCustomQuestion({tables:[2,5,10], mult:true, div:false}, idx);
+  }
+  return genTTQuestion(t.level, idx);
+}
 function genTTQuestion(level, idx){
-  const [lo,hi] = TT_RANGES[level];
+  // An unrecognised level would otherwise destructure undefined and throw.
+  const [lo,hi] = TT_RANGES[level] || TT_RANGES.medium;
   const isDivision = level!=='easy' && idx%2===1;
   if(!isDivision){
     const a=randInt(lo,hi), b=randInt(lo,hi);
@@ -3506,7 +3551,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.5';
+const BUILD = '2026-08-10.6';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -3846,6 +3891,7 @@ const S = {
   activeWeekId:null, quiz:{}, toast:null,
   bulkCreating:false, bulkProgress:null, bulkResults:null, bulkNamesText:'', bulkPassword:'',
   studentTab:'dashboard', ttAttempts:[], tt:null,
+  ttCustom:{ tables:[], mult:true, div:false },
   liveGames:[], liveParticipants:[], liveGenForm:{level:'easy'},
   myLive:null, // {gameId, joined, answering, currentQ, qIndex, timeLeft, score, attempted}
 };
@@ -6779,6 +6825,7 @@ function renderTimetableTab(){
     <strong>⏱ Challenge</strong> — 5 minutes, answer as many as you can. Both build your race status, but only the Challenge counts towards your accuracy.
   </div>`));
   wrap.appendChild(cardsRow);
+  wrap.appendChild(renderTTCustomCard());
 
   if(S.tt && S.tt.finished && S.tt.lastResult){
     const r=S.tt.lastResult;
@@ -6798,7 +6845,8 @@ function renderTimetableTab(){
       const date=a.submittedAt?.seconds? new Date(a.submittedAt.seconds*1000).toLocaleDateString() : '—';
       // No mode field means a record from before practice existed, i.e. a timed challenge.
       const modeLabel = a.mode==='practice' ? '🐢 Practice' : '⏱ Challenge';
-      tbody.appendChild(el(`<tr><td>${esc(date)}</td><td>${modeLabel}</td><td>${esc(a.level)}</td><td>${a.score}/${a.attempted}</td><td>${a.accuracy}%</td></tr>`));
+      const levelLabel = a.level==='custom' ? (a.customLabel || 'Custom') : a.level;
+      tbody.appendChild(el(`<tr><td>${esc(date)}</td><td>${modeLabel}</td><td>${esc(levelLabel)}</td><td>${a.score}/${a.attempted}</td><td>${a.accuracy}%</td></tr>`));
     });
     tableWrap.appendChild(table);
     wrap.appendChild(tableWrap);
@@ -6807,17 +6855,70 @@ function renderTimetableTab(){
 }
 
 const TT_PRACTICE_TOTAL = 30;
-function startTTChallenge(level){
-  S.tt = { mode:'challenge', active:true, finished:false, level, timeLeft:300, score:0, attempted:0, qIndex:0, currentQ:genTTQuestion(level,0), lastResult:null };
+// Pick-your-own drill. Chips rather than a multi-select, because a nine-year-old on a
+// tablet can tap a chip and cannot easily ctrl-click a list.
+function renderTTCustomCard(){
+  const c=S.ttCustom;
+  const card=el(`
+    <div class="mmc-card" style="margin-top:16px;">
+      <h3>🎯 Pick your own</h3>
+      <div class="meta" style="margin-bottom:8px;">Choose the tables you want to work on. Counts towards your status as practice.</div>
+      <div class="meta" style="font-weight:700;color:var(--ink);margin-bottom:4px;">Tables</div>
+      <div class="mmc-row" id="mmc-tt-tables" style="flex-wrap:wrap;gap:6px;margin-bottom:10px;"></div>
+      <div class="meta" style="font-weight:700;color:var(--ink);margin-bottom:4px;">Type</div>
+      <div class="mmc-row" id="mmc-tt-ops" style="gap:6px;margin-bottom:10px;"></div>
+      <div class="mmc-row" id="mmc-tt-cgo" style="gap:8px;"></div>
+      <div class="meta" id="mmc-tt-chint" style="margin-top:6px;"></div>
+    </div>
+  `);
+  const chip=(label,on,onClick)=>{
+    const b=el(`<button type="button" class="mmc-btn ${on?'gold':'ghost'} sm" style="min-width:52px;">${label}</button>`);
+    b.onclick=onClick; return b;
+  };
+  const tablesRow=card.querySelector('#mmc-tt-tables');
+  TT_CUSTOM_TABLES.forEach(n=>{
+    tablesRow.appendChild(chip(`${n}×`, c.tables.indexOf(n)!==-1, ()=>{
+      const i=c.tables.indexOf(n);
+      if(i===-1) c.tables.push(n); else c.tables.splice(i,1);
+      render();
+    }));
+  });
+  const opsRow=card.querySelector('#mmc-tt-ops');
+  opsRow.appendChild(chip('× Times', c.mult, ()=>{ c.mult=!c.mult; render(); }));
+  opsRow.appendChild(chip('÷ Divide', c.div, ()=>{ c.div=!c.div; render(); }));
+
+  const goRow=card.querySelector('#mmc-tt-cgo');
+  const ready=ttCustomValid(c);
+  const mk=(label,cls,fn)=>{
+    const b=el(`<button class="mmc-btn ${cls} sm" ${ready?'':'disabled'}>${label}</button>`);
+    if(ready) b.onclick=fn;
+    return b;
+  };
+  // Config is copied, not passed by reference — otherwise changing a chip mid-session
+  // would silently change the questions being generated.
+  const snapshot=()=>({ tables:c.tables.slice(), mult:!!c.mult, div:!!c.div });
+  goRow.appendChild(mk('🐢 Practice','ghost',()=>startTTPractice('custom', snapshot())));
+  goRow.appendChild(mk('⏱ Challenge','gold',()=>startTTChallenge('custom', snapshot())));
+  card.querySelector('#mmc-tt-chint').textContent = ready
+    ? `Ready: ${ttCustomLabel(c)}`
+    : (c.tables.length===0 ? 'Pick at least one table.' : 'Pick times, divide, or both.');
+  return card;
+}
+
+function startTTChallenge(level, custom){
+  S.tt = { mode:'challenge', active:true, finished:false, level, custom:custom||null, timeLeft:300,
+           score:0, attempted:0, qIndex:0, currentQ:null, lastResult:null, typedValue:'' };
+  S.tt.currentQ = ttQuestionFor(S.tt, 0);
   render();
   startTTTimer();
 }
 // Practice: no clock, a fixed 30 questions, and the answer shown when wrong. Deliberately
 // shares S.tt and submitTTAnswer with the timed challenge so the two can't drift apart —
 // `mode` is the only difference, and it is checked rather than duplicated.
-function startTTPractice(level){
-  S.tt = { mode:'practice', active:true, finished:false, level, timeLeft:null, score:0, attempted:0, qIndex:0,
-           currentQ:genTTQuestion(level,0), lastResult:null, reveal:null, typedValue:'' };
+function startTTPractice(level, custom){
+  S.tt = { mode:'practice', active:true, finished:false, level, custom:custom||null, timeLeft:null,
+           score:0, attempted:0, qIndex:0, currentQ:null, lastResult:null, reveal:null, typedValue:'' };
+  S.tt.currentQ = ttQuestionFor(S.tt, 0);
   render();
 }
 function startTTTimer(){
@@ -6850,7 +6951,7 @@ function submitTTAnswer(given){
   }
   flashResult('tt', correct);
   S.tt.qIndex++;
-  S.tt.currentQ=genTTQuestion(S.tt.level, S.tt.qIndex);
+  S.tt.currentQ=ttQuestionFor(S.tt, S.tt.qIndex);
   render();
 }
 // Practice only: advance past the revealed answer, or finish after the 30th.
@@ -6859,7 +6960,7 @@ function nextTTPracticeQuestion(){
   S.tt.reveal=null;
   if(S.tt.attempted >= TT_PRACTICE_TOTAL){ finishTTChallenge(); return; }
   S.tt.qIndex++;
-  S.tt.currentQ=genTTQuestion(S.tt.level, S.tt.qIndex);
+  S.tt.currentQ=ttQuestionFor(S.tt, S.tt.qIndex);
   S.tt.typedValue='';
   render();
 }
@@ -6872,7 +6973,11 @@ async function finishTTChallenge(){
   try{
     // `mode` is what computeBadgeInfo reads to keep practice out of the accuracy gates.
     // Older records have no mode field and are treated as timed — that is deliberate.
-    await addDoc(collection(db,'ttAttempts'), { uid:S.user.uid, teacherUid:S.profile?S.profile.teacherUid:null, level, score, attempted, accuracy, mode, submittedAt:serverTimestamp() });
+    const rec = { uid:S.user.uid, teacherUid:S.profile?S.profile.teacherUid:null, level, score, attempted, accuracy, mode, submittedAt:serverTimestamp() };
+    // Only on custom sessions, so an attempt history row can say "6, 7 ×" rather than
+    // an anonymous "custom" that means nothing to a teacher reading it later.
+    if(level==='custom' && S.tt.custom) rec.customLabel = ttCustomLabel(S.tt.custom);
+    await addDoc(collection(db,'ttAttempts'), rec);
   }catch(e){ S.toast='Could not save this attempt — check your connection.'; }
   render();
 }
@@ -6889,7 +6994,7 @@ function renderTTChallenge(){
   const head=el(`
     <div class="mmc-card">
       <div class="mmc-row" style="justify-content:space-between;">
-        <div><h3 style="text-transform:capitalize;">${esc(t.level)} ${t.mode==='practice'?'practice':'challenge'}</h3><div class="meta">Score: ${t.score} / ${t.attempted}</div></div>
+        <div><h3 style="text-transform:capitalize;">${esc(t.level==='custom'? ttCustomLabel(t.custom) : t.level)} ${t.mode==='practice'?'practice':'challenge'}</h3><div class="meta">Score: ${t.score} / ${t.attempted}</div></div>
         ${t.mode==='practice'
           ? `<div style="font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:700;color:var(--sky-deep);">${Math.min(t.attempted+1,TT_PRACTICE_TOTAL)} of ${TT_PRACTICE_TOTAL}</div>`
           : `<div id="mmc-tt-timer" style="font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:700;color:var(--sky-deep);">${formatMMSS(t.timeLeft)}</div>`}
