@@ -123,6 +123,25 @@
   /* Show-password toggle. A six-year-old typing "puddle88" into dots has no way to see
      which character went wrong, and their password is on a printed card next to them
      anyway — hiding it protects nothing and blocks the login. */
+  /* A class race is a whole-class event and has to look unmistakably different from a
+     friend's race, or a child glances at the screen and joins the wrong thing. Bigger,
+     bolder, and gold rather than the plain card. */
+  .mmc-classrace {
+    border:3px solid var(--ink) !important; background:linear-gradient(135deg,#FFF3D6,#FFE7B0) !important;
+    box-shadow:5px 5px 0 var(--ink) !important; text-align:center; padding:20px 18px !important;
+  }
+  .mmc-classrace .mmc-classflag {
+    display:inline-block; background:var(--ink); color:#fff; font-family:'Baloo 2',sans-serif;
+    font-weight:800; font-size:12px; letter-spacing:.14em; text-transform:uppercase;
+    padding:5px 14px; border-radius:999px; margin-bottom:10px;
+  }
+  .mmc-classrace h3 {
+    font-family:'Baloo 2',sans-serif; font-size:clamp(24px,5.5vw,34px); margin:2px 0 6px;
+  }
+  .mmc-classrace .mmc-btn { font-size:19px; padding:14px 22px; width:100%; max-width:320px; }
+  @keyframes mmc-classpulse { 0%,100%{ transform:scale(1);} 50%{ transform:scale(1.03);} }
+  .mmc-classrace .mmc-classflag { animation:mmc-classpulse 1.8s ease-in-out infinite; }
+  @media (prefers-reduced-motion:reduce){ .mmc-classrace .mmc-classflag { animation:none; } }
   .mmc-pwwrap { position:relative; }
   .mmc-pwwrap input { padding-right:44px !important; }
   .mmc-pweye {
@@ -4226,7 +4245,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.29';
+const BUILD = '2026-08-10.30';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -8390,7 +8409,7 @@ function renderMyLiveSession(){
   const head=el(`
     <div class="mmc-card">
       <div class="mmc-row" style="justify-content:space-between;">
-        <div><h3 style="text-transform:capitalize;">${esc(S.myLive.level)} — Live!</h3><div class="meta">Your score: ${S.myLive.score} / ${S.myLive.attempted} · Room: <code class="mmc-code">${esc(S.myLive.gameId.slice(0,6))}</code></div></div>
+        <div><h3 style="text-transform:capitalize;">${room && !room.hostUid ? '🏫 Class Race' : esc(S.myLive.level)+' — Live!'}</h3><div class="meta">Your score: ${S.myLive.score} / ${S.myLive.attempted} · Room: <code class="mmc-code">${esc(S.myLive.gameId.slice(0,6))}</code></div></div>
         <div id="mmc-live-my-timer" style="font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:700;color:var(--purple-deep);">${room? formatMMSS(liveTimeLeft(room)) : ''}</div>
       </div>
     </div>
@@ -8556,12 +8575,16 @@ function renderStudentLiveGame(){
   }
   if(room.status==='lobby'){
     if(!joined){
+      const isClassRace = !room.hostUid;
       const card=el(`
-        <div class="mmc-card">
-          <h3>🐎 ${room.hostUid ? esc((room.hostName||'A classmate')+"'s race") : 'Race'} starting soon!</h3>
+        <div class="mmc-card${isClassRace?' mmc-classrace':''}">
+          ${isClassRace ? '<div class="mmc-classflag">🏫 Class Race</div>' : ''}
+          <h3>${isClassRace
+            ? '🐎 Your teacher has started a race!'
+            : '🐎 '+esc((room.hostName||'A classmate')+"'s race")+' starting soon!'}</h3>
           <div class="meta">${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} waiting · Room: <code class="mmc-code">${esc(room.id.slice(0,6))}</code></div>
-          <div class="meta">${room.hostUid ? 'One minute' : 'Five minutes'} · questions at your own level.</div>
-          <button class="mmc-btn gold" id="mmc-live-join">Join ▶</button>
+          <div class="meta">${isClassRace ? 'Five minutes' : 'One minute'} · questions at your own level.</div>
+          <button class="mmc-btn gold" id="mmc-live-join">${isClassRace?'Join the class race ▶':'Join ▶'}</button>
         </div>
       `);
       card.querySelector('#mmc-live-join').onclick=()=>joinLiveGame(room.id);
@@ -8575,7 +8598,8 @@ function renderStudentLiveGame(){
       const iAmHost = room.hostUid === S.user.uid;
       if(S.lobbyReadyForRoom === room.id){
         wrap.appendChild(el(`
-          <div class="mmc-card">
+          <div class="mmc-card${room.hostUid?'':' mmc-classrace'}">
+            ${room.hostUid ? '' : '<div class="mmc-classflag">🏫 Class Race</div>'}
             <h3>You're in! ✓</h3>
             <div class="meta">${iAmHost
               ? `${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} ready. Start when everyone has joined.`
