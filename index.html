@@ -108,6 +108,23 @@
     box-shadow:3px 3px 0 var(--ink); padding:10px 14px; margin-bottom:14px;
     font-family:'Baloo 2',sans-serif; font-weight:700; font-size:14px; color:var(--ink);
   }
+  /* On-screen keypad. Shown only on touch devices, where the OS keyboard covers the
+     screen and (on iPad) opens as a full QWERTY even for a numbers-only answer. */
+  .mmc-keypad {
+    display:grid; grid-template-columns:repeat(3,1fr); gap:10px;
+    max-width:300px; margin:16px auto 0;
+  }
+  .mmc-keypad button {
+    font-family:'Fredoka',sans-serif; font-size:26px; font-weight:700;
+    padding:14px 0; border-radius:12px; cursor:pointer;
+    background:var(--paper); color:var(--ink);
+    border:2px solid var(--ink); box-shadow:0 3px 0 var(--ink);
+    -webkit-tap-highlight-color:transparent; touch-action:manipulation;
+    user-select:none;
+  }
+  .mmc-keypad button:active { transform:translateY(3px); box-shadow:none; }
+  .mmc-keypad button.kp-go { background:var(--gold); }
+  .mmc-keypad button.kp-del { font-size:22px; }
   .mmc-buildstamp {
     margin-top:26px; padding-top:12px; border-top:1px solid var(--paper-line);
     font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--ink-soft);
@@ -3467,7 +3484,32 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.2';
+const BUILD = '2026-08-10.3';
+
+// A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
+// QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
+// reports the PRIMARY pointer, so a phone or tablet matches while a laptop with a
+// touchscreen (a Surface, say) does not, and keeps its physical keyboard.
+const IS_TOUCH = (typeof window!=='undefined' && typeof window.matchMedia==='function')
+  ? window.matchMedia('(pointer: coarse)').matches : false;
+// Suppresses the OS keyboard without making the field read-only, so the caret still
+// shows and a paired physical keyboard still types.
+const KEYPAD_INPUTMODE = IS_TOUCH ? 'none' : 'numeric';
+
+// Builds a 3x4 digit pad. onKey receives a digit string, 'del' or 'go'. Keys are wired
+// with onpointerdown and preventDefault so the field never loses focus — a blur on a
+// touch device is what would let the OS keyboard back in.
+function buildKeypad(onKey){
+  const pad=el('<div class="mmc-keypad"></div>');
+  const keys=['1','2','3','4','5','6','7','8','9','del','0','go'];
+  keys.forEach(k=>{
+    const label = k==='del' ? '⌫' : k==='go' ? 'Go' : k;
+    const b=el(`<button type="button" class="${k==='go'?'kp-go':k==='del'?'kp-del':''}">${label}</button>`);
+    b.onpointerdown=(e)=>{ e.preventDefault(); onKey(k); };
+    pad.appendChild(b);
+  });
+  return pad;
+}
 
 const STUDENT_DOMAIN = 'students.maths-mate.local';
 const PASSWORD_WORDS = ['donkey','tiger','comet','maple','pepper','biscuit','rocket','puddle','cactus','wizard','dragon','cookie','thunder','sparkle','pickle','walrus','falcon','marble','goblin','turnip','otter','panda','muffin','breeze','coral','jungle','meadow','ripple','sunset','violet'];
@@ -6778,16 +6820,29 @@ function renderTTChallenge(){
     <div class="mmc-card" style="text-align:center;">
       <div style="font-family:'Fredoka',sans-serif;font-size:36px;font-weight:700;margin-bottom:16px;">${esc(t.currentQ.prompt)} = ?</div>
       <div class="mmc-row" style="justify-content:center;">
-        <input type="text" id="mmc-tt-input" autocomplete="off" style="width:120px;text-align:center;font-size:22px;padding:10px;border-radius:8px;border:1.5px solid var(--paper-line);">
+        <input type="text" id="mmc-tt-input" autocomplete="off" inputmode="${KEYPAD_INPUTMODE}" value="${esc(t.typedValue||'')}" style="width:120px;text-align:center;font-size:22px;padding:10px;border-radius:8px;border:1.5px solid var(--paper-line);">
         <button class="mmc-btn gold" id="mmc-tt-submit">Go</button>
       </div>
     </div>
   `);
   const input=qbox.querySelector('#mmc-tt-input');
-  const go=()=>{ const v=input.value; input.value=''; submitTTAnswer(v); };
+  // The typed value used to live only in the DOM. Any background snapshot (a profile,
+  // week or live-game update) triggers a full re-render, which rebuilt this field empty
+  // and silently wiped a half-typed answer mid-race. Keeping it in state fixes that,
+  // and is also what lets the keypad survive a redraw.
+  input.oninput=(e)=>{ S.tt.typedValue=e.target.value; };
+  const go=()=>{ const v=input.value; input.value=''; S.tt.typedValue=''; submitTTAnswer(v); };
   qbox.querySelector('#mmc-tt-submit').onclick=go;
   input.addEventListener('keydown', e=>{ if(e.key==='Enter') go(); });
   wrap.appendChild(qbox);
+  if(IS_TOUCH){
+    qbox.appendChild(buildKeypad(k=>{
+      if(k==='go'){ go(); return; }
+      if(k==='del') input.value=input.value.slice(0,-1);
+      else if(input.value.length<6) input.value+=k;
+      S.tt.typedValue=input.value;
+    }));
+  }
   return wrap;
 }
 
@@ -7038,7 +7093,7 @@ function renderMyLiveSession(){
     <div class="mmc-card" style="text-align:center;">
       <div style="font-family:'Baloo 2',sans-serif;font-size:36px;font-weight:700;margin-bottom:16px;">${esc(S.myLive.currentQ.prompt)} = ?</div>
       <div class="mmc-row" style="justify-content:center;">
-        <input type="text" id="mmc-live-input" autocomplete="off" inputmode="numeric" value="${esc(S.myLive.typedValue||'')}" style="width:120px;text-align:center;font-size:22px;padding:10px;border-radius:10px;border:2px solid var(--paper-line);">
+        <input type="text" id="mmc-live-input" autocomplete="off" inputmode="${KEYPAD_INPUTMODE}" value="${esc(S.myLive.typedValue||'')}" style="width:120px;text-align:center;font-size:22px;padding:10px;border-radius:10px;border:2px solid var(--paper-line);">
         <button class="mmc-btn gold" id="mmc-live-submit">Go</button>
       </div>
     </div>
@@ -7053,6 +7108,17 @@ function renderMyLiveSession(){
   const go=()=>{ if(!S.myLive.answering) return; const v=input.value; input.value=''; S.myLive.typedValue=''; submitMyLiveAnswer(v); };
   qbox.querySelector('#mmc-live-submit').onclick=go;
   input.addEventListener('keydown', e=>{ if(e.key==='Enter') go(); });
+  // Keypad taps write to S.myLive.typedValue, the same store the re-render restores from,
+  // so a rival answering mid-tap can no longer disturb what this player has entered.
+  if(IS_TOUCH){
+    qbox.appendChild(buildKeypad(k=>{
+      if(!S.myLive.answering) return;
+      if(k==='go'){ go(); return; }
+      if(k==='del') input.value=input.value.slice(0,-1);
+      else if(input.value.length<6) input.value+=k;
+      S.myLive.typedValue=input.value;
+    }));
+  }
   wrap.appendChild(qbox);
   wrap.appendChild(renderRaceTrack(S.user.uid, true));
   wrap.appendChild(renderLiveLeaderboardCard('Live leaderboard', room||{}, false));
