@@ -628,7 +628,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
   getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-  onAuthStateChanged, signOut, updateProfile, sendPasswordResetEmail
+  onAuthStateChanged, signOut, updateProfile, sendPasswordResetEmail,
+  updatePassword, reauthenticateWithCredential, EmailAuthProvider
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 import {
   getFirestore, collection, doc,
@@ -2291,8 +2292,18 @@ function genConversionV2(diff){
     val = p.k>=1 ? (randInt(105,995)/100) : randInt(15,995)*(1/Math.max(1,Math.round(1/p.k)))*Math.round(1/p.k)/100;
   }
   val = Math.round(val*1000)/1000;
-  let ans = val*p.k;
-  ans = Math.round(ans*1000)/1000;
+  // Rounding the ANSWER to 3dp was wrong: 4.66 mL = 0.00466 L, which got
+  // truncated to 0.005 and marked a correct student answer as wrong. Metric
+  // conversions are exact powers of ten, so the answer is computed exactly and
+  // only cleaned of binary floating-point noise (0.1*3 = 0.30000000000000004).
+  const exact = (v)=>{
+    const r = Number(v.toPrecision(12));
+    return Number(r.toFixed(10).replace(/0+$/,'').replace(/\.$/,''));
+  };
+  let ans = exact(val * p.k);
+  // A conversion whose answer needs more than 5 decimal places is not a Year 4
+  // question — regenerate rather than ask a child for 0.0000466.
+  if(Math.abs(ans) < 0.0001 && ans !== 0) return genConversionV2(diff);
   return {
     prompt:`Complete the conversion: ${val} ${p.from} = ___ ${p.to}`,
     answer:String(ans),
@@ -4550,6 +4561,53 @@ function renderTeacherPwCard(){
   return card;
 }
 
+
+// ---------- Change your own password ----------
+// Firebase requires a recent sign-in before it will change a password, so the
+// current one is verified by re-authenticating rather than simply trusted. That
+// also stops someone changing the password on a machine left signed in.
+function renderChangePasswordCard(){
+  const card=el(`<div class="mmc-card">
+    <h3>Change your password</h3>
+    <div class="meta">Signed in as ${esc((S.user&&S.user.email)||'')}. Use at least 6 characters.</div>
+    ${S.pwChangeMsg ? `<div class="mmc-autherr" style="${S.pwChangeOk?'background:#E7F9EE;border-color:#2E9E4F;color:#1E6B37;':''}">${esc(S.pwChangeMsg)}</div>` : ''}
+    <div class="mmc-field"><label>Current password</label><input type="password" id="mmc-pw-old" autocomplete="current-password"></div>
+    <div class="mmc-field"><label>New password</label><input type="password" id="mmc-pw-new" autocomplete="new-password"></div>
+    <div class="mmc-field"><label>Confirm new password</label><input type="password" id="mmc-pw-new2" autocomplete="new-password"></div>
+    <button class="mmc-btn gold" id="mmc-pw-save">Change password</button>
+  </div>`);
+  const btn=card.querySelector('#mmc-pw-save');
+  btn.onclick=async ()=>{
+    const oldPw=card.querySelector('#mmc-pw-old').value;
+    const a=card.querySelector('#mmc-pw-new').value;
+    const b=card.querySelector('#mmc-pw-new2').value;
+    S.pwChangeOk=false;
+    if(!oldPw){ S.pwChangeMsg='Enter your current password.'; render(); return; }
+    if(a.length<6){ S.pwChangeMsg='Your new password needs at least 6 characters.'; render(); return; }
+    if(a!==b){ S.pwChangeMsg="The two new passwords don't match."; render(); return; }
+    if(a===oldPw){ S.pwChangeMsg='That is already your password — choose a different one.'; render(); return; }
+    btn.disabled=true; btn.textContent='Changing…';
+    try{
+      const cred = EmailAuthProvider.credential(S.user.email, oldPw);
+      await reauthenticateWithCredential(auth.currentUser, cred);
+      await updatePassword(auth.currentUser, a);
+      S.pwChangeOk=true;
+      S.pwChangeMsg='Password changed. Use the new one next time you sign in.';
+    }catch(e){
+      const code = (e && e.code) || '';
+      S.pwChangeMsg =
+        code.includes('wrong-password') || code.includes('invalid-credential')
+          ? 'That current password is not right.'
+        : code.includes('weak-password') ? 'That password is too weak — try a longer one.'
+        : code.includes('too-many-requests') ? 'Too many attempts — wait a few minutes and try again.'
+        : 'Could not change your password: '+(e.message||'unknown error');
+    }
+    btn.disabled=false; btn.textContent='Change password';
+    render();
+  };
+  return card;
+}
+
 function renderStudentPreview(){
   const wrap=el('<div></div>');
   const name = (S.profiles[S.previewStudentUid] && S.profiles[S.previewStudentUid].displayName) || 'this student';
@@ -5828,26 +5886,31 @@ function renderStudentsTab(mode){
 
   if(S.inviteTeacherResult){
     const r=S.inviteTeacherResult;
+    // Deliberately contains NO long URL. Outlook mangled the double underscore in
+    // Firebase's action link, and a school filter quarantined another — a bare
+    // domain name survives any mail client, and the self-service reset on the
+    // landing page does the rest.
     const msg = `Hi ${r.name||''},\n\n`+
       `I've set you up on Mathmentum — weekly maths practice that marks itself and shows you who's getting it.\n\n`+
-      `Set your password here:\n${r.setupLink||''}\n\n`+
-      `Then sign in any time at https://mathmentum.com.au\n\n`+
-      `You'll have your own classes and students, completely separate from mine.`;
+      `To get in:\n`+
+      `1. Go to mathmentum.com.au\n`+
+      `2. Type your email (${r.email}) in the username box\n`+
+      `3. Click "Forgot your password?" and follow the email that arrives\n\n`+
+      `You'll have your own classes and students, completely separate from mine.\n\n`+
+      `If the reset email doesn't turn up, check your junk folder or let me know and I'll set a password for you.`;
     const banner=el(`
       <div class="mmc-card" style="background:#E7F9EE;border-color:#2E9E4F;margin-bottom:14px;">
         <h3>${esc(r.name||r.email)} is set up</h3>
         <div class="meta">Their account exists and they have their own classes, students and sets — completely separate from yours. Send them this yourself; don't rely on our email reaching them.</div>
-        ${r.setupLink ? `
         <div class="mmc-field" style="margin-top:12px;"><label>Message to send them</label>
           <textarea id="mmc-invite-msg" rows="8" readonly
             style="width:100%;padding:10px 12px;border-radius:8px;border:2px solid var(--paper-line);background:var(--paper);font-size:13.5px;font-family:'Nunito Sans',sans-serif;">${esc(msg)}</textarea></div>
         <div class="mmc-row" style="gap:8px;">
           <button class="mmc-btn gold sm" id="mmc-invite-copymsg">Copy message</button>
-          <button class="mmc-btn ghost sm" id="mmc-invite-copylink">Copy link only</button>
+          ${r.setupLink ? `<button class="mmc-btn ghost sm" id="mmc-invite-copylink">Copy direct link</button>` : ''}
           <button class="mmc-btn ghost sm" id="mmc-invite-dismiss">Done</button>
-        </div>` : `
-        <div class="meta" style="margin-top:10px;">Couldn't generate a setup link — use the <b>Setup link</b> button next to their name in the directory below.</div>
-        <button class="mmc-btn ghost sm" id="mmc-invite-dismiss" style="margin-top:10px;">Done</button>`}
+        </div>
+        <div class="meta" style="margin-top:8px;">The message has no long link in it, so no mail client can break it. If they'd rather not wait for a reset email, use <b>Set password</b> next to their name below.</div>
       </div>
     `);
     const copyTo=async (text,label)=>{
@@ -5883,7 +5946,7 @@ function renderStudentsTab(mode){
   };
 
   const myEmailForShare = (S.user && S.user.email || '').toLowerCase();
-  const shareUrl = `${window.location.origin}${window.location.pathname}?ref=${encodeURIComponent(myEmailForShare)}`;
+  const shareUrl = `https://mathmentum.com.au/?ref=${encodeURIComponent(myEmailForShare)}`;
   const shareCard=el(`
     <div class="mmc-card" style="margin-bottom:14px;">
       <h3>Share Mathmentum</h3>
@@ -5898,6 +5961,10 @@ function renderStudentsTab(mode){
     navigator.clipboard.writeText(shareUrl).then(()=>{ S.toast='Link copied!'; render(); });
   };
   wrap.appendChild(shareCard);
+
+  // Every teacher can change their own password, admin or not — particularly
+  // important for anyone whose password was set for them by an admin.
+  wrap.appendChild(renderChangePasswordCard());
 
   const isAdmin = isCurrentUserAdminTeacher();
   if(isAdmin){
