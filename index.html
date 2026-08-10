@@ -4029,7 +4029,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.19';
+const BUILD = '2026-08-10.20';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -4675,8 +4675,11 @@ function render(){
   else if(S.isTeacher){ body.appendChild(renderTeacher()); }
   else if(isAwaitingApproval()){ body.appendChild(renderAwaitingApproval()); }
   else { body.appendChild(renderStudent()); }
-  if(S.user && S.isTeacher){
-    body.appendChild(el(`<div class="mmc-buildstamp"><a href="privacy.html" style="color:inherit;">Privacy</a> · Mathmentum build ${esc(BUILD)}</div>`));
+  // Shown to students too, not just teachers. Testing a student-side change meant having
+  // no way to tell which build the student screen was actually running — which turned a
+  // simple "is this deployed yet" question into guesswork.
+  if(S.user){
+    body.appendChild(el(`<div class="mmc-buildstamp">${S.isTeacher? '<a href="privacy.html" style="color:inherit;">Privacy</a> · ' : ''}Mathmentum build ${esc(BUILD)}</div>`));
   }
   root.appendChild(body);
   const ttInput=document.getElementById('mmc-tt-input');
