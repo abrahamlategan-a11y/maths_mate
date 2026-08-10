@@ -673,7 +673,7 @@
        10 August without widening this, which pushed Rank onto a second line and the
        buttons onto a third, and left every header from Class onward describing the
        wrong control. */
-    grid-template-columns: minmax(110px,1.3fr) 96px 92px 104px 84px 116px 92px;
+    grid-template-columns: minmax(120px,1.4fr) 104px 100px 116px 128px 92px;
     align-items:center; column-gap:10px;
   }
   /* The action buttons get their own line spanning the full width, right-aligned.
@@ -4641,7 +4641,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.35';
+const BUILD = '2026-08-10.39';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -4767,18 +4767,43 @@ async function createClass(name, yearLevel){
     S.currentClassId=ref.id;
   }catch(e){ S.toast='Could not create class — check your connection.'; render(); }
 }
-async function renameClass(classId, name, yearLevel){
+// Renaming changes the NAME only. The year level is fixed when the class is created and
+// cannot be edited afterwards — every set, every result and every student's question
+// history was built against it, so changing it later would silently reinterpret work that
+// has already happened. To change year, delete the class and make a new one.
+async function renameClass(classId, name){
   name=(name||'').trim();
   if(!name) return;
-  const patch={name};
-  if(YEAR_LEVELS.indexOf(+yearLevel)!==-1) patch.yearLevel=+yearLevel;
-  try{ await updateDoc(doc(db,'classes',classId), patch); }
+  try{ await updateDoc(doc(db,'classes',classId), {name}); }
   catch(e){ S.toast='Could not rename class — check your connection.'; render(); }
+}
+// A CLASS IS ONE YEAR LEVEL. A composite room is two classes — that decision keeps
+// everything else simple: one set per class, one audience, no ambiguity about who a
+// generated paper is for.
+//
+// The year still has to sit on each profile, because students cannot read the `classes`
+// collection and their own profile is the only thing they can see. So the profile carries
+// a COPY, and the app maintains it — the teacher never sets it per student. Whenever a
+// class's year changes, or a student moves class, the copy is brought back into line.
+async function syncClassYearToStudents(classId, year){
+  const uids=Object.keys(S.profiles||{}).filter(u=>{
+    const p=S.profiles[u]; return p && p.username && p.classId===classId && studentYear(p)!==+year;
+  });
+  if(!uids.length) return;
+  let done=0;
+  for(const uid of uids){
+    try{ await updateDoc(doc(db,'profiles',uid), {yearLevel:+year}); done++; }catch(e){}
+  }
+  if(done) S.toast=`${done} student${done===1?'':'s'} moved to ${yearLabel(year)}.`;
+  render();
 }
 function currentClassLabel(){
   if(S.showAllClasses) return 'All classes';
   const c=S.classes.find(c=>c.id===S.currentClassId);
-  return c ? c.name : 'My class';
+  if(!c) return 'My class';
+  // Name AND year, always together. A teacher should never have to remember, or go
+  // looking, for which year the class they are working in actually is.
+  return `${c.name} · Year Level: ${classYear(c)===0?'Pre-Primary':classYear(c)}`;
 }
 // Every student-listing view (Gradebook, Timetable analytics) should respect whichever
 // class the teacher currently has selected — students with no classId yet (e.g. created
@@ -4797,7 +4822,7 @@ function renderClassPicker(opts){
   if(!S.classes.length) return el('<span></span>');
   const row=el('<div class="mmc-classpick"></div>');
   const select=el(`<select>
-    ${S.classes.map(c=>`<option value="${c.id}" ${!S.showAllClasses && S.currentClassId===c.id?'selected':''}>${esc(c.name)} · ${esc(yearLabel(classYear(c)))}</option>`).join('')}
+    ${S.classes.map(c=>`<option value="${c.id}" ${!S.showAllClasses && S.currentClassId===c.id?'selected':''}>${esc(c.name)} · Year Level: ${esc(String(classYear(c)===0?'Pre-Primary':classYear(c)))}</option>`).join('')}
     ${opts.allowAll===false ? '' : `<option value="__all__" ${S.showAllClasses?'selected':''}>All classes</option>`}
   </select>`);
   select.onchange=(e)=>{
@@ -4818,7 +4843,7 @@ function renderClassSwitcher(){
   const left=el('<div class="mmc-row" style="align-items:center;gap:8px;"></div>');
   left.appendChild(el('<span style="font-weight:700;font-size:13px;">Viewing:</span>'));
   const select=el(`<select style="font-weight:700;padding:6px 10px;">
-    ${S.classes.map(c=>`<option value="${c.id}" ${!S.showAllClasses && S.currentClassId===c.id?'selected':''}>${esc(c.name)} · ${esc(yearLabel(classYear(c)))}</option>`).join('')}
+    ${S.classes.map(c=>`<option value="${c.id}" ${!S.showAllClasses && S.currentClassId===c.id?'selected':''}>${esc(c.name)} · Year Level: ${esc(String(classYear(c)===0?'Pre-Primary':classYear(c)))}</option>`).join('')}
     <option value="__all__" ${S.showAllClasses?'selected':''}>All classes (combined)</option>
   </select>`);
   select.onchange=(e)=>{
@@ -4832,7 +4857,7 @@ function renderClassSwitcher(){
   newBtn.onclick=async ()=>{
     const name=prompt('Name for the new class (e.g. "5B" or "Year 4 Green"):');
     if(!name) return;
-    const yr=prompt('Which year level? Enter 3, 4, 5 or 6.', String(DEFAULT_YEAR));
+    const yr=prompt('Which year level is this class?\n\nEnter 0 for Pre-Primary, or 1 to 6.\n\nThis CANNOT be changed later — a class is one year level, and every set and result is built against it. For a composite room, make two classes.', String(DEFAULT_YEAR));
     if(yr===null) return;
     await createClass(name, yr);
   };
@@ -4841,11 +4866,9 @@ function renderClassSwitcher(){
     const renameBtn=el('<button class="mmc-btn ghost sm">Rename</button>');
     renameBtn.onclick=async ()=>{
       const cur=S.classes.find(c=>c.id===S.currentClassId);
-      const name=prompt('New name for this class:', cur? cur.name : '');
+      const name=prompt(`New name for this class:\n\nYear level stays ${cur? yearLabel(classYear(cur)) : ''} — it is fixed when a class is created.`, cur? cur.name : '');
       if(!name) return;
-      const yr=prompt('Which year level? Enter 3, 4, 5 or 6.', String(classYear(cur)));
-      if(yr===null) return;
-      await renameClass(S.currentClassId, name, yr);
+      await renameClass(S.currentClassId, name);
     };
     right.appendChild(renameBtn);
   }
@@ -6113,7 +6136,6 @@ function renderTeacherWeeks(){
     banner.querySelector('#mmc-quick-dismiss').onclick=()=>{ S.quickDeployDone=null; render(); };
     wrap.appendChild(banner);
   }
-
   const quickForm=el(`
     <div class="mmc-card mmc-quickcard" style="border-color:var(--purple);background:#F5F1FF;">
       <h3>In a rush?</h3>
@@ -6156,10 +6178,13 @@ function renderTeacherWeeks(){
         S.toast='No students in that class yet — add some first.';
         btn.disabled=false; btn.textContent='Deploy now'; render(); return;
       }
+      // One class, one year — so this is back to one set per ability group.
+      const yr=classYear(yearFrom);
       for(const [group,difficulty] of pairs){
         await addDoc(collection(db,'weeks'), { label, difficulty, status:'published', createdAt:serverTimestamp(),
-          teacherUid:S.user.uid, yearLevel:classYear(yearFrom),
-          questions:generateWeekQuestions(difficulty,'random',classYear(yearFrom)), targetGroups:[group], classIds });
+          teacherUid:S.user.uid, yearLevel:yr,
+          questions:generateWeekQuestions(difficulty,'random',yr),
+          targetGroups:[group], targetYears:[yr], classIds });
       }
       S.quickDeployDone=label;
       S.quickDeployCount=pairs.length;
@@ -6299,12 +6324,25 @@ function renderTeacherWeeks(){
     const yearFrom = (classIds && classIds.length===1)
       ? S.classes.find(c=>c.id===classIds[0])
       : (S.currentClassId ? S.classes.find(c=>c.id===S.currentClassId) : (S.classes||[])[0]);
-    const weekData={ label, difficulty, status:'draft', createdAt:serverTimestamp(), teacherUid:S.user.uid,
-      yearLevel:classYear(yearFrom),
-      timeOverride: S.timeOverride||null, rotationOverride: S.rotationOverride||null,
-      questions:generateWeekQuestions(difficulty, strategy, classYear(yearFrom)), targetGroups, classIds };
+    // A class is one year level, so there is exactly one year and exactly one set. The
+    // per-year fan-out this replaced existed to serve composite classes, which are now
+    // two classes instead — far simpler for everyone, and it removes any doubt about who
+    // a generated paper is for.
+    const years = [classYear(yearFrom)];
     try{
-      const ref=await addDoc(collection(db,'weeks'), weekData);
+      let firstRef=null;
+      for(const yr of years){
+        const weekData={ label: years.length>1 ? `${label} · ${yearLabel(yr)}` : label,
+          difficulty, status:'draft', createdAt:serverTimestamp(), teacherUid:S.user.uid,
+          yearLevel:yr,
+          timeOverride: S.timeOverride||null, rotationOverride: S.rotationOverride||null,
+          questions:generateWeekQuestions(difficulty, strategy, yr),
+          targetGroups, targetYears:[yr], classIds };
+        const r=await addDoc(collection(db,'weeks'), weekData);
+        if(!firstRef) firstRef=r;
+      }
+      const ref=firstRef;
+
       S.rotationOverride=null; S.timeOverride=null;
       S.editingDraftId=ref.id;
       S.weeksView='list';  // jump to the set you just made, ready to review
@@ -6410,6 +6448,8 @@ async function runAutoArchive(){
       const audience = roster.filter(uid=>{
         const p=S.profiles[uid]; if(!p||!p.username) return false;
         if(Array.isArray(w.classIds) && w.classIds.length && p.classId && w.classIds.indexOf(p.classId)===-1) return false;
+        if(Array.isArray(w.targetYears) && w.targetYears.length &&
+           w.targetYears.indexOf(studentYear(p))===-1) return false;
         if(Array.isArray(w.targetGroups) && w.targetGroups.length){
           const g = p.group || 'mainstream';
           if(w.targetGroups.indexOf(g)===-1) return false;
@@ -6559,12 +6599,31 @@ function renderWeekCard(week){
     : (live ? '<span style="color:#2E9E4F;font-size:12px;font-weight:700;">LIVE (scheduled)</span>'
       : (isScheduled ? `<span style="color:#8B5CF6;font-size:12px;font-weight:700;">⏰ SCHEDULED — ${esc(formatScheduledAt(week.scheduledAt))}</span>`
         : '<span style="color:#E85C0A;font-size:12px;font-weight:700;">DRAFT</span>'));
-  const groupText = (!week.targetGroups || week.targetGroups.length===0) ? 'All students'
-    : week.targetGroups.map(g=>groupLabel(g)).join(', ');
+  const yearText = (Array.isArray(week.targetYears) && week.targetYears.length)
+    ? week.targetYears.map(y=>yearLabel(y)).join(', ') + ' · ' : '';
+  const groupText = yearText + ((!week.targetGroups || week.targetGroups.length===0) ? 'All students'
+    : week.targetGroups.map(g=>groupLabel(g)).join(', '));
+  // Who is actually going to sit this set. Once sets are generated per year AND group,
+  // "reviewing a set" is meaningless without knowing whose it is — a teacher could
+  // carefully check a Year 3 paper believing it was the one their Year 4s would see.
+  const forWhom = Object.entries(S.profiles||{}).filter(([uid,p])=>{
+    if(!p || !p.username) return false;
+    if(Array.isArray(week.classIds) && week.classIds.length && p.classId && week.classIds.indexOf(p.classId)===-1) return false;
+    if(Array.isArray(week.targetYears) && week.targetYears.length && week.targetYears.indexOf(studentYear(p))===-1) return false;
+    if(Array.isArray(week.targetGroups) && week.targetGroups.length &&
+       week.targetGroups.indexOf(p.group||'mainstream')===-1) return false;
+    return true;
+  }).map(([uid,p])=>p.displayName||uid);
+  const names = forWhom.length===0 ? 'nobody in this class matches'
+    : forWhom.length<=4 ? forWhom.join(', ')
+    : `${forWhom.slice(0,4).join(', ')} and ${forWhom.length-4} more`;
   const card=el(`
     <div class="mmc-card">
       <h3>${esc(week.label)} ${statusBadge}</h3>
-      <div class="meta" style="margin-bottom:10px;">${esc(week.difficulty)} · ${visibleQuestions(week).length} question${visibleQuestions(week).length===1?'':'s'}${(week.questions||[]).length!==visibleQuestions(week).length?` (${(week.questions||[]).length-visibleQuestions(week).length} hidden)`:''} · ${esc(groupText)}</div>
+      <div class="meta" style="margin-bottom:6px;">${esc(week.difficulty)} · ${visibleQuestions(week).length} question${visibleQuestions(week).length===1?'':'s'}${(week.questions||[]).length!==visibleQuestions(week).length?` (${(week.questions||[]).length-visibleQuestions(week).length} hidden)`:''} · ${esc(groupText)}</div>
+      <div class="meta" style="margin-bottom:10px;font-weight:700;color:${forWhom.length?'var(--ink)':'var(--incorrect)'};">
+        ${forWhom.length? `Will be sat by ${forWhom.length} student${forWhom.length===1?'':'s'}: ${esc(names)}` : 'No students match this set — check the year level and group.'}
+      </div>
     </div>
   `);
   card.appendChild(buildWeekControlPanel(week, isEditing, 'top'));
@@ -6640,7 +6699,10 @@ function renderQuestionEditor(week){
       // same question family the rest of the set was built with.
       const prevRot=S.rotationOverride, prevTime=S.timeOverride;
       S.rotationOverride = week.rotationOverride||null; S.timeOverride = week.timeOverride||null;
-      const fresh = q.slot ? buildQuestion(q.slot-1, week.difficulty, q.strategyKey) : q;
+      // The set's OWN year, not the default. Without this, regenerating question 9 of a
+      // Year 3 set replaced it with Year 4's question 9 — a different skill entirely,
+      // because the two years have different slot lists.
+      const fresh = q.slot ? buildQuestion(q.slot-1, week.difficulty, q.strategyKey, weekYear(week)) : q;
       S.rotationOverride=prevRot; S.timeOverride=prevTime;
       Object.assign(q, fresh, {id:q.id});
       saveQuestions(); render();
@@ -7701,7 +7763,7 @@ function renderStudentsTab(mode){
   newCls.onclick=async ()=>{
     const name=prompt('Name for the new class (e.g. "5B" or "Year 4 Green"):');
     if(!name) return;
-    const yr=prompt('Which year level? Enter 3, 4, 5 or 6.', String(DEFAULT_YEAR));
+    const yr=prompt('Which year level is this class?\n\nEnter 0 for Pre-Primary, or 1 to 6.\n\nThis CANNOT be changed later — a class is one year level, and every set and result is built against it. For a composite room, make two classes.', String(DEFAULT_YEAR));
     if(yr===null) return;
     await createClass(name, yr);
   };
@@ -7722,7 +7784,7 @@ function renderStudentsTab(mode){
       const count=Object.values(S.profiles||{}).filter(p=>p.username && p.classId===c.id).length;
       const r=el(`<div class="mmc-clsrow">
         <div class="mmc-stu-name">${esc(c.name)}</div>
-        <code class="mmc-stu-user">${esc(yearLabel(classYear(c)))}</code>
+        <code class="mmc-stu-user" title="Fixed when the class was created. To change it, delete this class and make a new one.">Year Level: ${esc(String(classYear(c)===0?'Pre-Primary':classYear(c)))}</code>
         <code class="mmc-stu-user">${count} student${count===1?'':'s'}</code>
         <div class="mmc-stu-actions">
           <button class="mmc-btn ghost sm" data-c="csv">Logins CSV</button>
@@ -7743,11 +7805,9 @@ function renderStudentsTab(mode){
       const clearBtn=r.querySelector('[data-c="clear"]');
       if(clearBtn) clearBtn.onclick=()=>clearWeeklyResultsForClass(c.id, clearBtn);
       r.querySelector('[data-c="rename"]').onclick=async ()=>{
-        const name=prompt('New name for this class:', c.name||'');
+        const name=prompt(`New name for this class:\n\nYear level stays ${yearLabel(classYear(c))} — it is fixed when a class is created. To change it, delete this class and make a new one.`, c.name||'');
         if(!name) return;
-        const yr=prompt('Which year level? Enter 3, 4, 5 or 6.', String(classYear(c)));
-        if(yr===null) return;
-        await renameClass(c.id, name, yr);
+        await renameClass(c.id, name);
       };
       const delBtn=r.querySelector('[data-c="del"]');
       if(!count) delBtn.onclick=async ()=>{
@@ -7826,7 +7886,7 @@ function renderStudentsTab(mode){
       <div class="mmc-field"><label>Add them to</label>
         <div class="mmc-row" style="align-items:center;gap:8px;">
           <select id="mmc-bulk-class" style="font-weight:600;min-width:180px;">
-            ${S.classes.map(c=>`<option value="${c.id}" ${!S.showAllClasses && c.id===S.currentClassId?'selected':''}>${esc(c.name)} · ${esc(yearLabel(classYear(c)))}</option>`).join('')}
+            ${S.classes.map(c=>`<option value="${c.id}" ${!S.showAllClasses && c.id===S.currentClassId?'selected':''}>${esc(c.name)} · Year Level: ${esc(String(classYear(c)===0?'Pre-Primary':classYear(c)))}</option>`).join('')}
             <option value="__new__">+ A new class…</option>
           </select>
           <span class="meta" style="margin:0;" id="mmc-bulk-classnote"></span>
@@ -7858,7 +7918,7 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
     if(bulkClassSel && bulkClassSel.value==='__new__'){
       const nm=prompt('Name for the new class (e.g. "5B" or "Year 4 Green"):');
       if(!nm) return;
-      const yr=prompt('Which year level? Enter 3, 4, 5 or 6.', String(DEFAULT_YEAR));
+      const yr=prompt('Which year level is this class?\n\nEnter 0 for Pre-Primary, or 1 to 6.\n\nThis CANNOT be changed later — a class is one year level, and everything the class does is built against it. For a composite room, make two classes.', String(DEFAULT_YEAR));
       if(yr===null) return;
       await createClass(nm, yr);
       S.showAllClasses=false;
@@ -7944,10 +8004,33 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
       <span>Username</span>
       <span>Password</span>
       <span>${S.classes.length>1?'Class':''}</span>
-      <span>Year</span>
       <span>Group</span>
       <span></span>
     </div>`));
+    // A class is one year level, so a profile year that disagrees with its class is stale
+    // data rather than a choice. It can only happen to students set up before this rule,
+    // so offer to put it right instead of silently serving them the wrong year's work.
+    const mismatched = existing.filter(([uid,p])=>{
+      const c=(S.classes||[]).find(x=>x.id===p.classId);
+      return c && studentYear(p)!==classYear(c);
+    });
+    if(mismatched.length){
+      const warn=el(`<div class="mmc-card" style="border-color:var(--incorrect);margin-bottom:12px;">
+        <h3 style="margin:0 0 4px;">${mismatched.length} student${mismatched.length===1?'':'s'} on the wrong year</h3>
+        <div class="meta">A class is one year level, but ${mismatched.length===1?'this student is':'these students are'} set to something else: ${esc(mismatched.map(([u,p])=>p.displayName).join(', '))}. They will get the wrong year's questions until this is fixed.</div>
+      </div>`);
+      const fix=el('<button class="mmc-btn gold sm" style="margin-top:8px;">Match them to their class</button>');
+      fix.onclick=async ()=>{
+        fix.disabled=true; fix.textContent='Fixing…';
+        for(const [uid,p] of mismatched){
+          const c=(S.classes||[]).find(x=>x.id===p.classId);
+          try{ await updateDoc(doc(db,'profiles',uid), {yearLevel:classYear(c)}); }catch(e){}
+        }
+        S.toast='Year levels matched to their classes.'; render();
+      };
+      warn.appendChild(fix);
+      list.appendChild(warn);
+    }
     const ul=el('<div></div>');
     existing.sort((a,b)=>(a[1].displayName||'').localeCompare(b[1].displayName||'')).forEach(([uid,p])=>{
       const row=el(`<div class="mmc-stu">
@@ -7957,9 +8040,6 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
         ${S.classes.length>1 ? `<select data-act="class">
           ${S.classes.map(c=>`<option value="${c.id}" ${p.classId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}
         </select>` : '<span></span>'}
-        <select data-act="year" title="Year level. Set per student so a composite class can hold more than one year. Controls which fast facts and curriculum they get.">
-          ${YEAR_LEVELS.map(y=>`<option value="${y}" ${studentYear(p)===y?'selected':''}>${esc(yearLabel(y))}</option>`).join('')}
-        </select>
         <select data-act="group">
           <option value="">Unassigned</option>
           ${STUDENT_GROUPS.map(g=>`<option value="${g.key}" ${p.group===g.key?'selected':''}>${esc(g.label)}</option>`).join('')}
@@ -7996,16 +8076,14 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
         }catch(err){ S.toast='Could not update — check your connection.'; }
         render();
       };
-      const yearSel=row.querySelector('[data-act="year"]');
-      if(yearSel) yearSel.onchange=async (e)=>{
-        try{ await updateDoc(doc(db,'profiles',uid), {yearLevel:+e.target.value});
-          S.toast=`${p.displayName} is now ${yearLabel(e.target.value)}.`;
-        }catch(err){ S.toast='Could not update year — check your connection.'; }
-        render();
-      };
       const classSel=row.querySelector('[data-act="class"]');
       if(classSel) classSel.onchange=async (e)=>{
-        try{ await updateDoc(doc(db,'profiles',uid), {classId:e.target.value}); }
+        // Moving class moves year. A class is one year level, so a student in it is that
+        // year by definition — leaving the old year behind would recreate exactly the
+        // mismatch this design removes.
+        const newClass=(S.classes||[]).find(c=>c.id===e.target.value);
+        const newYear=classYear(newClass);
+        try{ await updateDoc(doc(db,'profiles',uid), {classId:e.target.value, yearLevel:newYear}); }
         catch(err){ S.toast='Could not move student — check your connection.'; render(); }
       };
       const groupSel=row.querySelector('[data-act="group"]');
@@ -8086,6 +8164,12 @@ async function deleteWeekProgress(weekId){
 function studentEffectiveGroup(){ return (S.profile && S.profile.group) || 'mainstream'; }
 function weekVisibleToMe(week){
   if(week.classIds && week.classIds.length>0 && S.profile && S.profile.classId && !week.classIds.includes(S.profile.classId)) return false;
+  // Year is checked BEFORE group. Sets are generated per year now, so a Year 3 student
+  // must never be shown the Year 4 version of the same week. Sets made before this
+  // existed carry no targetYears and stay visible to everyone, which is right — they
+  // were built for whatever year the class was at the time.
+  if(Array.isArray(week.targetYears) && week.targetYears.length &&
+     week.targetYears.indexOf(studentYear(S.profile))===-1) return false;
   if(!week.targetGroups || week.targetGroups.length===0) return true;
   return week.targetGroups.includes(studentEffectiveGroup());
 }
