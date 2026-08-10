@@ -4017,7 +4017,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.14';
+const BUILD = '2026-08-10.15';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -4664,7 +4664,7 @@ function render(){
   else if(isAwaitingApproval()){ body.appendChild(renderAwaitingApproval()); }
   else { body.appendChild(renderStudent()); }
   if(S.user && S.isTeacher){
-    body.appendChild(el(`<div class="mmc-buildstamp">Mathmentum build ${esc(BUILD)}</div>`));
+    body.appendChild(el(`<div class="mmc-buildstamp"><a href="privacy.html" style="color:inherit;">Privacy</a> · Mathmentum build ${esc(BUILD)}</div>`));
   }
   root.appendChild(body);
   const ttInput=document.getElementById('mmc-tt-input');
@@ -4878,6 +4878,12 @@ function renderAuth(){
   `);
   panels.querySelector('#mmc-req-go').onclick=(e)=>{ e.preventDefault(); S.showSignup=true; S.authError=null; render(); };
   wrap.appendChild(panels);
+  // A school or parent looks for this BEFORE signing up, so it has to be on the
+  // signed-out page. privacy.html is a separate, dependency-free file — it loads on a
+  // locked-down school network even if every CDN is blocked.
+  wrap.appendChild(el(`<div style="text-align:center;margin-top:22px;font-size:13px;">
+    <a href="privacy.html" style="color:var(--ink-soft);text-decoration:underline;">Privacy — what we hold and where</a>
+  </div>`));
   return wrap;
 }
 
