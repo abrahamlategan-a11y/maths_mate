@@ -120,6 +120,17 @@
   @media (prefers-reduced-motion:reduce){
     .mmc-flash-ok, .mmc-flash-no { animation:none; }
   }
+  /* Show-password toggle. A six-year-old typing "puddle88" into dots has no way to see
+     which character went wrong, and their password is on a printed card next to them
+     anyway — hiding it protects nothing and blocks the login. */
+  .mmc-pwwrap { position:relative; }
+  .mmc-pwwrap input { padding-right:44px !important; }
+  .mmc-pweye {
+    position:absolute; right:6px; top:50%; transform:translateY(-50%);
+    background:none; border:0; padding:6px 8px; cursor:pointer; font-size:18px;
+    line-height:1; opacity:.65; border-radius:6px;
+  }
+  .mmc-pweye:hover, .mmc-pweye:focus { opacity:1; background:var(--bg); }
   .mmc-keypad {
     display:grid; grid-template-columns:repeat(3,1fr); gap:10px;
     max-width:300px; margin:16px auto 0;
@@ -4215,7 +4226,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.28';
+const BUILD = '2026-08-10.29';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -4241,6 +4252,31 @@ function flashResult(scope, correct){
   const clear=()=>{ if(scope==='tt'){ if(S.tt) S.tt.flash=null; } else if(S.myLive){ S.myLive.flash=null; } render(); };
   if(scope==='tt'){ if(ttFlashTimer) clearTimeout(ttFlashTimer); ttFlashTimer=setTimeout(clear,550); }
   else { if(liveFlashTimer) clearTimeout(liveFlashTimer); liveFlashTimer=setTimeout(clear,550); }
+}
+
+// Wraps a password input with a show/hide toggle. Applied after render because the fields
+// are built from template strings; doing it here means every password box gets the same
+// behaviour without touching each one.
+function attachPasswordEye(input){
+  if(!input || input.dataset.eye==='1') return;
+  input.dataset.eye='1';
+  const wrap=document.createElement('div');
+  wrap.className='mmc-pwwrap';
+  input.parentNode.insertBefore(wrap, input);
+  wrap.appendChild(input);
+  const btn=document.createElement('button');
+  btn.type='button'; btn.className='mmc-pweye'; btn.textContent='👁';
+  btn.setAttribute('aria-label','Show password');
+  btn.title='Show password';
+  btn.onclick=()=>{
+    const showing = input.type==='text';
+    input.type = showing ? 'password' : 'text';
+    btn.textContent = showing ? '👁' : '🙈';
+    btn.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+    btn.title = showing ? 'Show password' : 'Hide password';
+    input.focus();
+  };
+  wrap.appendChild(btn);
 }
 
 function buildKeypad(onKey){
@@ -4602,10 +4638,14 @@ function currentLiveRoom(){
   const active = visible.filter(g=>g.status==='lobby'||g.status==='active');
   if(active.length){
     const newest = active.slice().sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
-    // A room YOU host always wins. Without this, the newest room is the only one anyone
-    // can see — so the moment a second student starts a race, the first student is pulled
-    // out of their own lobby into someone else's. Two children can now host at once and
-    // each stays in theirs; everyone else sees whichever started most recently.
+    // A CLASS race outranks everything. When a teacher starts one it is a whole-class
+    // event, and children hunting through competing lobbies is exactly the confusion it
+    // is meant to replace. A teacher room has no hostUid; while one is open, every
+    // student-hosted race is hidden and nobody can start another.
+    const classRace = newest.find(g=>!g.hostUid);
+    if(classRace) return classRace;
+    // Otherwise a room YOU host wins, so two children can host at once and each stays in
+    // their own lobby instead of being pulled into whichever started most recently.
     const mine = newest.find(g=>g.hostUid && S.user && g.hostUid===S.user.uid);
     return mine || newest[0];
   }
@@ -4884,6 +4924,8 @@ function render(){
     body.appendChild(el(`<div class="mmc-buildstamp">${S.isTeacher? '<a href="privacy.html" style="color:inherit;">Privacy</a> · ' : ''}Mathmentum build ${esc(BUILD)}</div>`));
   }
   root.appendChild(body);
+  // Every password field on screen gets a show/hide eye, wherever it appears.
+  root.querySelectorAll('input[type="password"]').forEach(attachPasswordEye);
   const ttInput=document.getElementById('mmc-tt-input');
   if(ttInput) ttInput.focus();
   // Note: the Live Game race screen (renderMyLiveSession) manages its own focus and cursor
@@ -8173,8 +8215,18 @@ function renderTeacherLiveGame(){
       // no group set, and their YEAR still applies on top of it. Kept on the document so
       // older rooms and any code reading room.level keep working.
       const level='medium';
-      try{ await addDoc(collection(db,'liveGames'), { teacherUid:S.user.uid, level, status:'lobby', createdAt:serverTimestamp(), durationSec:300,
-        classId: S.showAllClasses ? null : S.currentClassId }); }
+      try{
+        // Close any student-run races first. Hiding them would be enough for the duration,
+        // but they would reappear the moment the class race ended — a stale lobby from
+        // twenty minutes ago, blocking the next one. Closing is honest and permanent.
+        const openStudentRooms=(S.liveGames||[]).filter(g=>g.hostUid && (g.status==='lobby'||g.status==='active'));
+        for(const g of openStudentRooms){
+          try{ await updateDoc(doc(db,'liveGames',g.id), {status:'ended'}); }catch(e2){}
+        }
+        await addDoc(collection(db,'liveGames'), { teacherUid:S.user.uid, level, status:'lobby', createdAt:serverTimestamp(), durationSec:300,
+          classId: S.showAllClasses ? null : S.currentClassId });
+        if(openStudentRooms.length) S.toast=`Class race created — ${openStudentRooms.length} student race${openStudentRooms.length===1?'':'s'} closed.`;
+      }
       catch(e){ S.toast='Could not create the room — check your connection.'; render(); }
     };
     wrap.appendChild(form);
@@ -8409,6 +8461,10 @@ const STUDENT_RACE_SECONDS = 60;
 async function hostStudentRace(){
   S.raceLeft=null;
   if(!S.profile || !S.profile.teacherUid){ S.toast='You need to be in a class to start a race.'; render(); return; }
+  // Belt and braces: the button is hidden while a class race is open, but the rule belongs
+  // here too so it can't be reached some other way.
+  const classRace=(S.liveGames||[]).find(g=>!g.hostUid && (g.status==='lobby'||g.status==='active') && !isRaceOver(g));
+  if(classRace){ S.toast='Your teacher has a race on — join that one!'; render(); return; }
   try{
     const ref = await addDoc(collection(db,'liveGames'), {
       teacherUid: S.profile.teacherUid,
@@ -8426,6 +8482,16 @@ async function hostStudentRace(){
 }
 
 function renderStartRaceCard(sub){
+  // While the teacher has a race open, starting your own is not an option — say why,
+  // rather than showing a button that refuses.
+  const classRace=(S.liveGames||[]).find(g=>!g.hostUid && (g.status==='lobby'||g.status==='active') && !isRaceOver(g));
+  if(classRace){
+    return el(`<div class="mmc-card" style="text-align:center;">
+      <div style="font-size:34px;">🐎</div>
+      <h3>Your teacher has a race on</h3>
+      <div class="meta">Join that one — you can start your own again once it's finished.</div>
+    </div>`);
+  }
   const card=el(`
     <div class="mmc-card" style="text-align:center;">
       <div style="font-size:34px;">🐎</div>
