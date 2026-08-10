@@ -1334,7 +1334,11 @@ function genUnitChoice(diff){ const s=pick(UNIT_SCENARIOS);
     explanation:`${s.q.charAt(0).toUpperCase()+s.q.slice(1)} is best measured in ${s.answer}.` }; }
 
 // Q17: Simplify a fraction
-const NICE_DENOMS_EASY=[2,3,4,5];
+// A denominator of 2 forces the numerator to 1, so a quarter of these questions
+// had a guaranteed answer and typing "1" scored 56% with no maths done. Worse,
+// that inflated SIMPLIFY_FRACTION in the dashboard, so a guesser showed up as
+// strong. Dropping 2 and widening the pool takes guessing to 40% across 6 answers.
+const NICE_DENOMS_EASY=[3,4,5,6,8];
 const NICE_DENOMS_MED=[2,3,4,5,6,7,8,9,10,12];
 function pickSimplifiedFraction(denomPool){
   const d1=pick(denomPool); let n1;
@@ -2941,6 +2945,18 @@ function buildQuestion(slotIdx, diff, strategyKey){
 function generateWeekQuestions(diff, strategyKey){ return SLOTS.map((s,i)=>buildQuestion(i,diff,strategyKey)); }
 
 function normalize(s){ return String(s==null?'':s).trim().toLowerCase().replace(/\s+/g,''); }
+// A child who types 0.50, .5 or 00.5 has done the maths correctly; only the spelling
+// differs. Marking those wrong taught them to distrust a right answer. Numbers are now
+// compared BY VALUE, with spaces and commas ignored, so 80 000, 80000 and 80,000 all
+// match. Anything that is not a clean number returns null and falls back to the old
+// exact text comparison, so words, labels and times are untouched.
+function numVal(s){
+  const t=String(s==null?'':s).trim().replace(/[\s,]/g,'');
+  if(!/^-?(\d+\.?\d*|\.\d+)$/.test(t)) return null;
+  const n=Number(t);
+  return isFinite(n) ? n : null;
+}
+function sameNumber(a,b){ const x=numVal(a), y=numVal(b); return x!==null && y!==null && x===y; }
 function isNumeric(s){ return s!=='' && !isNaN(Number(s)); }
 function parseFrac(s){ const m=String(s).match(/^(-?\d+)\/(\d+)$/); if(!m) return null; return [parseInt(m[1],10), parseInt(m[2],10)]; }
 function parseNumList(s){ return String(s).split(/[^\-\d.]+/).filter(Boolean).map(Number).filter(n=>!isNaN(n)); }
@@ -2951,6 +2967,7 @@ function checkAnswer(given, answer){
   if(gf && af) return gf[0]*af[1] === af[0]*gf[1];
   if(gf && isNumeric(a)) return gf[0] === Number(a)*gf[1];
   if(af && isNumeric(g)) return af[0] === Number(g)*af[1];
+  if(sameNumber(g,a)) return true;
   if(isNumeric(g) && isNumeric(a)) return Number(g)===Number(a);
   return g===a;
 }
@@ -2976,7 +2993,7 @@ function gradeQuestion(q, given){
     const want=String(q.answer).split(',');
     const got=Array.isArray(given)?given:[];
     if(got.length!==want.length) return false;
-    return want.every((w,i)=> normalize(w)===normalize(got[i]));
+    return want.every((w,i)=> sameNumber(w,got[i]) || normalize(w)===normalize(got[i]));
   }
   if(q.inputType==='mixed'){
     const g=given||{};
@@ -3450,7 +3467,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.1';
+const BUILD = '2026-08-10.2';
 
 const STUDENT_DOMAIN = 'students.maths-mate.local';
 const PASSWORD_WORDS = ['donkey','tiger','comet','maple','pepper','biscuit','rocket','puddle','cactus','wizard','dragon','cookie','thunder','sparkle','pickle','walrus','falcon','marble','goblin','turnip','otter','panda','muffin','breeze','coral','jungle','meadow','ripple','sunset','violet'];
