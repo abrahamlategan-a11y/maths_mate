@@ -3234,11 +3234,78 @@ function progressBadgeFor(skill){
   if(skill.trend==='declining' || skill.recentAccuracy<0.5) return {emoji:'🔴', label:'Needs Attention'};
   return {emoji:'🟡', label:'Stable'};
 }
+// The times-tables section of the dashboard. ONE function for both audiences: a student
+// reads "you", a teacher reads the child's name. Splitting them is how the two views end
+// up quietly disagreeing about the same child.
+function renderTTDashboardSection(ttAttempts, forTeacher, studentName){
+  const ins=computeTTInsights(ttAttempts||[]);
+  const done=(ttAttempts||[]).length;
+  if(!done) return null;                       // never done any — nothing honest to say
+  const first = forTeacher ? String(studentName||'This student').split(/\s+/)[0] : null;
+  const wrap=el('<div></div>');
+  wrap.appendChild(el(`<h3 style="margin:22px 0 10px;">⏱ Times tables</h3>`));
+  if(!ins.items.length){
+    wrap.appendChild(el(`<div class="meta">${ins.hasData
+      ? (forTeacher ? `Nothing standing out for ${esc(first)} in times tables at the moment.`
+                    : 'Nothing standing out in your times tables right now — keep going.')
+      : (forTeacher ? `${esc(first)} has done ${done} session${done===1?'':'s'}, but none since per-question tracking started, so there is no breakdown yet.`
+                    : 'Do a few more sessions and this will show you exactly which tables to work on.')}</div>`));
+    return wrap;
+  }
+  const row=el('<div class="mmc-row"></div>');
+  ins.items.forEach(it=>{
+    const wrong = it.kind==='wrong';
+    const turn = it.kind==='turnaround';
+    const title = turn ? `Turnarounds: ${it.weak}`
+      : `${wrong?'Needs work':'Nearly there'}: ${ttGroupLabel(it.op,it.table)}`;
+    const detail = turn
+      ? (forTeacher ? `Knows ${it.strong}, not ${it.weak}. Same answer both ways.`
+                    : `You know ${it.strong} but ${it.weak} catches you out — same answer.`)
+      : wrong
+        ? `${it.accuracy}% correct so far`
+        : `About ${it.seconds}s each — ${it.ratio}× ${forTeacher?'their':'your'} usual pace`;
+    const card=el(`
+      <div class="mmc-card" style="flex:1;min-width:170px;${wrong?'background:#FDECEC;border-color:#E23B3B;':'background:#FFF6E5;border-color:#E8A33D;'}">
+        <div style="font-size:26px;">${turn?'🔁':wrong?'🎯':'⏱'}</div>
+        <h3 style="margin:6px 0 2px;font-size:15px;">${esc(title)}</h3>
+        <div class="meta" style="font-weight:700;">${esc(detail)}</div>
+      </div>
+    `);
+    // Students get the drill button. A teacher is looking at a read-only view of someone
+    // else's account, so starting a session from here would be nonsense.
+    if(!forTeacher && !turn){
+      const isDiv=it.op==='div';
+      const cfg={tables:[it.table],mult:!isDiv,div:isDiv};
+      const b=el('<button class="mmc-btn ghost sm" style="margin-top:8px;">🐢 Practise this</button>');
+      b.onclick=()=>{ S.ttCustom={tables:cfg.tables.slice(),mult:cfg.mult,div:cfg.div};
+                      S.studentTab='timetable'; startTTPractice('custom',cfg); };
+      card.appendChild(b);
+    } else if(!forTeacher && turn){
+      const b=el('<button class="mmc-btn ghost sm" style="margin-top:8px;">🐢 Practise these</button>');
+      b.onclick=()=>{ const cfg={tables:[it.a,it.b],mult:true,div:false};
+                      S.ttCustom={tables:cfg.tables.slice(),mult:true,div:false};
+                      S.studentTab='timetable'; startTTPractice('custom',cfg); };
+      card.appendChild(b);
+    }
+    row.appendChild(card);
+  });
+  wrap.appendChild(row);
+  if(forTeacher){
+    const rec=ins.items[0];
+    if(rec && rec.kind!=='turnaround')
+      wrap.appendChild(el(`<div class="meta" style="margin-top:8px;">Suggested: set ${esc(first)} to practise ${esc(ttGroupLabel(rec.op,rec.table))} under "Pick your own" on their Training Ground.</div>`));
+  }
+  return wrap;
+}
+
 function renderStudentDashboard(opts){
   opts = opts || {};
   const results = opts.results || S.results;
   const weeks = opts.weeks || S.weeks;
   const skillPracticeRecords = opts.skillPracticeRecords || S.skillPracticeRecords;
+  // Times-tables attempts arrive the same way the other data does, so a teacher's
+  // read-only view of a student and the student's own view run identical code.
+  const ttAttempts = opts.ttAttempts || S.ttAttempts || [];
   const forTeacher = !!opts.forTeacher;
   const wrap=el('<div></div>');
   const skillStats = computeSkillStats(results, weeks, skillPracticeRecords);
@@ -3248,10 +3315,16 @@ function renderStudentDashboard(opts){
   wrap.appendChild(el(`<h3 style="font-family:Fredoka,sans-serif;margin:4px 0 4px;">${forTeacher? esc(opts.studentName)+"'s Dashboard" : 'My Maths Dashboard'}</h3>`));
   wrap.appendChild(el(`<div class="meta" style="margin-bottom:16px;">${forTeacher? 'A read-only view of their strengths, growth areas, and practice history.' : "Your personal coach — see what you're great at, what to work on, and exactly what to practise next."}</div>`));
 
+  // A child who has only done times tables still has something worth showing. Returning
+  // early here would hide it behind "no data yet", which reads as though their
+  // times-tables work hadn't counted for anything.
+  const ttSection = renderTTDashboardSection(ttAttempts, forTeacher, opts.studentName);
   if(withData.length===0){
-    wrap.appendChild(el(`<div class="mmc-empty"><div class="mmc-empty-icon">🌱</div>${forTeacher? 'No data yet for this student — once they complete a few quizzes, their dashboard will fill up here.' : 'Complete a few Weekly Quizzes and your personal dashboard will start filling up here!'}</div>`));
+    if(ttSection) wrap.appendChild(ttSection);
+    wrap.appendChild(el(`<div class="mmc-empty"><div class="mmc-empty-icon">🌱</div>${forTeacher? 'No quiz data yet for this student — once they complete a few sets, the rest of their dashboard will fill up here.' : 'Complete a few Weekly Quizzes and the rest of your dashboard will start filling up here!'}</div>`));
     return wrap;
   }
+  if(ttSection) wrap.appendChild(ttSection);
 
   wrap.appendChild(el(`<h3 style="margin:18px 0 10px;">🌟 What ${forTeacher?'they are':"I'm"} good at</h3>`));
   if(strengths.length===0){
@@ -3464,6 +3537,164 @@ function renderSettingsTab(){
 
 // ---------- Timetable Challenge ----------
 const TT_RANGES = { easy:[1,10], medium:[1,12], hard:[4,15] };
+// ---------- Times-table fact tracking ----------
+// ttAttempts used to record only a final score, so nothing could say WHICH facts a child
+// struggles with. Each session now carries a small tally per fact — seen, correct, total
+// ms — rather than a raw log, which keeps the document small enough that a teacher loading
+// every attempt for every student stays fast.
+//
+// Turnarounds are recorded SEPARATELY: `6 × 7` and `7 × 6` get their own keys. A child
+// often knows one orientation and not the other, and that gap is worth surfacing. Merging
+// them here would destroy the information permanently; merging later is always possible.
+//
+// Division is keyed by its DIVISOR, because "practise dividing by 6" is the actionable
+// statement, and the divisor is the table being tested.
+const TT_MAX_MS = 30000;   // longer than this means they walked away, not that they're slow
+function ttFactKey(q){
+  if(!q || !q.prompt) return null;
+  const md=String(q.prompt).match(/^(\d+) ÷ (\d+)$/);
+  if(md){ const divisor=Number(md[2]); const quotient=Number(md[1])/divisor;
+    return Number.isInteger(quotient) ? `d${divisor}_${quotient}` : null; }
+  const mm=String(q.prompt).match(/^(\d+) × (\d+)$/);
+  if(mm) return `m${Number(mm[1])}_${Number(mm[2])}`;
+  return null;
+}
+// Tally shape is [seen, correct, totalMs] — an array, not an object, purely to keep the
+// saved document small; there can be a few hundred of these per student.
+function ttRecordFact(t, q, correct, ms){
+  if(!t) return;
+  const key=ttFactKey(q); if(!key) return;
+  if(!t.facts) t.facts={};
+  const e = t.facts[key] || [0,0,0];
+  e[0]++; if(correct) e[1]++;
+  if(typeof ms==='number' && ms>0 && ms<=TT_MAX_MS) e[2]+=Math.round(ms);
+  t.facts[key]=e;
+}
+// Which tables a fact belongs to. A multiplication fact belongs to BOTH its operands, so
+// 6 × 7 counts toward the 6s and the 7s. Division belongs only to its divisor.
+function ttFactGroups(key){
+  const d=key.match(/^d(\d+)_(\d+)$/);
+  if(d) return [{table:Number(d[1]), op:'div'}];
+  const m=key.match(/^m(\d+)_(\d+)$/);
+  if(!m) return [];
+  const a=Number(m[1]), b=Number(m[2]);
+  return a===b ? [{table:a, op:'mult'}] : [{table:a, op:'mult'},{table:b, op:'mult'}];
+}
+
+// Turns raw tallies into AT MOST THREE things worth doing something about. Deliberately
+// few: a list of twenty weak facts is a wall a child bounces off, and a teacher won't read
+// it either. The app makes the call rather than handing over the data.
+//
+// Speed is judged RELATIVE TO THE CHILD'S OWN AVERAGE, never an absolute threshold — a
+// slow typer would otherwise be flagged as weak at everything, and a fast one at nothing.
+// Only TIMED sessions contribute times: in untimed practice a child can wander off
+// mid-question, which would poison every average.
+const TT_MIN_SAMPLE = 6;      // below this, one bad day looks like a weakness
+const TT_WEAK_ACC   = 0.6;
+const TT_SLOW_RATIO = 1.6;    // 60% slower than their own norm
+const TT_TURN_GAP   = 0.34;   // orientation gap that suggests commutativity hasn't landed
+function computeTTInsights(attempts){
+  attempts = attempts || [];
+  const acc = {};    // groupKey -> [seen, correct]
+  const spd = {};    // groupKey -> [seen, totalMs]  (timed sessions only)
+  const facts = {};  // factKey  -> [seen, correct]
+  let timedMs=0, timedN=0;
+  attempts.forEach(a=>{
+    const f=a && a.facts; if(!f) return;
+    const timed = a.mode!=='practice';
+    Object.keys(f).forEach(k=>{
+      const e=f[k]; if(!Array.isArray(e)||e.length<2) return;
+      const seen=e[0]||0, ok=e[1]||0, ms=e[2]||0;
+      if(seen<=0) return;
+      const fe=facts[k]||[0,0]; fe[0]+=seen; fe[1]+=ok; facts[k]=fe;
+      ttFactGroups(k).forEach(g=>{
+        const gk=`${g.op}:${g.table}`;
+        const ae=acc[gk]||[0,0]; ae[0]+=seen; ae[1]+=ok; acc[gk]=ae;
+        if(timed && ms>0){ const se=spd[gk]||[0,0]; se[0]+=seen; se[1]+=ms; spd[gk]=se; }
+      });
+      if(timed && ms>0){ timedMs+=ms; timedN+=seen; }
+    });
+  });
+  const baseline = timedN>0 ? timedMs/timedN : 0;
+  const out=[];
+  // 1. Getting it wrong — the strongest signal, so it ranks first.
+  Object.keys(acc).forEach(gk=>{
+    const [seen,ok]=acc[gk]; if(seen<TT_MIN_SAMPLE) return;
+    const a=ok/seen; if(a>=TT_WEAK_ACC) return;
+    const [op,table]=gk.split(':');
+    out.push({ kind:'wrong', op, table:Number(table), accuracy:Math.round(a*100), seen,
+      severity: (TT_WEAK_ACC-a)*2 + Math.min(seen,30)/100 });
+  });
+  // 2. Right but slow — real, and invisible to a score.
+  if(baseline>0) Object.keys(spd).forEach(gk=>{
+    const [seen,ms]=spd[gk]; if(seen<TT_MIN_SAMPLE) return;
+    const [aSeen,aOk]=acc[gk]||[0,0];
+    if(aSeen>0 && aOk/aSeen < TT_WEAK_ACC) return;   // already flagged as wrong
+    const avg=ms/seen, ratio=avg/baseline;
+    if(ratio<TT_SLOW_RATIO) return;
+    const [op,table]=gk.split(':');
+    out.push({ kind:'slow', op, table:Number(table), seconds:Math.round(avg/100)/10,
+      ratio:Math.round(ratio*10)/10, seen, severity:(ratio-TT_SLOW_RATIO)+0.15 });
+  });
+  // 3. Turnarounds — knows 6 x 7, blanks on 7 x 6. Same answer, so this is about
+  //    commutativity rather than the fact itself, and it is worth naming as such.
+  Object.keys(facts).forEach(k=>{
+    const m=k.match(/^m(\d+)_(\d+)$/); if(!m) return;
+    const a=Number(m[1]), b=Number(m[2]); if(a>=b) return;   // consider each pair once
+    const other=facts[`m${b}_${a}`]; const mine=facts[k];
+    if(!other||!mine) return;
+    if(mine[0]<4||other[0]<4) return;
+    const accA=mine[1]/mine[0], accB=other[1]/other[0];
+    const gap=Math.abs(accA-accB); if(gap<TT_TURN_GAP) return;
+    const weakFirst = accA<accB;
+    out.push({ kind:'turnaround', a, b, weak: weakFirst?`${a} × ${b}`:`${b} × ${a}`,
+      strong: weakFirst?`${b} × ${a}`:`${a} × ${b}`, severity: gap });
+  });
+  out.sort((x,y)=>y.severity-x.severity);
+  return { items: out.slice(0,3), baselineMs: Math.round(baseline), hasData: timedN>0 || Object.keys(acc).length>0 };
+}
+
+// Plain-English rendering of one insight. Shared by the student card, the teacher table
+// and the CSV export so the three can never describe the same child differently.
+function ttGroupLabel(op, table){ return op==='div' ? `dividing by ${table}` : `the ${table} times table`; }
+function ttInsightShort(it){
+  if(!it) return '';
+  if(it.kind==='turnaround') return `${it.weak} (knows ${it.strong})`;
+  if(it.kind==='wrong') return `${it.op==='div'?'÷':'×'}${it.table} — ${it.accuracy}%`;
+  return `${it.op==='div'?'÷':'×'}${it.table} — ${it.seconds}s (${it.ratio}× slower)`;
+}
+function ttInsightSentence(name, it){
+  if(!it) return '';
+  if(it.kind==='turnaround')
+    return `${name} answers ${it.strong} reliably but not ${it.weak}. Same answer both ways — this is about turnarounds, not the fact itself.`;
+  if(it.kind==='wrong')
+    return `${name} is getting ${it.accuracy}% of ${ttGroupLabel(it.op,it.table)} correct across ${it.seen} attempts.`;
+  return `${name} answers ${ttGroupLabel(it.op,it.table)} correctly, but takes about ${it.seconds}s — roughly ${it.ratio}× longer than their own average. Accurate, not yet fluent.`;
+}
+
+// Rolls the same judgement across a whole class. The question a teacher acts on is not
+// "how is this child doing" but "is this one child or fourteen of them" — the first is a
+// quiet word, the second is Monday's lesson.
+function computeTTClassInsights(attempts, uids){
+  const byGroup={};   // "op:table" -> { students:Set, worst }
+  (uids||[]).forEach(uid=>{
+    const mine=(attempts||[]).filter(a=>a.uid===uid);
+    const ins=computeTTInsights(mine);
+    ins.items.forEach(it=>{
+      if(it.kind==='turnaround') return;   // too individual to aggregate usefully
+      const gk=`${it.op}:${it.table}`;
+      if(!byGroup[gk]) byGroup[gk]={op:it.op, table:it.table, students:[], kinds:{}};
+      byGroup[gk].students.push(uid);
+      byGroup[gk].kinds[it.kind]=(byGroup[gk].kinds[it.kind]||0)+1;
+    });
+  });
+  return Object.values(byGroup)
+    .map(g=>({...g, count:g.students.length}))
+    .filter(g=>g.count>=2)              // one child is a conversation, not a pattern
+    .sort((a,b)=>b.count-a.count)
+    .slice(0,4);
+}
+
 // ---------- Custom times-table practice ----------
 // The child picks which tables to drill and whether to multiply, divide, or both.
 // Because THEY choose the difficulty, these sessions are recorded as level 'custom'
@@ -3551,7 +3782,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.6';
+const BUILD = '2026-08-10.10';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -3880,7 +4111,7 @@ const S = {
   authMode:'login', authError:null, showSignup:false,
   weeks:[], results:[], profiles:{},
   previewStudentUid:null, previewSaved:null, setupLinkFor:null, timeOverride:null, teacherTab:'home', weeksView:'create', studentsView:'list', editingClasses:false, editingDraftId:null, showArchivedWeeks:false,
-  gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null,
+  gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null, ttDetailUid:null,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
   quickDeployDone:null, resetPasswordResult:null,
@@ -4870,6 +5101,7 @@ function renderTeacher(){
       results: S.results.filter(r=>r.uid===uid),
       weeks: S.weeks,
       skillPracticeRecords: S.allSkillPracticeRecords.filter(r=>r.uid===uid),
+      ttAttempts: (S.ttAttempts||[]).filter(a=>a.uid===uid),
     }));
     wrap.appendChild(dashWrap);
     return wrap;
@@ -5783,8 +6015,24 @@ function renderTeacherTimetable(){
     return wrap;
   }
 
+  // Class picture first — it is what a teacher plans a lesson from.
+  const cls=computeTTClassInsights(S.ttAttempts, studentUids);
+  const clsCard=el('<div class="mmc-card" style="margin-bottom:14px;"><h3>🔍 What this class needs</h3></div>');
+  if(!cls.length){
+    clsCard.appendChild(el('<div class="meta">No shared pattern yet. This fills in once students have done a few sessions — it only counts something when two or more students show the same gap.</div>'));
+  } else {
+    cls.forEach(g=>{
+      const names=g.students.map(u=>(S.profiles[u]&&S.profiles[u].displayName)||'?').join(', ');
+      const kind = (g.kinds.wrong||0) >= (g.kinds.slow||0) ? 'getting these wrong' : 'accurate but slow';
+      clsCard.appendChild(el(`<div style="border-top:2px solid var(--paper-line);padding:9px 0;">
+        <div style="font-weight:800;">${g.count} student${g.count===1?'':'s'} — ${esc(ttGroupLabel(g.op,g.table))}</div>
+        <div class="meta">Mostly ${esc(kind)}. ${esc(names)}</div></div>`));
+    });
+  }
+  wrap.appendChild(clsCard);
+
   const tableWrap=el('<div class="mmc-ledger-wrap"></div>');
-  const table=el(`<table class="mmc-ledger"><thead><tr><th>Student</th><th>Status</th><th>Best Easy</th><th>Best Medium</th><th>Best Hard</th><th>Attempts</th><th>Last attempt</th></tr></thead><tbody></tbody></table>`);
+  const table=el(`<table class="mmc-ledger"><thead><tr><th>Student</th><th>Status</th><th>Focus</th><th>Best Easy</th><th>Best Medium</th><th>Best Hard</th><th>Attempts</th><th>Last attempt</th></tr></thead><tbody></tbody></table>`);
   const tbody=table.querySelector('tbody');
   studentUids.forEach(uid=>{
     const mine=S.ttAttempts.filter(a=>a.uid===uid);
@@ -5793,13 +6041,48 @@ function renderTeacherTimetable(){
     const last=mine.slice().sort((a,b)=>(b.submittedAt?.seconds||0)-(a.submittedAt?.seconds||0))[0];
     const lastStr = last && last.submittedAt?.seconds ? new Date(last.submittedAt.seconds*1000).toLocaleDateString() : '—';
     const tier = computeBadgeInfo(mine, S.profiles[uid]).tier;
-    tbody.appendChild(el(`<tr><td>${esc(S.profiles[uid].displayName||uid)}</td><td>${tier.emoji} ${esc(tier.label)}</td><td>${esc(bestOf('easy'))}</td><td>${esc(bestOf('medium'))}</td><td>${esc(bestOf('hard'))}</td><td>${mine.length}</td><td>${esc(lastStr)}</td></tr>`));
+    const ins = computeTTInsights(mine);
+    const top = ins.items[0];
+    // Anything recorded before per-question tracking existed carries no detail, so an
+    // empty cell means "not measured yet", not "nothing wrong". Say which.
+    const focus = top ? esc(ttInsightShort(top))
+      : (ins.hasData ? '<span style="color:var(--ink-soft);">nothing flagged</span>'
+                     : '<span style="color:var(--ink-soft);">no data yet</span>');
+    const tr=el(`<tr style="cursor:pointer;"><td>${esc(S.profiles[uid].displayName||uid)}</td><td>${tier.emoji} ${esc(tier.label)}</td><td>${focus}</td><td>${esc(bestOf('easy'))}</td><td>${esc(bestOf('medium'))}</td><td>${esc(bestOf('hard'))}</td><td>${mine.length}</td><td>${esc(lastStr)}</td></tr>`);
+    tr.onclick=()=>{ S.ttDetailUid = (S.ttDetailUid===uid? null : uid); render(); };
+    tbody.appendChild(tr);
+    if(S.ttDetailUid===uid) tbody.appendChild(renderTTStudentDetailRow(uid, mine, ins));
   });
   table.appendChild(tbody);
   tableWrap.appendChild(table);
   wrap.appendChild(tableWrap);
 
   return wrap;
+}
+
+// The expandable row. Written as full sentences deliberately — a teacher needs something
+// they can read out to a child or a parent, not an abbreviation only the app understands.
+function renderTTStudentDetailRow(uid, mine, ins){
+  const name=(S.profiles[uid]&&S.profiles[uid].displayName)||'This student';
+  const first=name.split(/\s+/)[0];
+  const tr=el('<tr></tr>');
+  const td=el('<td colspan="8" style="background:var(--bg);padding:14px 16px;"></td>');
+  if(!ins.items.length){
+    td.appendChild(el(`<div class="meta">${ins.hasData
+      ? `Nothing is standing out for ${esc(first)} at the moment.`
+      : `No per-question data for ${esc(first)} yet. This builds up as they complete sessions.`}</div>`));
+  } else {
+    td.appendChild(el(`<div class="meta" style="margin-bottom:8px;">Based on ${mine.length} session${mine.length===1?'':'s'}. Times come from timed challenges only.</div>`));
+    ins.items.forEach(it=>{
+      td.appendChild(el(`<div style="padding:6px 0;font-size:14px;">• ${esc(ttInsightSentence(first,it))}</div>`));
+    });
+    const rec = ins.items[0];
+    if(rec && rec.kind!=='turnaround'){
+      td.appendChild(el(`<div class="meta" style="margin-top:8px;font-weight:700;color:var(--ink);">Suggested: set ${esc(first)} to practise ${esc(ttGroupLabel(rec.op,rec.table))} — they can pick it themselves under "Pick your own" on the Training Ground.</div>`));
+    }
+  }
+  tr.appendChild(td);
+  return tr;
 }
 
 function renderTeacherActivity(){
@@ -5892,13 +6175,20 @@ function renderTeacherActivity(){
 }
 
 function exportTTCSV(studentUids){
-  const header=['Student','Best Easy','Best Medium','Best Hard','Total attempts'];
+  // Extended, not replaced: the best-score columns were already here and teachers may
+  // rely on them. The focus columns are appended so an existing sheet still lines up.
+  const header=['Student','Best Easy','Best Medium','Best Hard','Total attempts','Focus 1','Focus 2','Focus 3','Detail'];
   const rows=[header];
   studentUids.forEach(uid=>{
     const mine=S.ttAttempts.filter(a=>a.uid===uid);
     const bestOf=(lvl)=>{ const at=mine.filter(a=>a.level===lvl); if(!at.length) return '';
       const best=at.reduce((b,a)=>a.score>b.score?a:b, at[0]); return `${best.score}/${best.attempted} (${best.accuracy}%)`; };
-    rows.push([S.profiles[uid].displayName||uid, bestOf('easy'), bestOf('medium'), bestOf('hard'), mine.length]);
+    const name=S.profiles[uid].displayName||uid;
+    const first=String(name).split(/\s+/)[0];
+    const ins=computeTTInsights(mine);
+    const f=[0,1,2].map(i=>ins.items[i]? ttInsightShort(ins.items[i]) : '');
+    const detail=ins.items.map(it=>ttInsightSentence(first,it)).join(' ');
+    rows.push([name, bestOf('easy'), bestOf('medium'), bestOf('hard'), mine.length, f[0], f[1], f[2], detail]);
   });
   const csv=rows.map(r=>r.map(c=>{ const s=String(c); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }).join(',')).join('\n');
   const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob);
@@ -6825,6 +7115,7 @@ function renderTimetableTab(){
     <strong>⏱ Challenge</strong> — 5 minutes, answer as many as you can. Both build your race status, but only the Challenge counts towards your accuracy.
   </div>`));
   wrap.appendChild(cardsRow);
+  wrap.appendChild(renderTTFocusCard());
   wrap.appendChild(renderTTCustomCard());
 
   if(S.tt && S.tt.finished && S.tt.lastResult){
@@ -6855,6 +7146,45 @@ function renderTimetableTab(){
 }
 
 const TT_PRACTICE_TOTAL = 30;
+// The judgement, made visible. At most three, each with a one-tap drill that pre-fills
+// the custom picker — the point is to close the loop between "you need this" and doing it,
+// not to present a report.
+function renderTTFocusCard(){
+  const ins=computeTTInsights(S.ttAttempts||[]);
+  const card=el('<div class="mmc-card" style="margin-top:16px;"><h3>🔍 What to work on</h3></div>');
+  if(!ins.items.length){
+    card.appendChild(el(`<div class="meta">${ins.hasData
+      ? "Nothing standing out right now — keep practising and this will tell you where to focus."
+      : "Do a few challenges and this will tell you exactly which tables to work on."}</div>`));
+    return card;
+  }
+  ins.items.forEach(it=>{
+    const row=el('<div style="border-top:2px solid var(--paper-line);padding:10px 0;"></div>');
+    if(it.kind==='turnaround'){
+      row.appendChild(el(`<div style="font-weight:800;margin-bottom:3px;">Turnarounds: ${esc(it.weak)}</div>
+        <div class="meta">You know ${esc(it.strong)} but ${esc(it.weak)} is catching you out — they have the same answer.</div>`));
+      const b=el('<button class="mmc-btn ghost sm" style="margin-top:6px;">🐢 Practise these</button>');
+      b.onclick=()=>{ S.ttCustom={tables:[it.a,it.b],mult:true,div:false};
+        startTTPractice('custom',{tables:[it.a,it.b],mult:true,div:false}); };
+      row.appendChild(b);
+    } else {
+      const isDiv = it.op==='div';
+      const why = it.kind==='wrong'
+        ? `Getting ${it.accuracy}% of these right so far.`
+        : `You get these right, but they take about ${it.seconds}s — around ${it.ratio}× longer than your other answers.`;
+      const head = it.kind==='wrong' ? 'Needs work' : 'Nearly there';
+      row.appendChild(el(`<div style="font-weight:800;margin-bottom:3px;">${head}: ${esc(ttGroupLabel(it.op,it.table))}</div>
+        <div class="meta">${esc(why)}</div>`));
+      const cfg={tables:[it.table],mult:!isDiv,div:isDiv};
+      const b=el('<button class="mmc-btn ghost sm" style="margin-top:6px;">🐢 Practise this</button>');
+      b.onclick=()=>{ S.ttCustom={tables:cfg.tables.slice(),mult:cfg.mult,div:cfg.div}; startTTPractice('custom',cfg); };
+      row.appendChild(b);
+    }
+    card.appendChild(row);
+  });
+  return card;
+}
+
 // Pick-your-own drill. Chips rather than a multi-select, because a nine-year-old on a
 // tablet can tap a chip and cannot easily ctrl-click a list.
 function renderTTCustomCard(){
@@ -6907,8 +7237,10 @@ function renderTTCustomCard(){
 
 function startTTChallenge(level, custom){
   S.tt = { mode:'challenge', active:true, finished:false, level, custom:custom||null, timeLeft:300,
-           score:0, attempted:0, qIndex:0, currentQ:null, lastResult:null, typedValue:'' };
+           score:0, attempted:0, qIndex:0, currentQ:null, lastResult:null, typedValue:'',
+           facts:{}, questionStartedAt:Date.now() };
   S.tt.currentQ = ttQuestionFor(S.tt, 0);
+  S.tt.questionStartedAt = Date.now();
   render();
   startTTTimer();
 }
@@ -6917,8 +7249,10 @@ function startTTChallenge(level, custom){
 // `mode` is the only difference, and it is checked rather than duplicated.
 function startTTPractice(level, custom){
   S.tt = { mode:'practice', active:true, finished:false, level, custom:custom||null, timeLeft:null,
-           score:0, attempted:0, qIndex:0, currentQ:null, lastResult:null, reveal:null, typedValue:'' };
+           score:0, attempted:0, qIndex:0, currentQ:null, lastResult:null, reveal:null, typedValue:'',
+           facts:{}, questionStartedAt:Date.now() };
   S.tt.currentQ = ttQuestionFor(S.tt, 0);
+  S.tt.questionStartedAt = Date.now();
   render();
 }
 function startTTTimer(){
@@ -6939,6 +7273,7 @@ function submitTTAnswer(given){
   if(S.tt.mode==='practice' && S.tt.reveal) return;
   const q = S.tt.currentQ;
   const correct = sameNumber(given, q.answer) || normalize(given)===normalize(String(q.answer));
+  ttRecordFact(S.tt, q, correct, Date.now() - (S.tt.questionStartedAt||Date.now()));
   S.tt.attempted++;
   if(correct) S.tt.score++;
   if(S.tt.mode==='practice'){
@@ -6952,6 +7287,7 @@ function submitTTAnswer(given){
   flashResult('tt', correct);
   S.tt.qIndex++;
   S.tt.currentQ=ttQuestionFor(S.tt, S.tt.qIndex);
+  S.tt.questionStartedAt=Date.now();
   render();
 }
 // Practice only: advance past the revealed answer, or finish after the 30th.
@@ -6962,6 +7298,9 @@ function nextTTPracticeQuestion(){
   S.tt.qIndex++;
   S.tt.currentQ=ttQuestionFor(S.tt, S.tt.qIndex);
   S.tt.typedValue='';
+  // Timed from when the question APPEARS, not from when the previous one was answered —
+  // otherwise the seconds spent reading the correction get charged to the next fact.
+  S.tt.questionStartedAt=Date.now();
   render();
 }
 async function finishTTChallenge(){
@@ -6977,6 +7316,7 @@ async function finishTTChallenge(){
     // Only on custom sessions, so an attempt history row can say "6, 7 ×" rather than
     // an anonymous "custom" that means nothing to a teacher reading it later.
     if(level==='custom' && S.tt.custom) rec.customLabel = ttCustomLabel(S.tt.custom);
+    if(S.tt.facts && Object.keys(S.tt.facts).length) rec.facts = S.tt.facts;
     await addDoc(collection(db,'ttAttempts'), rec);
   }catch(e){ S.toast='Could not save this attempt — check your connection.'; }
   render();
