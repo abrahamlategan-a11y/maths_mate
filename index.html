@@ -4201,7 +4201,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.25';
+const BUILD = '2026-08-10.26';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -4586,7 +4586,15 @@ function currentLiveRoom(){
   const myClassId = S.isTeacher ? (S.showAllClasses ? null : S.currentClassId) : (S.profile && S.profile.classId);
   const visible = S.liveGames.filter(g => !g.classId || !myClassId || g.classId===myClassId);
   const active = visible.filter(g=>g.status==='lobby'||g.status==='active');
-  if(active.length) return active.slice().sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0))[0];
+  if(active.length){
+    const newest = active.slice().sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+    // A room YOU host always wins. Without this, the newest room is the only one anyone
+    // can see — so the moment a second student starts a race, the first student is pulled
+    // out of their own lobby into someone else's. Two children can now host at once and
+    // each stays in theirs; everyone else sees whichever started most recently.
+    const mine = newest.find(g=>g.hostUid && S.user && g.hostUid===S.user.uid);
+    return mine || newest[0];
+  }
   const ended = visible.filter(g=>g.status==='ended').slice().sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
   return ended[0] || null;
 }
@@ -8416,6 +8424,11 @@ function renderStudentLiveGame(){
       `);
       card.querySelector('#mmc-live-join').onclick=()=>joinLiveGame(room.id);
       wrap.appendChild(card);
+      // Not everyone wants to join the race that happens to be open. Only offered for
+      // student-hosted races — declining the teacher's class race is not a child's call.
+      if(room.hostUid){
+        wrap.appendChild(renderStartRaceCard('Not interested in that one? Start your own instead — your classmates can join either.'));
+      }
     } else {
       const iAmHost = room.hostUid === S.user.uid;
       if(S.lobbyReadyForRoom === room.id){
@@ -8428,6 +8441,13 @@ function renderStudentLiveGame(){
           </div>
         `));
         if(iAmHost){
+          const cancel=el('<button class="mmc-btn ghost sm" style="width:100%;margin-bottom:8px;">✕ Cancel this race</button>');
+          cancel.onclick=async ()=>{
+            cancel.disabled=true; cancel.textContent='Cancelling…';
+            try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended'}); }
+            catch(e){ S.toast='Could not cancel — check your connection.'; cancel.disabled=false; cancel.textContent='✕ Cancel this race'; render(); }
+          };
+          wrap.appendChild(cancel);
           const go=el('<button class="mmc-btn gold" style="width:100%;font-size:16px;padding:12px;">🏁 Start the race</button>');
           go.onclick=async ()=>{
             go.disabled=true; go.textContent='Starting…';
