@@ -4029,7 +4029,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.16';
+const BUILD = '2026-08-10.17';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -7942,14 +7942,15 @@ function renderTeacherLiveGame(){
       <div class="mmc-card">
         <h3>Start the Racing Ground</h3>
         <div class="meta">Students join a lobby, then everyone's 5-minute timer starts together with a live leaderboard.</div>
-        <div class="mmc-field" style="max-width:220px;"><label>Level</label>
-          <select id="mmc-live-level">${['easy','medium','hard'].map(l=>`<option value="${l}" ${S.liveGenForm.level===l?'selected':''}>${l[0].toUpperCase()+l.slice(1)}</option>`).join('')}</select>
-        </div>
+        <div class="meta">Every student races at <strong>their own year level and group</strong> — Support gets Easy, Mainstream Medium, Extension Hard. Harder questions move a horse further, so a mixed-ability class is a real contest rather than a foregone conclusion.</div>
         <button class="mmc-btn gold" id="mmc-live-create">🐎 Create Room</button>
       </div>
     `);
     form.querySelector('#mmc-live-create').onclick=async ()=>{
-      const level=form.querySelector('#mmc-live-level').value; S.liveGenForm.level=level;
+      // `level` is no longer chosen — it survives only as the fallback for a student with
+      // no group set, and their YEAR still applies on top of it. Kept on the document so
+      // older rooms and any code reading room.level keep working.
+      const level='medium';
       try{ await addDoc(collection(db,'liveGames'), { teacherUid:S.user.uid, level, status:'lobby', createdAt:serverTimestamp(), durationSec:300,
         classId: S.showAllClasses ? null : S.currentClassId }); }
       catch(e){ S.toast='Could not create the room — check your connection.'; render(); }
@@ -7966,7 +7967,7 @@ function renderTeacherLiveGame(){
       <div class="meta">A student in your class started this race. You can start or end it like any other.</div></div>`));
     const card=el(`
       <div class="mmc-card">
-        <h3>🐎 Room open — ${esc(room.level)} level</h3>
+        <h3>🐎 Room open</h3>
         <div class="meta">Students see a Join button now. Start whenever you're ready — everyone's timer begins at the same moment.</div>
         <div class="meta" style="font-weight:800;color:var(--ink);">${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} waiting · Room: <code class="mmc-code">${esc(room.id.slice(0,6))}</code></div>
         <div class="mmc-row" style="margin-top:8px;">
@@ -7998,7 +7999,7 @@ function renderTeacherLiveGame(){
     const head=el(`
       <div class="mmc-card">
         <div class="mmc-row" style="justify-content:space-between;">
-          <div><h3 style="text-transform:capitalize;">${esc(room.level)} — Live!</h3><div class="meta">${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} · Room: <code class="mmc-code">${esc(room.id.slice(0,6))}</code></div></div>
+          <div><h3>Race in progress</h3><div class="meta">${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} · Room: <code class="mmc-code">${esc(room.id.slice(0,6))}</code></div></div>
           <div id="mmc-live-timer" style="font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:700;color:var(--purple-deep);">${room.startedAt? formatMMSS(liveTimeLeft(room)) : 'Starting…'}</div>
         </div>
         <button class="mmc-btn danger" id="mmc-live-end" style="margin-top:10px;width:100%;font-size:16px;padding:12px;">⏹ End Game Now</button>
