@@ -4029,7 +4029,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.21';
+const BUILD = '2026-08-10.22';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -8060,7 +8060,12 @@ function renderTeacherLiveGame(){
 function syncMyLiveSession(){
   const room=currentLiveRoom();
   if(!room){ if(S.myLive){ if(S.myLive.timerHandle) clearInterval(S.myLive.timerHandle); S.myLive=null; } return; }
-  if(room.status==='ended'){
+  // This ran on EVERY render and only checked the stored status, so a room whose clock had
+  // expired but was never closed put the student straight back into the race — question and
+  // all — until the timer ticked a second later and threw them out again. That is the
+  // flash of a live race on page load. Asking whether the race is actually over, rather
+  // than what the document says, removes it.
+  if(isRaceOver(room)){
     if(S.myLive && S.myLive.gameId===room.id){ if(S.myLive.timerHandle) clearInterval(S.myLive.timerHandle); S.myLive=null; }
     return;
   }
