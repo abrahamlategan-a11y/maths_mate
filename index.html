@@ -110,6 +110,16 @@
   }
   /* On-screen keypad. Shown only on touch devices, where the OS keyboard covers the
      screen and (on iPad) opens as a full QWERTY even for a numbers-only answer. */
+  /* Instant right/wrong feedback for the two SPEED games. A ring only — no answer, no
+     pause — so the race is untouched. It sits on the answer box because that is where a
+     child's eyes already are when they tap Go. */
+  @keyframes mmc-ringpop { 0%{ box-shadow:0 0 0 0 var(--mmc-ring); } 100%{ box-shadow:0 0 0 7px transparent; } }
+  .mmc-flash-ok, .mmc-flash-no { animation:mmc-ringpop .55s ease-out; border-radius:10px; }
+  .mmc-flash-ok { --mmc-ring:var(--correct); border-color:var(--correct) !important; }
+  .mmc-flash-no { --mmc-ring:var(--incorrect); border-color:var(--incorrect) !important; }
+  @media (prefers-reduced-motion:reduce){
+    .mmc-flash-ok, .mmc-flash-no { animation:none; }
+  }
   .mmc-keypad {
     display:grid; grid-template-columns:repeat(3,1fr); gap:10px;
     max-width:300px; margin:16px auto 0;
@@ -3484,7 +3494,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.3';
+const BUILD = '2026-08-10.4';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -3499,6 +3509,19 @@ const KEYPAD_INPUTMODE = IS_TOUCH ? 'none' : 'numeric';
 // Builds a 3x4 digit pad. onKey receives a digit string, 'del' or 'go'. Keys are wired
 // with onpointerdown and preventDefault so the field never loses focus — a blur on a
 // touch device is what would let the OS keyboard back in.
+// Sets a short-lived right/wrong ring. Held in state, not on the DOM node, because both
+// game screens redraw constantly — a class written straight onto the element would be
+// wiped by the next redraw. The timer clears it and redraws once more.
+let ttFlashTimer=null, liveFlashTimer=null;
+function flashResult(scope, correct){
+  const target = scope==='tt' ? S.tt : S.myLive;
+  if(!target) return;
+  target.flash = correct ? 'ok' : 'no';
+  const clear=()=>{ if(scope==='tt'){ if(S.tt) S.tt.flash=null; } else if(S.myLive){ S.myLive.flash=null; } render(); };
+  if(scope==='tt'){ if(ttFlashTimer) clearTimeout(ttFlashTimer); ttFlashTimer=setTimeout(clear,550); }
+  else { if(liveFlashTimer) clearTimeout(liveFlashTimer); liveFlashTimer=setTimeout(clear,550); }
+}
+
 function buildKeypad(onKey){
   const pad=el('<div class="mmc-keypad"></div>');
   const keys=['1','2','3','4','5','6','7','8','9','del','0','go'];
@@ -6782,6 +6805,7 @@ function submitTTAnswer(given){
   const correct = normalize(given)===normalize(String(S.tt.currentQ.answer));
   S.tt.attempted++;
   if(correct) S.tt.score++;
+  flashResult('tt', correct);
   S.tt.qIndex++;
   S.tt.currentQ=genTTQuestion(S.tt.level, S.tt.qIndex);
   render();
@@ -6820,7 +6844,7 @@ function renderTTChallenge(){
     <div class="mmc-card" style="text-align:center;">
       <div style="font-family:'Fredoka',sans-serif;font-size:36px;font-weight:700;margin-bottom:16px;">${esc(t.currentQ.prompt)} = ?</div>
       <div class="mmc-row" style="justify-content:center;">
-        <input type="text" id="mmc-tt-input" autocomplete="off" inputmode="${KEYPAD_INPUTMODE}" value="${esc(t.typedValue||'')}" style="width:120px;text-align:center;font-size:22px;padding:10px;border-radius:8px;border:1.5px solid var(--paper-line);">
+        <input type="text" id="mmc-tt-input" class="${t.flash?('mmc-flash-'+t.flash):''}" autocomplete="off" inputmode="${KEYPAD_INPUTMODE}" value="${esc(t.typedValue||'')}" style="width:120px;text-align:center;font-size:22px;padding:10px;border-radius:8px;border:1.5px solid var(--paper-line);">
         <button class="mmc-btn gold" id="mmc-tt-submit">Go</button>
       </div>
     </div>
@@ -7056,6 +7080,7 @@ async function submitMyLiveAnswer(given){
   if(!S.myLive || !S.myLive.answering) return;
   const correct = normalize(given)===normalize(String(S.myLive.currentQ.answer));
   S.myLive.attempted++; if(correct) S.myLive.score++;
+  flashResult('live', correct);
   const elapsedSec = (Date.now()-S.myLive.questionStartedAt)/1000;
   const allPositions = S.liveParticipants.map(p=>p.position||0);
   const rubberBand = raceRubberBandMultiplier(S.myLive.position, allPositions.length? allPositions : [S.myLive.position]);
@@ -7093,7 +7118,7 @@ function renderMyLiveSession(){
     <div class="mmc-card" style="text-align:center;">
       <div style="font-family:'Baloo 2',sans-serif;font-size:36px;font-weight:700;margin-bottom:16px;">${esc(S.myLive.currentQ.prompt)} = ?</div>
       <div class="mmc-row" style="justify-content:center;">
-        <input type="text" id="mmc-live-input" autocomplete="off" inputmode="${KEYPAD_INPUTMODE}" value="${esc(S.myLive.typedValue||'')}" style="width:120px;text-align:center;font-size:22px;padding:10px;border-radius:10px;border:2px solid var(--paper-line);">
+        <input type="text" id="mmc-live-input" class="${S.myLive.flash?('mmc-flash-'+S.myLive.flash):''}" autocomplete="off" inputmode="${KEYPAD_INPUTMODE}" value="${esc(S.myLive.typedValue||'')}" style="width:120px;text-align:center;font-size:22px;padding:10px;border-radius:10px;border:2px solid var(--paper-line);">
         <button class="mmc-btn gold" id="mmc-live-submit">Go</button>
       </div>
     </div>
