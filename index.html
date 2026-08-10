@@ -4641,7 +4641,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.39';
+const BUILD = '2026-08-10.41';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -4758,6 +4758,49 @@ function classYear(cls){
   if(y===null || y===undefined || y==='') return DEFAULT_YEAR;
   return (YEAR_LEVELS.indexOf(+y)!==-1) ? +y : DEFAULT_YEAR;
 }
+// Creating a class was two typed prompts, so the year levels were never actually LISTED —
+// a teacher had to know that 0 meant Pre-Primary and guess the rest. A real form with a
+// dropdown shows every option, and makes the "you cannot change this later" warning
+// something you read before choosing rather than after.
+function renderNewClassForm(){
+  if(!S.newClass) return null;
+  const card=el(`
+    <div class="mmc-card" style="border-color:var(--purple);background:#F5F1FF;margin-bottom:14px;">
+      <h3 style="margin:0 0 8px;">New class</h3>
+      <div class="mmc-field"><label>Class name</label>
+        <input type="text" id="mmc-nc-name" placeholder='e.g. "5B" or "Mr Lategan"' value="${esc(S.newClass.name||'')}">
+      </div>
+      <div class="mmc-field" style="max-width:260px;"><label>Year level</label>
+        <select id="mmc-nc-year">
+          ${YEAR_LEVELS.map(y=>`<option value="${y}" ${Number(S.newClass.year)===y?'selected':''}>${esc(yearLabel(y))}</option>`).join('')}
+        </select>
+      </div>
+      <div class="meta" style="margin-bottom:10px;"><strong>The year level cannot be changed later.</strong> Every set and result is built against it. A class is one year level — for a composite room, make two classes.</div>
+      <div class="mmc-row" style="gap:8px;">
+        <button class="mmc-btn gold sm" id="mmc-nc-go">Create class</button>
+        <button class="mmc-btn ghost sm" id="mmc-nc-cancel">Cancel</button>
+      </div>
+    </div>
+  `);
+  const nameIn=card.querySelector('#mmc-nc-name');
+  const yearIn=card.querySelector('#mmc-nc-year');
+  nameIn.oninput=(e)=>{ S.newClass.name=e.target.value; };
+  yearIn.onchange=(e)=>{ S.newClass.year=+e.target.value; };
+  card.querySelector('#mmc-nc-cancel').onclick=()=>{ S.newClass=null; render(); };
+  const go=card.querySelector('#mmc-nc-go');
+  go.onclick=async ()=>{
+    const nm=(nameIn.value||'').trim();
+    if(!nm){ S.toast='Give the class a name first.'; render(); return; }
+    go.disabled=true; go.textContent='Creating…';
+    await createClass(nm, yearIn.value);
+    S.newClass=null; S.showAllClasses=false;
+    S.toast=`"${nm}" created as ${yearLabel(yearIn.value)}.`;
+    render();
+  };
+  setTimeout(()=>{ const n=document.getElementById('mmc-nc-name'); if(n && !n.value) n.focus(); },0);
+  return card;
+}
+
 async function createClass(name, yearLevel){
   name=(name||'').trim();
   if(!name) return;
@@ -4854,13 +4897,7 @@ function renderClassSwitcher(){
   row.appendChild(left);
   const right=el('<div class="mmc-row" style="gap:8px;"></div>');
   const newBtn=el('<button class="mmc-btn ghost sm">+ New class</button>');
-  newBtn.onclick=async ()=>{
-    const name=prompt('Name for the new class (e.g. "5B" or "Year 4 Green"):');
-    if(!name) return;
-    const yr=prompt('Which year level is this class?\n\nEnter 0 for Pre-Primary, or 1 to 6.\n\nThis CANNOT be changed later — a class is one year level, and every set and result is built against it. For a composite room, make two classes.', String(DEFAULT_YEAR));
-    if(yr===null) return;
-    await createClass(name, yr);
-  };
+  newBtn.onclick=()=>{ S.newClass={name:'',year:DEFAULT_YEAR}; S.teacherTab='students'; render(); };
   right.appendChild(newBtn);
   if(!S.showAllClasses && S.currentClassId){
     const renameBtn=el('<button class="mmc-btn ghost sm">Rename</button>');
@@ -5027,7 +5064,7 @@ const S = {
   weeks:[], results:[], profiles:{},
   previewStudentUid:null, previewSaved:null, setupLinkFor:null, timeOverride:null, teacherTab:'home', weeksView:'create', studentsView:'list', editingClasses:false, editingDraftId:null, showArchivedWeeks:false,
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null, ttDetailUid:null,
-  stuExpandedUid:null, overviewUid:null, raceLeft:null,
+  stuExpandedUid:null, overviewUid:null, raceLeft:null, newClass:null,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
   quickDeployDone:null, resetPasswordResult:null,
@@ -7760,13 +7797,7 @@ function renderStudentsTab(mode){
   clsBar.appendChild(stabs);
   const clsBtns=el('<div class="mmc-row" style="gap:8px;align-items:center;"></div>');
   const newCls=el('<button class="mmc-btn ghost sm">+ New class</button>');
-  newCls.onclick=async ()=>{
-    const name=prompt('Name for the new class (e.g. "5B" or "Year 4 Green"):');
-    if(!name) return;
-    const yr=prompt('Which year level is this class?\n\nEnter 0 for Pre-Primary, or 1 to 6.\n\nThis CANNOT be changed later — a class is one year level, and every set and result is built against it. For a composite room, make two classes.', String(DEFAULT_YEAR));
-    if(yr===null) return;
-    await createClass(name, yr);
-  };
+  newCls.onclick=()=>{ S.newClass={name:'',year:DEFAULT_YEAR}; render(); };
   clsBtns.appendChild(newCls);
   // The classes panel is always on now — nothing in it is destructive without a
   // confirmation, and hiding the per-class downloads behind a toggle was friction
@@ -7774,9 +7805,11 @@ function renderStudentsTab(mode){
 
   clsBar.appendChild(clsBtns);
   wrap.appendChild(clsBar);
+  const ncForm=renderNewClassForm();
+  if(ncForm) wrap.appendChild(ncForm);
 
   if(sview==='list'){
-    const panel=el('<div class="mmc-card"><h3>Your classes</h3><div class="meta">Rename a class or change its year level. A class can only be deleted once it has no students in it.</div></div>');
+    const panel=el('<div class="mmc-card"><h3>Your classes</h3><div class="meta">Rename a class here. The year level is fixed when a class is created — to change it, delete the class and make a new one. A class can only be deleted once it has no students in it.</div></div>');
     if(!S.classes.length){
       panel.appendChild(el('<div class="meta" style="margin-top:10px;">No classes yet.</div>'));
     }
@@ -7892,6 +7925,20 @@ function renderStudentsTab(mode){
           <span class="meta" style="margin:0;" id="mmc-bulk-classnote"></span>
         </div>
       </div>
+      <!-- Naming the new class happens HERE, in the flow. Choosing "a new class" and then
+           being sent away to create it, only to come back and start again, is three trips
+           for one job — and the year level was left at its default until you noticed. -->
+      <div id="mmc-bulk-newcls" style="display:none;border-left:3px solid var(--purple);padding:2px 0 2px 14px;margin:-4px 0 14px;">
+        <div class="mmc-field"><label>New class name</label>
+          <input type="text" id="mmc-bulk-newname" placeholder='e.g. "3B" or "Mr Lategan"'>
+        </div>
+        <div class="mmc-field" style="max-width:260px;"><label>Year level</label>
+          <select id="mmc-bulk-newyear">
+            ${YEAR_LEVELS.map(y=>`<option value="${y}" ${y===DEFAULT_YEAR?'selected':''}>${esc(yearLabel(y))}</option>`).join('')}
+          </select>
+        </div>
+        <div class="meta"><strong>The year level cannot be changed later.</strong> A class is one year level — for a composite room, make two classes.</div>
+      </div>
       <div class="mmc-field"><label>Class list</label>
         <textarea id="mmc-bulk-names" rows="8" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--paper-line);background:var(--paper);font-size:14px;" placeholder="Susie Miller
 Tom Nguyen
@@ -7907,21 +7954,27 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
   form.querySelector('#mmc-bulk-names').oninput=(e)=>{ S.bulkNamesText=e.target.value; };
   const bulkClassSel=form.querySelector('#mmc-bulk-class');
   const bulkNote=form.querySelector('#mmc-bulk-classnote');
+  const newClsBox=form.querySelector('#mmc-bulk-newcls');
   const syncBulkNote=()=>{
-    if(bulkNote) bulkNote.textContent = (bulkClassSel && bulkClassSel.value==='__new__')
-      ? "You'll be asked to name it." : '';
+    const makingNew = bulkClassSel && bulkClassSel.value==='__new__';
+    if(newClsBox) newClsBox.style.display = makingNew ? 'block' : 'none';
+    if(bulkNote) bulkNote.textContent = makingNew ? 'Name it and pick its year level below.' : '';
+    if(makingNew){ const n=form.querySelector('#mmc-bulk-newname'); if(n) setTimeout(()=>n.focus(),0); }
   };
   if(bulkClassSel){ bulkClassSel.onchange=syncBulkNote; syncBulkNote(); }
+  // No classes at all: default to making one rather than showing an empty selector.
+  if(bulkClassSel && !(S.classes||[]).length){ bulkClassSel.value='__new__'; syncBulkNote(); }
   form.querySelector('#mmc-bulk-go').onclick=async ()=>{
     // If they chose "+ A new class", create it first and make it current, so
     // every account created below lands in the right place.
     if(bulkClassSel && bulkClassSel.value==='__new__'){
-      const nm=prompt('Name for the new class (e.g. "5B" or "Year 4 Green"):');
-      if(!nm) return;
-      const yr=prompt('Which year level is this class?\n\nEnter 0 for Pre-Primary, or 1 to 6.\n\nThis CANNOT be changed later — a class is one year level, and everything the class does is built against it. For a composite room, make two classes.', String(DEFAULT_YEAR));
-      if(yr===null) return;
+      const nm=(form.querySelector('#mmc-bulk-newname').value||'').trim();
+      const yr=form.querySelector('#mmc-bulk-newyear').value;
+      if(!nm){ S.toast='Give the new class a name first.'; render(); return; }
       await createClass(nm, yr);
+      // createClass makes it current, so every account below lands in the right place.
       S.showAllClasses=false;
+      S.toast=`"${nm}" created as ${yearLabel(yr)}.`;
     } else if(bulkClassSel){
       S.showAllClasses=false; S.currentClassId=bulkClassSel.value;
     }
