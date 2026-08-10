@@ -4029,7 +4029,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.20';
+const BUILD = '2026-08-10.21';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -7839,6 +7839,17 @@ function renderTTChallenge(){
 }
 
 // ---------- Live Game (shared helpers) ----------
+// The 'ended' status is only ever written by whoever happens to have the room open — the
+// teacher's screen, or a student host's. Close the tab and nobody writes it, so the room
+// sits 'active' forever. Because it is the ONLY room students can see, that one stuck room
+// blocks the entire Racing Ground for the whole class: no race to finish, no way to start
+// another. Treat an expired clock as finished regardless of what the document says; the
+// status write becomes a tidy-up rather than something the interface depends on.
+function isRaceOver(room){
+  if(!room) return true;
+  if(room.status==='ended') return true;
+  return room.status==='active' && liveTimeLeft(room) <= 0;
+}
 function liveTimeLeft(room){
   if(!room.startedAt || !room.startedAt.seconds) return room.durationSec||300;
   const elapsed = (Date.now()/1000) - room.startedAt.seconds;
@@ -7936,10 +7947,16 @@ function renderTeacherLiveGame(){
   wrap.appendChild(rgHead);
   const room=currentLiveRoom();
 
-  if(!room || room.status==='ended'){
-    if(room && room.status==='ended'){
+  if(isRaceOver(room)){
+    if(room){
       wrap.appendChild(renderRaceTrack(null));
       wrap.appendChild(renderLiveLeaderboardCard('Final leaderboard', room, true));
+      // Best-effort tidy-up: if the clock ran out while nobody was watching, close the
+      // document now so it stops being the room everyone can see. The interface no longer
+      // depends on this succeeding — it just keeps the data honest.
+      if(room.status==='active'){
+        updateDoc(doc(db,'liveGames',room.id), {status:'ended'}).catch(()=>{});
+      }
     }
     const form=el(`
       <div class="mmc-card">
@@ -8117,11 +8134,6 @@ function renderMyLiveSession(){
     </div>
   `);
   wrap.appendChild(head);
-  // Temporary debug readout — shows how many times this screen has rebuilt since the page
-  // loaded. Should climb very slowly while just sitting on a question (ideally not at all
-  // between your own answers). If it's climbing fast while you're mid-typing, that's the
-  // smoking gun for what's still interrupting typing — screenshot this number.
-  wrap.appendChild(el(`<div class="meta" style="text-align:center;opacity:.6;">🔧 debug — screen rebuilt ${window.__mmcRenderCount||0} times so far</div>`));
   const chase=renderChaseCallout(S.user.uid);
   if(chase) wrap.appendChild(chase);
   const qbox=el(`
@@ -8201,8 +8213,8 @@ function renderStartRaceCard(sub){
 function renderStudentLiveGame(){
   const wrap=el('<div></div>');
   const room=currentLiveRoom();
-  if(!room || room.status==='ended'){
-    if(room && room.status==='ended') wrap.appendChild(renderLiveLeaderboardCard('Last race', room, true));
+  if(isRaceOver(room)){
+    if(room) wrap.appendChild(renderLiveLeaderboardCard('Last race', room, true));
     wrap.appendChild(renderStartRaceCard());
     return wrap;
   }
@@ -8249,7 +8261,7 @@ function renderStudentLiveGame(){
     }
     return wrap;
   }
-  if(room.status==='active'){
+  if(room.status==='active' && !isRaceOver(room)){
     if(!joined){
       wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">🐎</div>This race already started — you can watch, or start your own.</div>'));
       wrap.appendChild(renderStartRaceCard('That race is already running. Start your own one-minute race and your classmates can join yours instead.'));
