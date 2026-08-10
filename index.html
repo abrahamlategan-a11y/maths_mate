@@ -4630,6 +4630,16 @@ function renderTTDashboardSection(ttAttempts, forTeacher, studentName){
   return wrap;
 }
 
+// A brand-new student was being told what to work on before doing anything. One set is
+// not evidence — a child who slips on two questions of their first paper does not have a
+// weakness, they have a bad morning. Nothing is claimed until there is enough to claim it.
+//
+// The two sources are gated separately: a child who has done five fast-facts sessions and
+// no sets should still see their fast-facts feedback, rather than being told there is
+// nothing to say.
+const MIN_SETS_FOR_INSIGHT = 3;
+const MIN_TT_FOR_INSIGHT = 3;
+
 function renderStudentDashboard(opts){
   opts = opts || {};
   const results = opts.results || S.results;
@@ -4647,16 +4657,33 @@ function renderStudentDashboard(opts){
   wrap.appendChild(el(`<h3 style="font-family:Fredoka,sans-serif;margin:4px 0 4px;">${forTeacher? esc(opts.studentName)+"'s Dashboard" : 'My Maths Dashboard'}</h3>`));
   wrap.appendChild(el(`<div class="meta" style="margin-bottom:16px;">${forTeacher? 'A read-only view of their strengths, growth areas, and practice history.' : "Your personal coach — see what you're great at, what to work on, and exactly what to practise next."}</div>`));
 
-  // A child who has only done times tables still has something worth showing. Returning
-  // early here would hide it behind "no data yet", which reads as though their
-  // times-tables work hadn't counted for anything.
-  const ttSection = renderTTDashboardSection(ttAttempts, forTeacher, opts.studentName);
-  if(withData.length===0){
-    if(ttSection) wrap.appendChild(ttSection);
-    wrap.appendChild(el(`<div class="mmc-empty"><div class="mmc-empty-icon">🌱</div>${forTeacher? 'No quiz data yet for this student — once they complete a few sets, the rest of their dashboard will fill up here.' : 'Complete a few Weekly Quizzes and the rest of your dashboard will start filling up here!'}</div>`));
+  // Enough evidence to say anything? Counted in SESSIONS, not questions — three separate
+  // sittings show a pattern; thirty questions in one go show one morning.
+  const setsDone = new Set((results||[]).map(r=>r.weekId)).size;
+  const ttDone = (ttAttempts||[]).length;
+  const haveSets = setsDone >= MIN_SETS_FOR_INSIGHT && withData.length>0;
+  const haveTT = ttDone >= MIN_TT_FOR_INSIGHT;
+
+  // A child who has only done fast facts still has something worth showing, so the two
+  // are gated separately rather than behind one all-or-nothing check.
+  const ttSection = haveTT ? renderTTDashboardSection(ttAttempts, forTeacher, opts.studentName) : null;
+  if(!haveSets && !haveTT){
+    const name = forTeacher ? (opts.studentName||'This student') : 'you';
+    const needSets = Math.max(0, MIN_SETS_FOR_INSIGHT - setsDone);
+    const needTT = Math.max(0, MIN_TT_FOR_INSIGHT - ttDone);
+    wrap.appendChild(el(`<div class="mmc-empty"><div class="mmc-empty-icon">🌱</div>${forTeacher
+      ? `Nothing to report yet — ${esc(name)} has completed ${setsDone} practice set${setsDone===1?'':'s'} and ${ttDone} fast facts session${ttDone===1?'':'s'}. Feedback appears once there is enough to be fair about: ${MIN_SETS_FOR_INSIGHT} sets or ${MIN_TT_FOR_INSIGHT} fast facts sessions.`
+      : `Nothing here yet — and that is exactly right, because you have not done enough for this page to say anything useful. Finish ${needSets>0?`${needSets} more practice set${needSets===1?'':'s'}`:'a few more sets'}${needSets>0&&needTT>0?' or ':''}${needTT>0?`${needTT} more Fast Facts session${needTT===1?'':'s'}`:''} and your coach will start telling you what you are good at.`}</div>`));
     return wrap;
   }
   if(ttSection) wrap.appendChild(ttSection);
+  if(!haveSets){
+    // Fast facts have something to say; the weekly sets do not yet.
+    wrap.appendChild(el(`<div class="meta" style="margin-top:18px;">${forTeacher
+      ? `Only ${setsDone} practice set${setsDone===1?'':'s'} completed so far — skills feedback appears from ${MIN_SETS_FOR_INSIGHT}.`
+      : `Do a few more practice sets and this page will tell you about those skills too.`}</div>`));
+    return wrap;
+  }
 
   wrap.appendChild(el(`<h3 style="margin:18px 0 10px;">🌟 What ${forTeacher?'they are':"I'm"} good at</h3>`));
   if(strengths.length===0){
@@ -5350,7 +5377,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.54';
+const BUILD = '2026-08-10.55';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -8231,6 +8258,15 @@ function renderOverviewProfile(uid){
   // working. That is technically correct and practically useless. When nothing qualifies,
   // show the best and worst anyway and label it as early — a teacher can weigh a small
   // sample themselves, but they cannot weigh a blank page.
+  // Same rule as the student's own dashboard: nothing is claimed until there is enough to
+  // claim it. A freshly created student showed "strengths so far" built from a single
+  // paper, which is worse than showing nothing — a teacher could act on it.
+  const setsDone = new Set((res||[]).map(r=>r.weekId)).size;
+  if(setsDone < MIN_SETS_FOR_INSIGHT && tt.length < MIN_TT_FOR_INSIGHT){
+    wrap.appendChild(el(`<div class="mmc-empty" style="margin-top:16px;"><div class="mmc-empty-icon">🌱</div>
+      Nothing to report yet. ${esc(first)} has completed ${setsDone} practice set${setsDone===1?'':'s'} and ${tt.length} fast facts session${tt.length===1?'':'s'} — feedback appears from ${MIN_SETS_FOR_INSIGHT} sets or ${MIN_TT_FOR_INSIGHT} fast facts sessions, so that what it says is worth acting on.</div>`));
+    return wrap;
+  }
   const withAny = stats.filter(x=>x.total>=1 && !(SKILLS[x.skill] && SKILLS[x.skill].retired));
   const early = strengths.length===0 && weaknesses.length===0 && withAny.length>0;
   const bySkill = withAny.slice().sort((a,b)=>b.overallAccuracy-a.overallAccuracy || b.total-a.total);
