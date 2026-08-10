@@ -2519,6 +2519,7 @@ const METRIC_PAIRS=[
   {from:'kg',to:'g',k:1000,fam:'mass'},  {from:'g',to:'kg',k:1/1000,fam:'mass'},
   {from:'L',to:'mL',k:1000,fam:'capacity'},{from:'mL',to:'L',k:1/1000,fam:'capacity'},
 ];
+let _convDepth = 0;
 function genConversionV2(diff){
   const p=pick(METRIC_PAIRS);
   let val;
@@ -2539,9 +2540,27 @@ function genConversionV2(diff){
     return Number(r.toFixed(10).replace(/0+$/,'').replace(/\.$/,''));
   };
   let ans = exact(val * p.k);
-  // A conversion whose answer needs more than 5 decimal places is not a Year 4
-  // question — regenerate rather than ask a child for 0.0000466.
-  if(Math.abs(ans) < 0.0001 && ans !== 0) return genConversionV2(diff);
+  // Two decimal places is the ceiling. 3.97 m = 0.00397 km is exact and correct, and it is
+  // not a Year 4 question: decimal unit conversion sits in Year 5, and a child who
+  // understands the conversion perfectly can still lose the mark by miscounting zeros —
+  // which measures place-value transcription, not conversion.
+  //
+  // Retried rather than rounded, because rounding the answer is precisely the bug that
+  // marked correct answers wrong in August. Depth-limited: a pair like g→kg can be hard to
+  // satisfy, and an unbounded retry would blow the stack rather than serve a question.
+  const decimals = (v)=>{ const t=String(v); const i=t.indexOf('.'); return i<0?0:t.length-i-1; };
+  if(decimals(ans) > 2 || (Math.abs(ans) < 0.0001 && ans !== 0)){
+    if(_convDepth < 12){ _convDepth++; const q=genConversionV2(diff); _convDepth--; return q; }
+    // Last resort after repeated retries: fall back to a whole-number conversion in the
+    // same direction, so a set is never short a question.
+    const whole = Math.max(1, Math.round(val * p.k));
+    return {
+      prompt:`Complete the conversion: ${exact(whole / p.k)} ${p.from} = ___ ${p.to}`,
+      answer:String(whole),
+      explanation:`${exact(whole / p.k)} ${p.from} = ${whole} ${p.to}`,
+      subskill:`${p.from}_to_${p.to}`
+    };
+  }
   return {
     prompt:`Complete the conversion: ${val} ${p.from} = ___ ${p.to}`,
     answer:String(ans),
@@ -4410,7 +4429,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.32';
+const BUILD = '2026-08-10.33';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
