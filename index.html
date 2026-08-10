@@ -941,6 +941,16 @@ function drawQuadAngles(labels){
   labels.forEach((l,i)=>{ labelsSvg+=`<text x="${labelPos[i][0]}" y="${labelPos[i][1]}" font-size="17" font-family="IBM Plex Mono, monospace" font-weight="600" fill="#2B2620" text-anchor="middle">${l}</text>`; });
   return svgWrap(`<polygon points="${poly}" fill="none" stroke="#2B2620" stroke-width="3"/>${labelsSvg}`, 240,190);
 }
+// A single bar split into equal parts — the Year 3 fraction model. The Year 4 grids are
+// a rectangle of up to sixty squares, which is a different (and later) idea.
+function drawBar(num, den){
+  const w=Math.min(360, den*44), h=54, cw=w/den;
+  let inner='';
+  for(let i=0;i<den;i++){
+    inner+=`<rect x="${i*cw}" y="0" width="${cw}" height="${h}" fill="${i<num?'#E8A33D':'#FFFDF8'}" stroke="#2B2620" stroke-width="3"/>`;
+  }
+  return svgWrap(inner, w, h);
+}
 function drawLayers(layers,rows,cols){
   const cell=18, gap=10; let inner=''; let y=8;
   for(let L=0;L<layers;L++){
@@ -1037,8 +1047,17 @@ function genFracHalf(diff){
 }
 const GRID_SIZES = [ {rows:2,cols:5},{rows:4,cols:5},{rows:5,cols:6},{rows:5,cols:8},{rows:5,cols:10},{rows:6,cols:10},{rows:8,cols:10},{rows:10,cols:10} ];
 function genShadedGrid(diff, _strategy, year){
-  // Year 3 meets halves, quarters and eighths, then thirds. Anything finer is Year 4.
-  if(+year===3) return genShadedGridY4(diff==='hard' ? 'medium' : 'easy');
+  // Year 3 meets halves, quarters, eighths and thirds. The Year 4 grids run to sixty
+  // squares and were producing 33/50 and 10/60 — correct readings of the wrong question.
+  // Year 3 gets its own shape: a small bar split into a Year 3 denominator.
+  if(+year===3){
+    const den = diff==='easy' ? pick([2,4]) : diff==='medium' ? pick([2,3,4,8]) : pick([3,4,6,8]);
+    const num = randInt(1,den-1);
+    return { prompt:`What fraction of the shape is shaded?`,
+      svg:drawBar(num,den), answer:`${num}/${den}`,
+      explanation:`${num} parts out of ${den} are shaded, so ${num}/${den}.`,
+      subskill:`bar_${den}` };
+  }
   return genShadedGridY4(diff);
 }
 function genShadedGridY4(diff){
@@ -1253,14 +1272,17 @@ const PURCHASE_ITEMS=[
   {name:'a sticker pack', range:[100,250]}, {name:'a yoyo', range:[300,600]},
 ];
 function genCoins(diff, _strategy, year){
-  if(+year===3) return genCoinsY4('easy');
-  return genCoinsY4(diff);
+  // The Year 4 generator already does exactly the right progression — running total
+  // shown, then hidden, then change from a payment. Year 3 used to call 'easy' for all
+  // three levels, which threw all of that away. It gets the real ladder now, just with
+  // smaller amounts handled inside genCoinsY4.
+  return genCoinsY4(diff, +year===3);
 }
-function genCoinsY4(diff){
+function genCoinsY4(diff, y3){
   if(diff==='easy'){
     // Amounts reachable with a handful of coins; running total shown.
     let target;
-    do { target = Math.round(randInt(60,395)/5)*5; } while(!minimalCoins(target) || minimalCoins(target).length>4);
+    do { target = Math.round(randInt(y3?20:60, y3?195:395)/5)*5; } while(!minimalCoins(target) || minimalCoins(target).length>4);
     return buildCoinsQuestion(target,
       `Use the fewest coins possible to make exactly ${fmtCents(target)}.`,
       `${fmtCents(target)} needs ${minimalCoins(target).length} coins: ${minimalCoins(target).map(v=>coinByValue(v).l).join(' + ')}.`,
@@ -1268,7 +1290,7 @@ function genCoinsY4(diff){
   }
   if(diff==='medium'){
     let target;
-    do { target = Math.round(randInt(105,895)/5)*5; } while(!minimalCoins(target) || minimalCoins(target).length>6);
+    do { target = Math.round(randInt(y3?55:105, y3?495:895)/5)*5; } while(!minimalCoins(target) || minimalCoins(target).length>(y3?5:6));
     return buildCoinsQuestion(target,
       `Use the fewest coins possible to make exactly ${fmtCents(target)}.`,
       `${fmtCents(target)} needs ${minimalCoins(target).length} coins: ${minimalCoins(target).map(v=>coinByValue(v).l).join(' + ')}.`,
@@ -1288,7 +1310,7 @@ function genCoinsY4(diff){
     Math.ceil(total/500)*500,
     Math.ceil(total/1000)*1000,
   ].filter(p=>p>total && p-total<=500 && minimalCoins(p-total));
-  if(!candidates.length) return genCoins('hard');
+  if(!candidates.length) return genCoinsY4('hard', y3);
   const payment=pick(candidates);
   const change=payment-total;
   const itemList=joinWithAnd(chosenItems.map(it=>`${it.name} for ${fmtCents(it.price)}`));
@@ -1401,7 +1423,9 @@ function drawCutoutShape(sh){
 }
 
 function genArea(diff, _strategy, year){
-  if(+year===3) return genAreaY4('easy');
+  // Year 3 counts squares rather than using a formula, so it stays on the grid at every
+  // level — but a bigger, more awkward grid is genuinely harder to count.
+  if(+year===3) return genAreaY4(diff==='easy' ? 'easy' : 'medium');
   return genAreaY4(diff);
 }
 function genAreaY4(diff){
@@ -1568,7 +1592,42 @@ function genConversion(diff){
   return { prompt:`Complete the conversion: ${val} ${c.from} = ___ ${c.to}`, answer:correct, inputType:'choice', choices,
     explanation:`${val} ${c.from} × ${c.factor} = ${result} ${c.to}.` };
 }
-function genAngle(diff){
+function genAngle(diff, _strategy, year){
+  // Year 3 identifies right angles and compares others to them; the Year 4 classify-three
+  // and reflex work is a year early. Mapping all three levels onto Y4 'easy' left this
+  // completely flat, so Year 3 gets its own ladder.
+  if(+year===3) return genAngleY3(diff);
+  return genAngleY4(diff);
+}
+function genAngleY3(diff){
+  if(diff==='easy'){
+    // Is it a right angle or not — the first thing Year 3 does with angles.
+    const isRight = Math.random()<0.5;
+    const deg = isRight ? 90 : pick([randInt(20,75), randInt(105,165)]);
+    return { prompt:`Is this a right angle?`, inputType:'choice', choices:['yes','no'],
+      answer: isRight ? 'yes' : 'no',
+      explanation: isRight ? 'Yes — a right angle is exactly 90°, like the corner of a page.'
+                           : `No — this is about ${deg}°, and a right angle is exactly 90°.`,
+      svg:drawAngle(deg), subskill:'right_angle' };
+  }
+  if(diff==='medium'){
+    // Smaller or bigger than a right angle.
+    const smaller = Math.random()<0.5;
+    const deg = smaller ? randInt(20,80) : randInt(100,170);
+    return { prompt:`Is this angle smaller or bigger than a right angle?`,
+      inputType:'choice', choices:['smaller','bigger'], answer: smaller?'smaller':'bigger',
+      explanation:`This angle is about ${deg}°. A right angle is 90°, so it is ${smaller?'smaller':'bigger'}.`,
+      svg:drawAngle(deg), subskill:'compare_right_angle' };
+  }
+  // Hard: name it — acute, right or obtuse. Reflex and straight stay in Year 4.
+  const bucket=pick(['acute','right','obtuse']);
+  const deg = bucket==='right' ? 90 : bucket==='acute' ? randInt(15,80) : randInt(100,170);
+  return { prompt:`What type of angle is shown?`, inputType:'choice',
+    choices:['acute','right','obtuse'], answer:bucket,
+    explanation:`This angle measures about ${deg}°, which makes it ${bucket==='obtuse'?'an':'a'} ${bucket} angle.`,
+    svg:drawAngle(deg), subskill:'name_angle' };
+}
+function genAngleY4(diff){
   if(diff!=='hard'){
     const bucket=pick(['acute','right','obtuse','straight','reflex']);
     let deg;
@@ -2135,13 +2194,17 @@ function genPartition(diff, _strategy, year){
   // Year 3 partitions 3-digit numbers only, and never into decimal places — a Year 3
   // has not met decimals. Easy keeps a round tens digit so the three parts are clean.
   if(+year===3){
-    const h=randInt(1,9), t=diff==='easy'?randInt(1,9):randInt(0,9), o=diff==='easy'?randInt(1,9):randInt(0,9);
-    const num=h*100+t*10+o;
-    const parts=[h*100, t*10, o].filter(v=>v>0);
+    // Place value to thousands, then ten thousands, then beyond — the actual Year 3
+    // progression. It used to sit on three digits at every level.
+    const digits = diff==='easy' ? 3 : diff==='medium' ? 4 : 5;
+    const ds=[randInt(1,9)];
+    for(let i=1;i<digits;i++) ds.push(diff==='easy' ? randInt(1,9) : randInt(0,9));
+    const num=Number(ds.join(''));
+    const parts=ds.map((d,i)=>d*Math.pow(10,digits-1-i)).filter(v=>v>0);
     return { prompt:`Complete the partitioning.`, inputType:'parts',
       partsLead:`${formatGrouped(num)} =`, partsJoin:'+',
       parts:parts.map(()=>({})), answer:parts.join(','),
-      explanation:`${formatGrouped(num)} = ${parts.join(' + ')}` };
+      explanation:`${formatGrouped(num)} = ${parts.map(formatGrouped).join(' + ')}` };
   }
   return genPartitionY4(diff);
 }
@@ -2198,14 +2261,17 @@ function genPartitionY4(diff){
 // Constant step only. Direction, step size, missing position and start all vary.
 function genSequenceV2(diff, _strategy, year){
   if(+year===3){
-    // Skip counting is the Year 3 objective — 2s, 5s and 10s first, then 3s and 4s.
-    const step = diff==='easy' ? pick([2,5,10]) : diff==='medium' ? pick([2,3,5,10]) : pick([3,4,5,10]);
-    const start = step*randInt(1,10);
-    const terms=[]; for(let i=0;i<5;i++) terms.push(start+i*step);
+    // Skip counting, and the STEP is what gets harder. Hard used to count by 10s, which
+    // is easier than the 3s at Medium — the difficulty was running backwards.
+    // Hard also counts backwards, and starts off the multiple.
+    const step = diff==='easy' ? pick([2,5,10]) : diff==='medium' ? pick([3,4]) : pick([6,7,8,9,25,50]);
+    const back = diff==='hard' && Math.random()<0.5;
+    const start = back ? step*randInt(6,14) : step*randInt(1,8) + (diff==='hard'?randInt(0,step-1):0);
+    const terms=[]; for(let i=0;i<5;i++) terms.push(back ? start-i*step : start+i*step);
     const blankIdx=randInt(1,3); const answer=terms[blankIdx];
     const display=terms.map((t,i)=> i===blankIdx? '?' : String(t)).join(', ');
     return { prompt:`Fill in the missing number: ${display}`, answer:String(answer),
-      explanation:`The pattern counts up by ${step}, so the missing number is ${answer}.` };
+      explanation:`The pattern counts ${back?'back':'up'} by ${step}, so the missing number is ${answer}.` };
   }
   return genSequenceY4(diff);
 }
@@ -2277,8 +2343,35 @@ function genRoundingY4(diff){
 // ---------- Q4 ORDERING WHOLE NUMBERS ----------
 // Four deliberately confusable numbers built from the same digit pool.
 function genOrderingV2(diff, _strategy, year){
-  if(+year===3) return genOrderingY4(diff==='hard' ? 'medium' : 'easy');
+  // Year 3 compares and orders TO 10 000, so four digits is the ceiling. Mapping onto the
+  // Year 4 levels was never going to work: Y4 'easy' is 3-4 digits and 'medium' is 4-5, so
+  // Year 3 kept producing five-digit numbers. It gets its own ladder — 3 digits, then 4,
+  // then 4 with a shared prefix so the digits have to be read properly.
+  if(+year===3) return genOrderingY3(diff);
   return genOrderingY4(diff);
+}
+function genOrderingY3(diff){
+  const len = diff==='easy' ? 3 : 4;
+  const sharedPrefix = diff==='hard';
+  const pool=new Set();
+  let guard=0;
+  const prefix = sharedPrefix ? String(randInt(1,9)) : '';
+  while(pool.size<4 && guard++<500){
+    const rest = String(randInt(Math.pow(10,len-prefix.length-1), Math.pow(10,len-prefix.length)-1));
+    pool.add(Number(prefix+rest));
+  }
+  const shown=[...pool].slice(0,4);
+  if(shown.length<4) return genOrderingY3('easy');
+  const asc = Math.random()<0.5;
+  const sorted=shown.slice().sort((a,b)=> asc? a-b : b-a);
+  const clue = diff==='hard' ? '' : (asc?' (smallest to biggest)':' (biggest to smallest)');
+  return {
+    prompt:`Tap the numbers in ${asc?'ascending':'descending'} order${clue}.`,
+    items:shuffleArr(shown).map(formatGrouped),
+    answer:sorted.map(formatGrouped).join(','),
+    explanation:`${asc?'Ascending':'Descending'} order: ${sorted.map(formatGrouped).join(', ')}`,
+    inputType:'order', checkType:'numlist'
+  };
 }
 function genOrderingY4(diff){
   // The four numbers must be genuinely confusable: they share a leading prefix
@@ -2370,8 +2463,13 @@ function genAdditionV2(diff, _strategy, year){
     if(diff==='medium'){ const a=randInt(101,899), b=randInt(11,99);
       return { prompt:`${formatGrouped(a)} + ${b} = ?`, answer:String(a+b),
         explanation:`${formatGrouped(a)} + ${b} = ${formatGrouped(a+b)}` }; }
-    const a=randInt(101,499), b=randInt(101,399), c=randInt(11,99);
-    return { prompt:`${a} + ${b} + ${c} = ?`, answer:String(a+b+c),
+    // Three addends, and Hard must still beat Medium — but "addition to three digits"
+    // means the TOTAL stays inside three digits as well, so the parts are drawn to sum
+    // under 1000 rather than capped afterwards.
+    const c=randInt(21,99);
+    const a=randInt(201,999-c-101);
+    const b=randInt(101, 999-c-a);
+    return { prompt:`${formatGrouped(a)} + ${formatGrouped(b)} + ${c} = ?`, answer:String(a+b+c),
       explanation:`${a} + ${b} + ${c} = ${formatGrouped(a+b+c)}` };
   }
   return genAdditionY4(diff);
@@ -2470,11 +2568,18 @@ function genPowersOfTen(diff, op){
 }
 function genMultiplicationV2(diff, _strategy, year){
   if(+year===3){
-    // The same four tables the Year 3 times-tables ladder uses, so the weekly set and
-    // the Training Ground are teaching the same facts. No powers-of-ten rotation:
-    // multiplying by 100 is a Year 4 idea.
-    const table = diff==='easy' ? pick([2,5,10]) : diff==='medium' ? pick([2,3,5,10]) : pick([2,3,4,5,10]);
-    const n = diff==='easy' ? randInt(1,6) : randInt(1,10);
+    // Same tables as the Year 3 fast-facts ladder. Hard used to draw from a wider set of
+    // tables but the same size numbers, so it regularly landed easier than Medium — it now
+    // uses the harder tables AND asks for a missing factor.
+    // Year 3 tables are 2, 3, 4, 5 and 10 — full stop. Hard gets harder by asking for a
+    // MISSING FACTOR and using the bigger multipliers, not by importing the 6s and 8s,
+    // which belong to Year 4 and are outside this curriculum.
+    const table = diff==='easy' ? pick([2,5,10]) : diff==='medium' ? pick([2,3,4,5,10]) : pick([3,4,5]);
+    const n = diff==='easy' ? randInt(2,6) : diff==='medium' ? randInt(2,10) : randInt(6,10);
+    if(diff==='hard' && Math.random()<0.55){
+      return { prompt:`${table} × ___ = ${table*n}`, answer:String(n),
+        explanation:`${table} × ${n} = ${table*n}` };
+    }
     return Math.random()<0.5
       ? { prompt:`${table} × ${n} = ?`, answer:String(table*n), explanation:`${table} × ${n} = ${table*n}` }
       : { prompt:`${n} × ${table} = ?`, answer:String(table*n), explanation:`${n} × ${table} = ${table*n}` };
@@ -2496,9 +2601,15 @@ function genMultiplicationV2(diff, _strategy, year){
 // ---------- Q9 DIVISION (synchronised rotation) ----------
 function genDivisionV2(diff, _strategy, year){
   if(+year===3){
-    // Exact division inside the same tables — Year 3 does not meet remainders.
-    const divisor = diff==='easy' ? pick([2,5,10]) : diff==='medium' ? pick([2,3,5,10]) : pick([2,3,4,5,10]);
-    const quotient = diff==='easy' ? randInt(1,6) : randInt(1,10);
+    // Exact division inside the same tables — Year 3 does not meet remainders. Same fix as
+    // multiplication: the harder tables at Hard, and sometimes a missing divisor.
+    // Same rule as multiplication: 2, 3, 4, 5 and 10 only.
+    const divisor = diff==='easy' ? pick([2,5,10]) : diff==='medium' ? pick([2,3,4,5,10]) : pick([3,4,5]);
+    const quotient = diff==='easy' ? randInt(2,6) : diff==='medium' ? randInt(2,10) : randInt(6,10);
+    if(diff==='hard' && Math.random()<0.55){
+      return { prompt:`${divisor*quotient} ÷ ___ = ${quotient}`, answer:String(divisor),
+        explanation:`${divisor*quotient} ÷ ${divisor} = ${quotient}` };
+    }
     return { prompt:`${divisor*quotient} ÷ ${divisor} = ?`, answer:String(quotient),
       explanation:`${divisor*quotient} ÷ ${divisor} = ${quotient}` };
   }
@@ -2567,6 +2678,96 @@ function genConversionV2(diff){
     explanation:`${val} ${p.from} = ${ans} ${p.to}`,
     subskill:`${p.from}_to_${p.to}`
   };
+}
+
+// ---------- Year 3: measurement, 3D shapes, fact families ----------
+// Year 3 measures with metres/centimetres, kilograms/grams and litres/millilitres. The
+// skill is choosing and combining units, not decimal conversion — that is Year 5.
+const MEASURE_UNITS = [
+  { big:'m',  small:'cm', per:100, thing:['a desk','a door','a rope','a bench'] },
+  { big:'kg', small:'g',  per:1000, thing:['a bag of flour','a melon','a puppy','a brick'] },
+  { big:'L',  small:'mL', per:1000, thing:['a bottle','a jug','a bucket','a watering can'] },
+];
+function genMeasurement(diff, _strategy, year){
+  const u = pick(MEASURE_UNITS);
+  const item = pick(u.thing);
+  if(diff==='easy'){
+    // Which unit would you use? The first measurement decision a Year 3 makes.
+    const useBig = Math.random()<0.5;
+    const opts=[u.big,u.small];
+    return { prompt:`Which unit would you use to measure ${item}?`,
+      inputType:'choice', choices:shuffleArr([u.big,u.small,pick(MEASURE_UNITS.filter(x=>x!==u)).big]),
+      answer: useBig ? u.big : u.small,
+      explanation:`${item.charAt(0).toUpperCase()+item.slice(1)} is measured in ${useBig?u.big:u.small}.`,
+      subskill:`unit_choice_${u.big}` };
+  }
+  if(diff==='medium'){
+    // Whole-unit conversion only — no decimals.
+    const n=randInt(2,9);
+    return { prompt:`How many ${u.small} are in ${n} ${u.big}?`, answer:String(n*u.per),
+      explanation:`1 ${u.big} = ${u.per} ${u.small}, so ${n} ${u.big} = ${n*u.per} ${u.small}.`,
+      subskill:`convert_${u.big}_${u.small}` };
+  }
+  // Hard: combined units, which is the actual Year 3 objective.
+  const b=randInt(1,6), sm=randInt(1,9)*(u.per===100?10:100);
+  return { prompt:`A ${item.replace(/^an? /,'')} is ${b} ${u.big} and ${sm} ${u.small}. How many ${u.small} is that altogether?`,
+    answer:String(b*u.per+sm),
+    explanation:`${b} ${u.big} = ${b*u.per} ${u.small}, plus ${sm} ${u.small} = ${b*u.per+sm} ${u.small}.`,
+    subskill:`combined_${u.big}_${u.small}` };
+}
+
+// Faces, edges and vertices, and naming the common solids.
+const SOLIDS = [
+  { name:'cube',                 f:6, e:12, v:8,  curved:false },
+  { name:'rectangular prism',    f:6, e:12, v:8,  curved:false },
+  { name:'triangular prism',     f:5, e:9,  v:6,  curved:false },
+  { name:'square pyramid',       f:5, e:8,  v:5,  curved:false },
+  { name:'triangular pyramid',   f:4, e:6,  v:4,  curved:false },
+  { name:'cylinder',             f:3, e:2,  v:0,  curved:true  },
+  { name:'cone',                 f:2, e:1,  v:1,  curved:true  },
+  { name:'sphere',               f:1, e:0,  v:0,  curved:true  },
+];
+function genShapes3D(diff){
+  if(diff==='easy'){
+    const s3=pick(SOLIDS);
+    const others=shuffleArr(SOLIDS.filter(x=>x.name!==s3.name)).slice(0,3).map(x=>x.name);
+    return { prompt:`Which shape has ${s3.f} face${s3.f===1?'':'s'} and ${s3.v} vertice${s3.v===1?'':'s'}?`,
+      inputType:'choice', choices:shuffleArr([s3.name,...others]), answer:s3.name,
+      explanation:`A ${s3.name} has ${s3.f} faces, ${s3.e} edges and ${s3.v} vertices.`,
+      subskill:'name_solid' };
+  }
+  const s3 = diff==='medium' ? pick(SOLIDS.filter(x=>!x.curved)) : pick(SOLIDS);
+  const what = pick(['faces','edges','vertices']);
+  const n = what==='faces'? s3.f : what==='edges'? s3.e : s3.v;
+  return { prompt:`How many ${what} does a ${s3.name} have?`, answer:String(n),
+    explanation:`A ${s3.name} has ${s3.f} faces, ${s3.e} edges and ${s3.v} vertices.`,
+    subskill:`count_${what}` };
+}
+
+// Fact families: the same three numbers, four ways. This is the inverse relationship
+// made explicit, which is exactly what the Year 3 spec asks for.
+function genFactFamily(diff){
+  if(diff==='easy'){
+    const a=randInt(2,9), b=randInt(2,9); const t=a+b;
+    return { prompt:`${a} + ${b} = ${t}, so what is ${t} − ${a}?`, answer:String(b),
+      explanation:`${a} + ${b} = ${t}, so ${t} − ${a} = ${b}. Same three numbers.`,
+      subskill:'add_sub_family' };
+  }
+  if(diff==='medium'){
+    const a=randInt(4,20), b=randInt(4,20); const t=a+b;
+    return Math.random()<0.5
+      ? { prompt:`${t} − ${a} = ${b}, so what is ${b} + ${a}?`, answer:String(t),
+          explanation:`They are the same fact family: ${a}, ${b} and ${t}.`, subskill:'add_sub_family' }
+      : { prompt:`${a} + ${b} = ${t}, so what is ${t} − ${b}?`, answer:String(a),
+          explanation:`${a} + ${b} = ${t}, so ${t} − ${b} = ${a}.`, subskill:'add_sub_family' };
+  }
+  // Hard: multiplication and division as one family.
+  const t=pick([2,3,4,5,10]), n=randInt(2,10); const prod=t*n;
+  return Math.random()<0.5
+    ? { prompt:`${t} × ${n} = ${prod}, so what is ${prod} ÷ ${t}?`, answer:String(n),
+        explanation:`${t}, ${n} and ${prod} are one fact family.`, subskill:'mul_div_family' }
+    : { prompt:`${prod} ÷ ${n} = ${t}, so what is ${n} × ${t}?`, answer:String(prod),
+        explanation:`${t}, ${n} and ${prod} are one fact family.`, subskill:'mul_div_family' };
 }
 
 // ---------- Q20 FRACTION OF A COLLECTION ----------
@@ -2770,9 +2971,10 @@ const AMPM_CTX_HARD=[
 ];
 function pad2(n){ return String(n).padStart(2,'0'); }
 function genTime(diff, _strategy, year){
-  // Year 3 reads o'clock, half past, quarter past/to and five-minute intervals. The
-  // duration and am/pm families are Year 4, so Year 3 always gets the clock face.
-  if(+year===3) return genTimeY4(diff==='hard' ? 'medium' : 'easy', 0);
+  // Year 3 reads o'clock and half past, then quarter past and to, then five-minute
+  // intervals. Always the clock face — duration and am/pm are Year 4 — but the precision
+  // climbs, which it did not when all three levels called the same thing.
+  if(+year===3) return genTimeY4(diff==='hard' ? 'hard' : diff==='medium' ? 'medium' : 'easy', 0);
   return genTimeY4(diff);
 }
 function genTimeY4(diff, familyOverride){
@@ -2906,7 +3108,9 @@ const CHANCE_CTX=[
 ];
 const CHANCE_COLOURS=['red','blue','yellow','green','purple','orange'];
 function genProbability(diff, _strategy, year){
-  if(+year===3) return genProbabilityY4('easy');
+  // Certain / likely / unlikely / impossible at Easy, then comparisons. The Year 4 Hard
+  // branch asks for a probability as a fraction, which Year 3 has not met.
+  if(+year===3) return genProbabilityY4(diff==='easy' ? 'easy' : 'medium');
   return genProbabilityY4(diff);
 }
 function genProbabilityY4(diff){
@@ -3022,9 +3226,9 @@ function listWithUnits(vals, unit){
   return parts.slice(0,-1).join(', ')+' and '+parts[parts.length-1];
 }
 function genStatistics(diff, _strategy, year){
-  // Reading and comparing a simple data display. Averages are a Year 4 idea, and the
-  // Y4 Hard branch is where means live — Year 3 never reaches it.
-  if(+year===3) return genStatisticsY4('easy');
+  // Reading a display, then interpreting it. Averages are a Year 4 idea and live in the
+  // Y4 Hard branch, so Year 3 tops out at 'medium' and never reaches a mean.
+  if(+year===3) return genStatisticsY4(diff==='easy' ? 'easy' : 'medium');
   return genStatisticsY4(diff);
 }
 function genStatisticsY4(diff){
@@ -3116,6 +3320,9 @@ const SKILLS = {
   MIXED_IMPROPER:   { title:'Mixed and improper fractions' },
   PROBABILITY:      { title:'Chance and probability' },
   STATISTICS:       { title:'Data and averages' },
+  MEASUREMENT:      { title:'Measuring length, mass and capacity' },
+  SHAPES_3D:        { title:'3D shapes' },
+  FACT_FAMILY:      { title:'Fact families' },
   // Retired — kept so historical results still resolve to a sensible title.
   PLACE_VALUE:      { title:'Place value', retired:true },
   DECIMAL_PLACE:    { title:'Decimal place value', retired:true },
@@ -3130,8 +3337,9 @@ const YEAR_PLANS = {
   // a year early. FACTORS and METRIC_CONVERT go for the same reason. 16 is also closer
   // to Year 3 stamina than 24.
   3: ['PARTITION','SEQUENCE','ROUNDING','ORDER_WHOLE','ADDITION','SUBTRACTION',
-      'MULTIPLICATION','DIVISION','VISUAL_FRACTION','FRACTION_OF','COINS','TIME',
-      'AREA_PERIMETER','MISSING_NUMBER','PROBABILITY','STATISTICS'],
+      'MULTIPLICATION','DIVISION','FACT_FAMILY','MISSING_NUMBER','VISUAL_FRACTION',
+      'FRACTION_OF','COINS','TIME','MEASUREMENT','AREA_PERIMETER','ANGLES',
+      'SHAPES_3D','PROBABILITY','STATISTICS'],
   4: ['PARTITION','SEQUENCE','ROUNDING','ORDER_WHOLE','FACTORS','ADDITION','SUBTRACTION',
       'MULTIPLICATION','DIVISION','COMPARE_FRACTION','VISUAL_FRACTION','FRAC_DEC',
       'ORDER_DECIMAL','COINS','AREA_PERIMETER','TIME','SIMPLIFY_FRACTION','METRIC_CONVERT',
@@ -3229,6 +3437,10 @@ const SLOTS=[
   {skill:'MIXED_IMPROPER',   title:'Mixed and improper fractions', gen:genMixedImproper},
   {skill:'PROBABILITY',      title:'Chance and probability',       gen:genProbability},
   {skill:'STATISTICS',       title:'Data and averages',            gen:genStatistics},
+  // Year 3 only — never appear in the Year 4 plan.
+  {skill:'MEASUREMENT',      title:'Measuring length, mass and capacity', gen:genMeasurement},
+  {skill:'SHAPES_3D',        title:'3D shapes',                    gen:genShapes3D},
+  {skill:'FACT_FAMILY',      title:'Fact families',                gen:genFactFamily},
 ];
 function buildQuestion(slotIdx, diff, strategyKey, year){
   const list = slotsForYear(year);
@@ -4429,7 +4641,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.33';
+const BUILD = '2026-08-10.35';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
