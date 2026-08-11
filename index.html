@@ -409,6 +409,9 @@
     var(--paper); }
   .mmc-empty { text-align:center; padding:40px 20px; color:var(--ink-soft); font-weight:600; }
   .mmc-empty-icon { font-size:36px; margin-bottom:8px; }
+  .mmc-toast.good { background:#2E7D4F; }
+  .mmc-toast.warn { background:#B8690A; }
+  .mmc-toast.bad  { background:var(--incorrect); }
   .mmc-toast { position:sticky; top:8px; z-index:20; background:var(--incorrect); color:#fff; padding:10px 14px; border-radius:10px; border:2.5px solid var(--ink); font-size:13px; font-weight:700; margin-bottom:14px; box-shadow:3px 3px 0 var(--ink); display:flex; justify-content:space-between; align-items:center; gap:10px; }
   .mmc-toast-close { background:none; border:none; color:#fff; font-weight:800; font-size:14px; cursor:pointer; padding:0 2px; flex-shrink:0; }
 
@@ -716,6 +719,8 @@
   #mmc.mmc-pro .mmc-qedit { border:1px solid var(--pro-line); border-radius:6px; background:var(--pro-wash); }
   #mmc.mmc-pro .mmc-qedit textarea, #mmc.mmc-pro .mmc-qedit input { border:1px solid var(--pro-line); border-radius:6px; }
   #mmc.mmc-pro .mmc-toast { border:1px solid var(--pro-bad); border-radius:6px; box-shadow:none; font-weight:600; }
+  #mmc.mmc-pro .mmc-toast.good { border-color:#2E7D4F; }
+  #mmc.mmc-pro .mmc-toast.warn { border-color:#B8690A; }
   #mmc.mmc-pro code.mmc-code { border:1px solid var(--pro-line); background:var(--pro-wash); border-radius:4px; }
   #mmc.mmc-pro .mmc-empty { color:var(--pro-mute); font-weight:400; }
   #mmc.mmc-pro .mmc-genstep {
@@ -854,6 +859,17 @@ import {
 // a single miss would silently pollute a real child's data), every Firestore
 // write is intercepted here at the import. Preview mode is therefore safe by
 // construction: a write path added later is guarded automatically.
+// Tone is read from the message rather than set at 80-odd call sites, so a new message
+// is styled sensibly the moment it is written. An explicit S.toastTone always wins.
+const TOAST_BAD  = /could not|couldn'?t|failed|error:|error\b/i;
+const TOAST_WARN = /cannot|can'?t|choose |pick at least|give the |enter |need |no students|no practice sets|nothing to clear|nothing was cleared|already|is 4 numbers|first\.|try again|switched off|not enough|no race with/i;
+function toastTone(msg){
+  if(S.toastTone) return S.toastTone;
+  const m=String(msg||'');
+  if(TOAST_BAD.test(m)) return 'bad';
+  if(TOAST_WARN.test(m)) return 'warn';
+  return 'good';
+}
 function isPreviewing(){ try { return !!S.previewStudentUid; } catch(e){ return false; } }
 // While previewing, a teacher's live listeners keep firing and would replace the narrowed
 // arrays with the whole class again mid-preview. Every snapshot goes through this, so the
@@ -5398,7 +5414,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.62';
+const BUILD = '2026-08-10.63';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -5824,7 +5840,7 @@ const S = {
   previewStudentUid:null, previewSaved:null, setupLinkFor:null, timeOverride:null, teacherTab:'home', weeksView:'create', studentsView:'list', editingClasses:false, editingDraftId:null, showArchivedWeeks:false,
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null, ttDetailUid:null,
   stuExpandedUid:null, overviewUid:null, raceLeft:null, newClass:null, setsFilter:'ALL', justCreatedId:null, worthOpen:null,
-  externalRoomId:null, externalRoom:null, pinBusy:false, pinDraft:'', hideGetStarted:false,
+  externalRoomId:null, externalRoom:null, pinBusy:false, pinDraft:'', hideGetStarted:false, toastTone:null,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
   quickDeployDone:null, resetPasswordResult:null,
@@ -6256,8 +6272,12 @@ function render(){
   const body=el('<div class="mmc-body"></div>');
   if(S.toast){
     scheduleToastClear();
-    const toastEl=el(`<div class="mmc-toast">${esc(S.toast)}<button type="button" class="mmc-toast-close">✕</button></div>`);
-    toastEl.querySelector('.mmc-toast-close').onclick=()=>{ S.toast=null; if(toastTimer){clearTimeout(toastTimer); toastTimer=null;} toastTimerValue=null; render(); };
+    // Every message used to be red, so "Class created" and "Could not save" looked
+    // identical — which teaches a teacher to flinch at their own successes and, worse,
+    // to stop reading the ones that matter. Three tones: something broke, something
+    // needs doing differently, something worked.
+    const toastEl=el(`<div class="mmc-toast ${toastTone(S.toast)}">${esc(S.toast)}<button type="button" class="mmc-toast-close">✕</button></div>`);
+    toastEl.querySelector('.mmc-toast-close').onclick=()=>{ S.toast=null; S.toastTone=null; if(toastTimer){clearTimeout(toastTimer); toastTimer=null;} toastTimerValue=null; render(); };
     body.appendChild(toastEl);
   }
   if(S.error) body.appendChild(el(`<div class="mmc-toast">${esc(S.error)}</div>`));
