@@ -240,6 +240,8 @@
   .mmc-gs-title { font-weight:750; font-size:16.5px; letter-spacing:-.01em; padding-top:4px; }
   .mmc-gs-step.done .mmc-gs-title { text-decoration:line-through; opacity:.6; }
   .mmc-gs-text { font-size:14px; color:var(--ink-soft); margin-top:3px; line-height:1.45; }
+  .mmc-speak { margin:2px 0 10px; opacity:.85; }
+  .mmc-speak:hover { opacity:1; }
   .mmc-setfilter { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:16px; }
   .mmc-setchip {
     font-family:'Nunito Sans',sans-serif; font-size:13px; font-weight:700;
@@ -5474,7 +5476,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.71';
+const BUILD = '2026-08-10.72';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -5525,6 +5527,94 @@ function attachPasswordEye(input){
     input.focus();
   };
   wrap.appendChild(btn);
+}
+
+// ---------- Reading a question aloud ----------
+// Built on the browser's own speech, so there is nothing to install, nothing to pay for,
+// and it works on a school iPad with no network once the voice is cached.
+//
+// The speaking is the easy part. Handing "3/4 of 20" straight to a speech engine gets you
+// "three slash four of twenty", and × is usually read as nothing at all. So every question
+// is turned into a sentence a person would actually say before it is spoken.
+const SPOKEN_FRACTIONS = {
+  '1/2':'a half', '1/3':'a third', '2/3':'two thirds', '1/4':'a quarter', '3/4':'three quarters',
+  '1/5':'a fifth', '1/8':'an eighth', '1/10':'a tenth',
+};
+function spokenFraction(n,d){
+  const key=`${n}/${d}`;
+  if(SPOKEN_FRACTIONS[key]) return SPOKEN_FRACTIONS[key];
+  const names={2:'half',3:'third',4:'quarter',5:'fifth',6:'sixth',7:'seventh',8:'eighth',
+               9:'ninth',10:'tenth',11:'eleventh',12:'twelfth',100:'hundredth'};
+  const unit=names[d]||(d+'th');
+  return `${n} ${unit}${Number(n)===1?'':'s'}`;
+}
+function speakText(raw){
+  let t=' '+String(raw||'')+' ';
+  // Thousands separators are spaces in this app, which a speech engine reads as a pause
+  // in the middle of a number. Close them up first.
+  t=t.replace(/(\d)\s(?=\d{3}\b)/g,'$1');
+  // Fractions before anything else, or the slash survives into the sentence.
+  t=t.replace(/(\d+)\s*\/\s*(\d+)/g,(m,n,d)=>' '+spokenFraction(n,d)+' ');
+  t=t.replace(/×/g,' times ').replace(/÷/g,' divided by ')
+     .replace(/−/g,' minus ').replace(/-(?=\d)/g,' negative ')
+     .replace(/\+/g,' plus ').replace(/=/g,' equals ')
+     .replace(/</g,' is less than ').replace(/>/g,' is greater than ')
+     .replace(/%/g,' percent ')
+     .replace(/°C/g,' degrees ').replace(/°/g,' degrees ')
+     .replace(/\bcm³\b/g,' cubic centimetres ').replace(/\bcm²\b/g,' square centimetres ')
+     .replace(/\bm²\b/g,' square metres ')
+     .replace(/___+/g,' what ');
+  // A question mark is only a BLANK when it stands alone between spaces. At the end of a
+  // sentence it is punctuation, and turning that into "what" gave us
+  // "What is 45 times 6 what".
+  t=t.replace(/\s\?(?=\s)/g,' what ');
+  t=t.replace(/\?/g,'');
+  t=t.replace(/\s+/g,' ').trim();
+  return t;
+}
+// The prompt is only part of a question. Partitioning, fractions and comparisons keep
+// their numbers in separate fields, so each shape needs saying in full.
+function speakableQuestion(q){
+  if(!q) return '';
+  const bits=[];
+  if(q.fracOfLead){
+    bits.push(`What is ${spokenFraction(q.fracNum,q.fracDen)} of ${q.ofTotal}?`);
+  } else if(q.partsLead!=null || q.partsTail!=null){
+    bits.push(String(q.prompt||''));
+    bits.push(speakText(`${q.partsLead||''} what ${q.partsTail||''}`));
+  } else {
+    bits.push(speakText(q.prompt));
+  }
+  if(q.givenNum!=null && q.givenDen!=null && !q.fracOfLead)
+    bits.push(spokenFraction(q.givenNum,q.givenDen));
+  if(q.showFracNum!=null)
+    bits.push(`${q.showWhole!=null?q.showWhole+' and ':''}${spokenFraction(q.showFracNum,q.showFracDen)}`);
+  if(q.leftNum!=null && q.rightNum!=null)
+    bits.push(`${spokenFraction(q.leftNum,q.leftDen)}, or ${spokenFraction(q.rightNum,q.rightDen)}`);
+  if(Array.isArray(q.items) && q.items.length && q.inputType==='order')
+    bits.push('The numbers are ' + q.items.map(x=>speakText(x)).join(', '));
+  if(Array.isArray(q.choices) && q.choices.length)
+    bits.push('Your choices are ' + q.choices.map(c=>speakText(c)).join(', '));
+  if(q.svg) bits.push('Look at the picture.');
+  return bits.filter(Boolean).join('. ').replace(/\.\s*\./g,'.');
+}
+function stopSpeaking(){ try{ window.speechSynthesis.cancel(); }catch(e){} }
+function speakQuestion(q){
+  if(!('speechSynthesis' in window)) { S.toast='This device cannot read questions aloud.'; render(); return; }
+  stopSpeaking();
+  const u=new SpeechSynthesisUtterance(speakableQuestion(q));
+  u.rate=0.9;                     // slower than default; these are children
+  u.lang='en-AU';
+  const voices=window.speechSynthesis.getVoices()||[];
+  const au=voices.find(v=>v.lang==='en-AU') || voices.find(v=>/en-GB|en-AU/.test(v.lang));
+  if(au) u.voice=au;
+  try{ window.speechSynthesis.speak(u); }catch(e){}
+}
+function renderSpeakButton(q){
+  if(!('speechSynthesis' in window)) return null;
+  const b=el('<button type="button" class="mmc-btn ghost sm mmc-speak" title="Read this question out loud">🔊 Read it to me</button>');
+  b.onclick=(e)=>{ e.preventDefault(); e.stopPropagation(); speakQuestion(q); };
+  return b;
 }
 
 function buildKeypad(onKey){
@@ -10948,7 +11038,14 @@ function renderQuestionBody(q, st, onCheck, headerHTML){
       ${fracPromptHTML(q)}
     </div>
   `);
-  function doCheck(){ if(st.checked) return; st.checked=true; st.correct=gradeQuestion(q, st.given);
+  // Every student question goes through this function, so the read-aloud button only
+  // needs adding once and can never be missing from one question type.
+  const speak=renderSpeakButton(q);
+  if(speak){
+    const qt=qbox.querySelector('.qtext');
+    if(qt) qt.insertAdjacentElement('afterend', speak); else qbox.appendChild(speak);
+  }
+  function doCheck(){ if(st.checked) return; stopSpeaking(); st.checked=true; st.correct=gradeQuestion(q, st.given);
     st.flags=answerFlags(q, st.given); render(); onCheck(); }
 
   if(q.inputType==='choice'){
