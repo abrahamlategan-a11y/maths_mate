@@ -5384,7 +5384,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.59';
+const BUILD = '2026-08-10.61';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -5808,6 +5808,7 @@ const S = {
   previewStudentUid:null, previewSaved:null, setupLinkFor:null, timeOverride:null, teacherTab:'home', weeksView:'create', studentsView:'list', editingClasses:false, editingDraftId:null, showArchivedWeeks:false,
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null, ttDetailUid:null,
   stuExpandedUid:null, overviewUid:null, raceLeft:null, newClass:null, setsFilter:'ALL', justCreatedId:null, worthOpen:null,
+  externalRoomId:null, externalRoom:null, pinBusy:false, pinDraft:'',
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
   quickDeployDone:null, resetPasswordResult:null,
@@ -5855,6 +5856,10 @@ function currentLiveRoom(){
   const myClassId = S.isTeacher ? (S.showAllClasses ? null : S.currentClassId) : (S.profile && S.profile.classId);
   const visible = S.liveGames.filter(g => !g.classId || !myClassId || g.classId===myClassId);
   const active = visible.filter(g=>g.status==='lobby'||g.status==='active');
+  // A race joined by PIN is a deliberate choice, so it beats anything the class happens
+  // to have open — including the teacher's. Walking into a lesson would otherwise silently
+  // pull a child out of the race they just joined with their sister.
+  if(S.externalRoom && !isRaceOver(S.externalRoom)) return S.externalRoom;
   if(active.length){
     const newest = active.slice().sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
     // A CLASS race outranks everything. When a teacher starts one it is a whole-class
@@ -5879,6 +5884,89 @@ function currentLiveRoom(){
 // How long a finished race stays on screen. Long enough to look at the result together,
 // short enough that the Racing Ground is clear by the next lesson.
 const RACE_RESULT_WINDOW_SEC = 15*60;
+
+// ---------- Joining a race by PIN ----------
+// Four digits, because a six-year-old has to read it aloud across a kitchen table. The
+// trade is that 10,000 is a small space, so it is narrowed in every other direction: a PIN
+// only points at a race while that race is open, it is retired the moment the race ends,
+// and the lookup can be read one at a time but never listed, so the codes cannot be swept.
+async function generateRacePin(){
+  // Unique among races that are currently open. 10,000 codes sounds ample until you
+  // remember the birthday problem — with a hundred open races, a blind pick collides
+  // surprisingly often.
+  for(let i=0;i<25;i++){
+    const pin=String(randInt(1000,9999));
+    try{
+      const snap=await getDoc(doc(db,'racePins',pin));
+      if(!snap.exists()) return pin;
+      const d=snap.data()||{};
+      // A stale pointer to a race that has finished is free to reuse.
+      if(d.expiresAt && d.expiresAt < Date.now()) return pin;
+    }catch(e){ return pin; }   // cannot check: take it rather than block the race
+  }
+  return String(randInt(1000,9999));
+}
+async function publishRacePin(pin, gameId, hostName){
+  try{
+    await setDoc(doc(db,'racePins',pin), {
+      gameId, hostUid:S.user.uid, hostName:hostName||'',
+      teacherUid: S.isTeacher ? S.user.uid : ((S.profile&&S.profile.teacherUid)||null),
+      expiresAt: Date.now() + 6*60*60*1000
+    });
+  }catch(e){ /* the race still works, just not by PIN */ }
+}
+async function retireRacePin(room){
+  if(!room || !room.pin) return;
+  try{ await deleteDoc(doc(db,'racePins',String(room.pin))); }catch(e){}
+}
+// Joining someone else's race. The room is outside this student's teacher, so it is not in
+// S.liveGames and never will be — it gets its own listener, and currentLiveRoom prefers it.
+async function joinRaceByPin(pin){
+  pin=String(pin||'').trim();
+  if(!/^\d{4}$/.test(pin)){ S.toast='A race PIN is 4 numbers.'; render(); return; }
+  S.pinBusy=true; render();
+  try{
+    const snap=await getDoc(doc(db,'racePins',pin));
+    if(!snap.exists()){ S.toast='No race with that PIN. Check the numbers and try again.'; S.pinBusy=false; render(); return; }
+    const info=snap.data()||{};
+    if(info.expiresAt && info.expiresAt < Date.now()){
+      S.toast='That race has finished.'; S.pinBusy=false; render(); return;
+    }
+    await setDoc(doc(db,'liveGames',info.gameId,'participants',S.user.uid), {
+      uid:S.user.uid,
+      name:(S.profile&&S.profile.displayName)||(S.profile&&S.profile.username)||'Player',
+      score:0, position:0, joinedAt:serverTimestamp(),
+      horseColor:(S.profile&&S.profile.horseColor)||'default',
+      horseHat:(S.profile&&S.profile.horseHat)||'none'
+    });
+    S.externalRoomId = info.gameId;
+    subscribeExternalRoom(info.gameId);
+    S.raceLeft=null;
+    S.toast=`You've joined ${info.hostName? info.hostName+"'s" : 'the'} race!`;
+  }catch(e){
+    // The most likely refusal by far, so name it rather than showing a raw error.
+    S.toast='Could not join. Cross-class racing may be switched off for one of your classes.';
+  }
+  S.pinBusy=false; render();
+}
+let externalRoomUnsub=null;
+function subscribeExternalRoom(gameId){
+  if(externalRoomUnsub){ externalRoomUnsub(); externalRoomUnsub=null; }
+  if(!gameId){ S.externalRoom=null; return; }
+  externalRoomUnsub = onSnapshot(doc(db,'liveGames',gameId), snap=>{
+    S.externalRoom = snap.exists() ? {id:snap.id, ...snap.data()} : null;
+    if(S.externalRoom && isRaceOver(S.externalRoom) &&
+       raceEndedSecondsAgo(S.externalRoom) > RACE_RESULT_WINDOW_SEC){
+      // Let go of it once the result has expired, so a child is not stuck looking at
+      // someone else's finished race instead of their own class's next one.
+      S.externalRoomId=null; S.externalRoom=null;
+      if(externalRoomUnsub){ externalRoomUnsub(); externalRoomUnsub=null; }
+    }
+    ensureParticipantsSub(currentLiveRoom()?.id||null);
+    if(S.myLive && S.myLive.answering) return;
+    render();
+  }, ()=>{ S.externalRoom=null; render(); });
+}
 // When a race actually finished. New rooms record endedAt; older ones do not, so fall
 // back to when it would have run out — which is right for a race that timed out, and
 // close enough for one that was cancelled.
@@ -8703,6 +8791,30 @@ function renderStudentsTab(mode){
 
   if(mode==='teachers'){
 
+  // On unless a teacher switches it off, and either teacher switching it off is enough.
+  // The field is absent on existing profiles, so absence must read as ON — `!== false`
+  // rather than a truthiness check, or every teacher would start switched off.
+  const crossOn = !(S.profile && S.profile.allowCrossClassRacing === false);
+  const crossCard=el(`<div class="mmc-card" style="margin-bottom:14px;">
+    <div class="mmc-row" style="justify-content:space-between;align-items:flex-start;gap:14px;">
+      <div style="flex:1;">
+        <h3 style="margin:0 0 4px;">Racing outside your class</h3>
+        <div class="meta" style="margin:0;">Your students can join a race in another class by typing that race's 4-number PIN — a sibling at home, or a friend in another room. There is no way to browse other classes; they must be given the PIN by someone who has it. <strong>Switch this off and no student of yours can join or be joined across classes</strong>, whatever the other teacher has set.</div>
+      </div>
+      <button class="mmc-btn ${crossOn?'gold':'ghost'} sm" id="mmc-cross-toggle" style="white-space:nowrap;">${crossOn?'On':'Off'}</button>
+    </div>
+  </div>`);
+  crossCard.querySelector('#mmc-cross-toggle').onclick=async ()=>{
+    try{
+      await updateDoc(doc(db,'profiles',S.user.uid), {allowCrossClassRacing: !crossOn});
+      S.profile = Object.assign({}, S.profile, {allowCrossClassRacing: !crossOn});
+      S.toast = crossOn ? 'Your students can now only race within your own class.'
+                        : 'Your students can now join races in other classes using a PIN.';
+    }catch(e){ S.toast='Could not change that — check your connection.'; }
+    render();
+  };
+  wrap.appendChild(crossCard);
+
   const linkCard = renderSetupLinkCard();
   if(linkCard) wrap.appendChild(linkCard);
   const pwCard = renderTeacherPwCard();
@@ -10014,8 +10126,10 @@ function renderTeacherLiveGame(){
         for(const g of openStudentRooms){
           try{ await updateDoc(doc(db,'liveGames',g.id), {status:'ended', endedAt:serverTimestamp()}); }catch(e2){}
         }
-        await addDoc(collection(db,'liveGames'), { teacherUid:S.user.uid, level, status:'lobby', createdAt:serverTimestamp(), durationSec:300,
+        const pin = await generateRacePin();
+        const ref = await addDoc(collection(db,'liveGames'), { pin, teacherUid:S.user.uid, level, status:'lobby', createdAt:serverTimestamp(), durationSec:300,
           classId: S.showAllClasses ? null : S.currentClassId });
+        await publishRacePin(pin, ref.id, (S.profile&&S.profile.displayName)||'Your teacher');
         if(openStudentRooms.length) S.toast=`Class race created — ${openStudentRooms.length} student race${openStudentRooms.length===1?'':'s'} closed.`;
       }
       catch(e){ S.toast='Could not create the room — check your connection.'; render(); }
@@ -10257,7 +10371,9 @@ async function hostStudentRace(){
   const classRace=(S.liveGames||[]).find(g=>!g.hostUid && (g.status==='lobby'||g.status==='active') && !isRaceOver(g));
   if(classRace){ S.toast='Your teacher has a race on — join that one!'; render(); return; }
   try{
+    const pin = await generateRacePin();
     const ref = await addDoc(collection(db,'liveGames'), {
+      pin,
       teacherUid: S.profile.teacherUid,
       hostUid: S.user.uid,
       hostName: S.profile.displayName || '',
@@ -10268,8 +10384,30 @@ async function hostStudentRace(){
       status: 'lobby', createdAt: serverTimestamp(), durationSec: STUDENT_RACE_SECONDS,
       classId: S.profile.classId || null
     });
+    await publishRacePin(pin, ref.id, S.profile.displayName||'');
     await joinLiveGame(ref.id);
   }catch(e){ S.toast='Could not start the race — check your connection.'; render(); }
+}
+
+// Always on screen, whether or not their own class has a race going. It is the only way
+// across to another class, so it cannot be tucked behind a state.
+function renderJoinByPinCard(){
+  const card=el(`<div class="mmc-card">
+    <h3 style="margin:0 0 4px;">🔢 Join with a PIN</h3>
+    <div class="meta" style="margin-bottom:10px;">Racing someone in another class? Ask them for their 4-number race PIN.</div>
+    <div class="mmc-row" style="gap:8px;align-items:center;">
+      <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="mmc-pin-in"
+        placeholder="0000" value="${esc(S.pinDraft||'')}"
+        style="width:130px;font-family:'IBM Plex Mono',monospace;font-size:26px;font-weight:700;letter-spacing:.22em;text-align:center;padding:8px 10px;">
+      <button class="mmc-btn gold" id="mmc-pin-go" ${S.pinBusy?'disabled':''}>${S.pinBusy?'Joining…':'Join ▶'}</button>
+    </div>
+  </div>`);
+  const input=card.querySelector('#mmc-pin-in');
+  input.oninput=(e)=>{ S.pinDraft=e.target.value.replace(/\D/g,'').slice(0,4); e.target.value=S.pinDraft; };
+  const go=()=>joinRaceByPin(S.pinDraft);
+  card.querySelector('#mmc-pin-go').onclick=go;
+  input.onkeydown=(e)=>{ if(e.key==='Enter') go(); };
+  return card;
 }
 
 function renderStartRaceCard(sub){
@@ -10332,6 +10470,7 @@ function renderStudentLiveGame(){
   if(isRaceOver(room)){
     if(room) wrap.appendChild(renderLiveLeaderboardCard('Last race', room, true));
     wrap.appendChild(renderStartRaceCard());
+    wrap.appendChild(renderJoinByPinCard());
     return wrap;
   }
   const joined = S.liveParticipants.some(p=>p.id===S.user.uid);
@@ -10361,6 +10500,7 @@ function renderStudentLiveGame(){
       `);
       card.querySelector('#mmc-live-join').onclick=()=>joinLiveGame(room.id);
       wrap.appendChild(card);
+      wrap.appendChild(renderJoinByPinCard());
       // Not everyone wants to join the race that happens to be open. Only offered for
       // student-hosted races — declining the teacher's class race is not a child's call.
       if(room.hostUid){
@@ -10376,6 +10516,10 @@ function renderStudentLiveGame(){
             <div class="meta">${iAmHost
               ? `${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} ready. Start when everyone has joined.`
               : `Waiting for ${room.hostUid? esc(room.hostName||'the host') : 'your teacher'} to start… ${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} ready.`}</div>
+            ${room.pin?`<div style="margin-top:12px;">
+              <div class="meta" style="margin:0;">Race PIN — read this out so someone in another class can join</div>
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:38px;font-weight:800;letter-spacing:.18em;">${esc(room.pin)}</div>
+            </div>`:''}
           </div>
         `));
         if(!iAmHost) wrap.appendChild(raceExitButton('← Leave this race', ()=>leaveLiveGame(room.id)));
