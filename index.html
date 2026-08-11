@@ -5384,7 +5384,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.58';
+const BUILD = '2026-08-10.59';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -5868,8 +5868,31 @@ function currentLiveRoom(){
     const mine = newest.find(g=>g.hostUid && S.user && g.hostUid===S.user.uid);
     return mine || newest[0];
   }
-  const ended = visible.filter(g=>g.status==='ended').slice().sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+  // A finished race stayed on screen forever, so the Racing Ground always opened on a
+  // stale leaderboard from some race nobody remembered. Results are worth seeing straight
+  // afterwards and worth nothing an hour later, so they expire.
+  const now = Date.now()/1000;
+  const ended = visible.filter(g=>g.status==='ended' && raceEndedSecondsAgo(g, now) <= RACE_RESULT_WINDOW_SEC)
+    .slice().sort((a,b)=>(raceEndedAtSeconds(b)||0)-(raceEndedAtSeconds(a)||0));
   return ended[0] || null;
+}
+// How long a finished race stays on screen. Long enough to look at the result together,
+// short enough that the Racing Ground is clear by the next lesson.
+const RACE_RESULT_WINDOW_SEC = 15*60;
+// When a race actually finished. New rooms record endedAt; older ones do not, so fall
+// back to when it would have run out — which is right for a race that timed out, and
+// close enough for one that was cancelled.
+function raceEndedAtSeconds(g){
+  if(!g) return 0;
+  if(g.endedAt && g.endedAt.seconds) return g.endedAt.seconds;
+  const created = (g.createdAt && g.createdAt.seconds) || 0;
+  if(!created) return 0;
+  return created + (Number(g.durationSec) || 300);
+}
+function raceEndedSecondsAgo(g, nowSec){
+  const at = raceEndedAtSeconds(g);
+  if(!at) return Infinity;                 // no timestamp at all: treat as ancient
+  return (nowSec || Date.now()/1000) - at;
 }
 let liveParticipantsGen = 0;
 function ensureParticipantsSub(gameId){
@@ -9940,7 +9963,7 @@ function startLiveTeacherTimer(room){
     if(timerEl) timerEl.textContent=formatMMSS(left);
     if(left<=0){
       clearInterval(teacherLiveTimerHandle); teacherLiveTimerHandle=null;
-      try{ await updateDoc(doc(db,'liveGames',r.id), {status:'ended'}); }
+      try{ await updateDoc(doc(db,'liveGames',r.id), {status:'ended', endedAt:serverTimestamp()}); }
       catch(e){ S.toast='Could not auto-end the game: '+e.message; render(); }
     }
   },1000);
@@ -9967,7 +9990,7 @@ function renderTeacherLiveGame(){
       // document now so it stops being the room everyone can see. The interface no longer
       // depends on this succeeding — it just keeps the data honest.
       if(room.status==='active'){
-        updateDoc(doc(db,'liveGames',room.id), {status:'ended'}).catch(()=>{});
+        updateDoc(doc(db,'liveGames',room.id), {status:'ended', endedAt:serverTimestamp()}).catch(()=>{});
       }
     }
     const form=el(`
@@ -9989,7 +10012,7 @@ function renderTeacherLiveGame(){
         // twenty minutes ago, blocking the next one. Closing is honest and permanent.
         const openStudentRooms=(S.liveGames||[]).filter(g=>g.hostUid && (g.status==='lobby'||g.status==='active'));
         for(const g of openStudentRooms){
-          try{ await updateDoc(doc(db,'liveGames',g.id), {status:'ended'}); }catch(e2){}
+          try{ await updateDoc(doc(db,'liveGames',g.id), {status:'ended', endedAt:serverTimestamp()}); }catch(e2){}
         }
         await addDoc(collection(db,'liveGames'), { teacherUid:S.user.uid, level, status:'lobby', createdAt:serverTimestamp(), durationSec:300,
           classId: S.showAllClasses ? null : S.currentClassId });
@@ -10018,7 +10041,7 @@ function renderTeacherLiveGame(){
           <div class="meta">While it's open, students can only join it — they can't start their own race. Close it if you're finished.</div></div>`);
         const close=el('<button class="mmc-btn danger sm">Close this lobby</button>');
         close.onclick=async ()=>{
-          try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended'}); }
+          try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended', endedAt:serverTimestamp()}); }
           catch(e){ S.toast='Could not close the lobby — check your connection.'; render(); }
         };
         warn.appendChild(close);
@@ -10041,7 +10064,7 @@ function renderTeacherLiveGame(){
       catch(e){ S.toast='Could not start — check your connection.'; render(); }
     };
     card.querySelector('#mmc-live-cancel').onclick=async ()=>{
-      try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended'}); }
+      try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended', endedAt:serverTimestamp()}); }
       catch(e){ S.toast='Could not cancel — check your connection.'; render(); }
     };
     wrap.appendChild(card);
@@ -10067,7 +10090,7 @@ function renderTeacherLiveGame(){
     `);
     head.querySelector('#mmc-live-end').onclick=async ()=>{
       if(!confirm('End the Racing Ground now for everyone? This freezes the final standings.')) return;
-      try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended'}); }catch(e){ S.toast='Could not end — check your connection.'; render(); }
+      try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended', endedAt:serverTimestamp()}); }catch(e){ S.toast='Could not end — check your connection.'; render(); }
     };
     wrap.appendChild(head);
     wrap.appendChild(renderRaceTrack(null, true));
@@ -10148,7 +10171,7 @@ async function endMyHostedRaceIfDue(room){
   if(studentHostEndedRoom===room.id) return;
   if(liveTimeLeft(room) > 0) return;
   studentHostEndedRoom=room.id;
-  try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended'}); }
+  try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended', endedAt:serverTimestamp()}); }
   catch(e){ studentHostEndedRoom=null; }   // let it retry next tick
 }
 
@@ -10293,7 +10316,7 @@ async function leaveLiveGame(gameId){
 async function endHostedRaceNow(room){
   if(!room || room.hostUid!==S.user.uid) return;
   if(!confirm('End this race now for everyone?')) return;
-  try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended'}); }
+  try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended', endedAt:serverTimestamp()}); }
   catch(e){ S.toast='Could not end the race — check your connection.'; render(); }
 }
 // One consistent exit control, so every state offers the same affordance in the same place.
@@ -10360,7 +10383,7 @@ function renderStudentLiveGame(){
           const cancel=el('<button class="mmc-btn ghost sm" style="width:100%;margin-bottom:8px;">✕ Cancel this race</button>');
           cancel.onclick=async ()=>{
             cancel.disabled=true; cancel.textContent='Cancelling…';
-            try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended'}); }
+            try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended', endedAt:serverTimestamp()}); }
             catch(e){ S.toast='Could not cancel — check your connection.'; cancel.disabled=false; cancel.textContent='✕ Cancel this race'; render(); }
           };
           wrap.appendChild(cancel);
@@ -10381,7 +10404,7 @@ function renderStudentLiveGame(){
         wrap.appendChild(readyBtn);
         wrap.appendChild(raceExitButton(room.hostUid===S.user.uid ? '✕ Cancel this race' : '← Leave this race',
           room.hostUid===S.user.uid
-            ? async ()=>{ try{ await updateDoc(doc(db,'liveGames',room.id),{status:'ended'}); }catch(e){ S.toast='Could not cancel — check your connection.'; render(); } }
+            ? async ()=>{ try{ await updateDoc(doc(db,'liveGames',room.id),{status:'ended', endedAt:serverTimestamp()}); }catch(e){ S.toast='Could not cancel — check your connection.'; render(); } }
             : ()=>leaveLiveGame(room.id)));
       }
     }
