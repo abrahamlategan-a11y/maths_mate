@@ -5449,7 +5449,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.67';
+const BUILD = '2026-08-10.68';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -10224,6 +10224,34 @@ function ensureTeacherLiveTimer(){
   if(room && room.status==='active'){ startLiveTeacherTimer(room); }
   else if(teacherLiveTimerHandle){ clearInterval(teacherLiveTimerHandle); teacherLiveTimerHandle=null; teacherLiveTimerRoomId=null; }
 }
+async function createLiveRoom(){
+      // `level` is no longer chosen. It survives only as the fallback for a student with
+      // no group set, and their YEAR still applies on top of it. Kept on the document so
+      // older rooms and any code reading room.level keep working.
+      const level='medium';
+      // Closing children's races is the right default when a teacher wants the room's
+      // attention, but doing it silently is not. Now that every race is listed rather than
+      // one being chosen, a teacher can also just leave them running.
+      const openStudentRooms=(S.liveGames||[]).filter(g=>g.hostUid && (g.status==='lobby'||g.status==='active') && !isRaceOver(g));
+      let closeTheirs = false;
+      if(openStudentRooms.length){
+        closeTheirs = confirm(`${openStudentRooms.length} student race${openStudentRooms.length===1?' is':'s are'} open.\n\nOK  -  close ${openStudentRooms.length===1?'it':'them'} and start yours\nCancel  -  leave ${openStudentRooms.length===1?'it':'them'} running alongside yours`);
+      }
+      try{
+        if(closeTheirs) for(const g of openStudentRooms){
+          try{ await updateDoc(doc(db,'liveGames',g.id), {status:'ended', endedAt:serverTimestamp()}); await retireRacePin(g); }catch(e2){}
+        }
+        const pin = await generateRacePin();
+        const ref = await addDoc(collection(db,'liveGames'), { pin, teacherUid:S.user.uid, level, status:'lobby', createdAt:serverTimestamp(), durationSec:300,
+          classId: S.showAllClasses ? null : S.currentClassId });
+        await publishRacePin(pin, ref.id, (S.profile&&S.profile.displayName)||'Your teacher');
+        S.toast = closeTheirs
+          ? `Class race created · ${openStudentRooms.length} student race${openStudentRooms.length===1?'':'s'} closed.`
+          : 'Class race created.';
+      }
+      catch(e){ S.toast='Could not create the room. Check your connection.'; render(); }
+    }
+
 function renderTeacherLiveGame(){
   const wrap=el('<div></div>');
   const rgHead=el('<div class="mmc-row" style="justify-content:flex-end;margin-bottom:12px;"></div>');
@@ -10250,82 +10278,62 @@ function renderTeacherLiveGame(){
         <button class="mmc-btn gold" id="mmc-live-create">🐎 Create Room</button>
       </div>
     `);
-    form.querySelector('#mmc-live-create').onclick=async ()=>{
-      // `level` is no longer chosen. It survives only as the fallback for a student with
-      // no group set, and their YEAR still applies on top of it. Kept on the document so
-      // older rooms and any code reading room.level keep working.
-      const level='medium';
-      try{
-        // Close any student-run races first. Hiding them would be enough for the duration,
-        // but they would reappear the moment the class race ended. A stale lobby from
-        // twenty minutes ago, blocking the next one. Closing is honest and permanent.
-        const openStudentRooms=(S.liveGames||[]).filter(g=>g.hostUid && (g.status==='lobby'||g.status==='active'));
-        for(const g of openStudentRooms){
-          try{ await updateDoc(doc(db,'liveGames',g.id), {status:'ended', endedAt:serverTimestamp()}); }catch(e2){}
-        }
-        const pin = await generateRacePin();
-        const ref = await addDoc(collection(db,'liveGames'), { pin, teacherUid:S.user.uid, level, status:'lobby', createdAt:serverTimestamp(), durationSec:300,
-          classId: S.showAllClasses ? null : S.currentClassId });
-        await publishRacePin(pin, ref.id, (S.profile&&S.profile.displayName)||'Your teacher');
-        if(openStudentRooms.length) S.toast=`Class race created · ${openStudentRooms.length} student race${openStudentRooms.length===1?'':'s'} closed.`;
-      }
-      catch(e){ S.toast='Could not create the room. Check your connection.'; render(); }
-    };
+    form.querySelector('#mmc-live-create').onclick=()=>createLiveRoom();
     wrap.appendChild(form);
     return wrap;
   }
 
   if(room.status==='lobby'){
-    // Flag student-hosted rooms clearly. A teacher should never wonder where a race came
-    // from, and this is the only visible sign that a child started one.
-    if(room.hostUid) wrap.appendChild(el(`<div class="mmc-card" style="border-color:var(--gold);">
-      <h3>Started by ${esc(room.hostName||'a student')}</h3>
-      <div class="meta">A student in your class started this race. You can start or end it like any other.</div></div>`));
-    // An open lobby is the ONLY room students can see, so one left sitting there blocks
-    // every child from starting their own. Say how old it is and make closing it obvious.
-    {
-      const opened = room.createdAt && room.createdAt.seconds ? room.createdAt.seconds : 0;
-      const mins = opened ? Math.floor((Date.now()/1000 - opened)/60) : null;
-      if(mins!=null && mins>=10){
-        const warn=el(`<div class="mmc-card" style="border-color:var(--incorrect);">
-          <h3>This lobby has been open ${mins} minutes</h3>
-          <div class="meta">While it's open, students can only join it. They can't start their own race. Close it if you're finished.</div></div>`);
-        const close=el('<button class="mmc-btn danger sm">Close this lobby</button>');
-        close.onclick=async ()=>{
-          try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended', endedAt:serverTimestamp()}); }
-          catch(e){ S.toast='Could not close the lobby. Check your connection.'; render(); }
-        };
-        warn.appendChild(close);
-        wrap.appendChild(warn);
-      }
-    }
-    const card=el(`
-      <div class="mmc-card">
-        <h3>🐎 Room open</h3>
-        <div class="meta">Students see a Join button now. Start whenever you're ready. Everyone's timer begins at the same moment.</div>
-        <div class="meta" style="font-weight:800;color:var(--ink);">${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} waiting · Room: <code class="mmc-code">${esc(room.id.slice(0,6))}</code></div>
-        <div class="mmc-row" style="margin-top:8px;">
-          <button class="mmc-btn gold" id="mmc-live-start">▶ Start Game</button>
-          <button class="mmc-btn danger sm" id="mmc-live-cancel">Cancel room</button>
-        </div>
-      </div>
-    `);
-    card.querySelector('#mmc-live-start').onclick=async ()=>{
-      try{ await updateDoc(doc(db,'liveGames',room.id), {status:'active', startedAt:serverTimestamp()}); }
-      catch(e){ S.toast='Could not start. Check your connection.'; render(); }
-    };
-    card.querySelector('#mmc-live-cancel').onclick=async ()=>{
-      try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended', endedAt:serverTimestamp()}); }
-      catch(e){ S.toast='Could not cancel. Check your connection.'; render(); }
-    };
-    wrap.appendChild(card);
-    if(S.liveParticipants.length){
-      const list=el('<div class="mmc-card"></div>');
-      S.liveParticipants.slice().sort((a,b)=>(a.joinedAt?.seconds||0)-(b.joinedAt?.seconds||0)).forEach(p=>{
-        list.appendChild(el(`<div style="padding:4px 0;">🙋 ${esc(p.name)}</div>`));
+    // One card per race, not four stacked ones saying overlapping things. The old view
+    // showed a "started by" banner, a stale-lobby warning, a room card and a player list
+    // for a single race, and the warning claimed students could not start their own,
+    // which stopped being true the moment races became a list.
+    const rooms = (S.liveGames||[]).filter(g=>(g.status==='lobby'||g.status==='active') && !isRaceOver(g))
+      .sort((a,b)=>{
+        if(!a.hostUid && b.hostUid) return -1;
+        if(a.hostUid && !b.hostUid) return 1;
+        return (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0);
       });
-      wrap.appendChild(list);
+    if(rooms.length>1){
+      wrap.appendChild(el(`<div class="mmc-setgroup"><span class="mmc-setgroup-name">🐎 Races open now</span>
+        <span class="mmc-setgroup-count">${rooms.length}</span></div>`));
     }
+    rooms.forEach(r=>{
+      const isMine = !r.hostUid;
+      const opened = r.createdAt && r.createdAt.seconds ? r.createdAt.seconds : 0;
+      const mins = opened ? Math.floor((Date.now()/1000 - opened)/60) : null;
+      const stale = mins!=null && mins>=20;
+      const players = (r.id===(room&&room.id)) ? S.liveParticipants : null;
+      const card=el(`<div class="mmc-card${isMine?' mmc-classrace':''}" style="margin-bottom:10px;">
+        ${isMine?'<div class="mmc-classflag">🏫 Your class race</div>':''}
+        <h3 style="margin:0 0 2px;">${isMine ? 'Your race' : esc((r.hostName||'A student')+"'s race")}</h3>
+        <div class="meta" style="margin:0;">${r.status==='active'?'Running now':'Waiting to start'} · ${(Number(r.durationSec)||300)<=60?'one minute':'five minutes'}${mins!=null?` · opened ${mins} min ago`:''}</div>
+        ${r.pin?`<div class="meta" style="margin-top:6px;">Race PIN <code class="mmc-code" style="font-size:15px;letter-spacing:.12em;">${esc(r.pin)}</code></div>`:''}
+        ${players ? `<div class="mmc-worth-names" style="margin-top:10px;">${
+            players.length ? players.slice().sort((a,b)=>(a.joinedAt?.seconds||0)-(b.joinedAt?.seconds||0))
+              .map(p=>`<span>${esc(p.name||'Player')}</span>`).join('')
+            : '<span style="opacity:.6;">nobody yet</span>'}</div>` : ''}
+        <div class="mmc-row" style="margin-top:10px;gap:8px;">
+          ${r.status==='lobby'?'<button class="mmc-btn gold sm" data-act="start">▶ Start</button>':''}
+          <button class="mmc-btn ${stale?'danger':'ghost'} sm" data-act="end">${r.status==='active'?'End now':'Close'}</button>
+        </div>
+        ${stale?`<div class="meta" style="margin-top:8px;color:var(--incorrect);font-weight:700;">Open ${mins} minutes. Close it if you are finished with it.</div>`:''}
+      </div>`);
+      const startBtn=card.querySelector('[data-act="start"]');
+      if(startBtn) startBtn.onclick=async ()=>{
+        try{ await updateDoc(doc(db,'liveGames',r.id), {status:'active', startedAt:serverTimestamp()}); }
+        catch(e){ S.toast='Could not start. Check your connection.'; render(); }
+      };
+      card.querySelector('[data-act="end"]').onclick=async ()=>{
+        try{ await updateDoc(doc(db,'liveGames',r.id), {status:'ended', endedAt:serverTimestamp()}); await retireRacePin(r); }
+        catch(e){ S.toast='Could not close that race. Check your connection.'; render(); }
+      };
+      wrap.appendChild(card);
+    });
+    // A teacher can always open another, even with student races running.
+    const another=el(`<button class="mmc-btn ${rooms.some(r=>!r.hostUid)?'ghost':'gold'} sm" style="margin-top:6px;">🐎 ${rooms.some(r=>!r.hostUid)?'Start another class race':'Start a class race'}</button>`);
+    another.onclick=()=>createLiveRoom();
+    wrap.appendChild(another);
     return wrap;
   }
 
