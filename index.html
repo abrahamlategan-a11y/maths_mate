@@ -5449,7 +5449,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.68';
+const BUILD = '2026-08-10.69';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -5921,7 +5921,23 @@ function currentLiveRoom(){
   // this feature existed) stay visible to everyone as a safe fallback.
   const myClassId = S.isTeacher ? (S.showAllClasses ? null : S.currentClassId) : (S.profile && S.profile.classId);
   const visible = S.liveGames.filter(g => !g.classId || !myClassId || g.classId===myClassId);
-  const active = visible.filter(g=>g.status==='lobby'||g.status==='active');
+  // isRaceOver covers BOTH a room marked ended and one still marked active whose clock ran
+  // out. The second kind was landing in this list and staying there forever, because the
+  // expiry below only ever looked at rooms marked ended. That is why a finished race sat
+  // on the Racing Ground for the best part of an hour.
+  //
+  // A lobby nobody ever started is dead too. It is not "ended" and its clock never began,
+  // so nothing retired it. After LOBBY_MAX_AGE_SEC it stops being offered.
+  const nowSec = Date.now()/1000;
+  const active = visible.filter(g=>{
+    if(g.status!=='lobby' && g.status!=='active') return false;
+    if(isRaceOver(g)) return false;
+    if(g.status==='lobby'){
+      const opened = (g.createdAt && g.createdAt.seconds) || 0;
+      if(opened && (nowSec-opened) > LOBBY_MAX_AGE_SEC) return false;
+    }
+    return true;
+  });
   // A race joined by PIN is a deliberate choice, so it beats anything the class happens
   // to have open. Including the teacher's. Walking into a lesson would otherwise silently
   // pull a child out of the race they just joined with their sister.
@@ -5951,14 +5967,17 @@ function currentLiveRoom(){
   // A finished race stayed on screen forever, so the Racing Ground always opened on a
   // stale leaderboard from some race nobody remembered. Results are worth seeing straight
   // afterwards and worth nothing an hour later, so they expire.
-  const now = Date.now()/1000;
-  const ended = visible.filter(g=>g.status==='ended' && raceEndedSecondsAgo(g, now) <= RACE_RESULT_WINDOW_SEC)
+  const now = nowSec;
+  const ended = visible.filter(g=>isRaceOver(g) && raceEndedSecondsAgo(g, now) <= RACE_RESULT_WINDOW_SEC)
     .slice().sort((a,b)=>(raceEndedAtSeconds(b)||0)-(raceEndedAtSeconds(a)||0));
   return ended[0] || null;
 }
 // How long a finished race stays on screen. Long enough to look at the result together,
 // short enough that the Racing Ground is clear by the next lesson.
 const RACE_RESULT_WINDOW_SEC = 15*60;
+// A lobby that was never started. Nothing marks it ended and its clock never ran, so
+// without this it is offered forever.
+const LOBBY_MAX_AGE_SEC = 30*60;
 
 // ---------- Joining a race by PIN ----------
 // Four digits, because a six-year-old has to read it aloud across a kitchen table. The
@@ -10288,7 +10307,16 @@ function renderTeacherLiveGame(){
     // showed a "started by" banner, a stale-lobby warning, a room card and a player list
     // for a single race, and the warning claimed students could not start their own,
     // which stopped being true the moment races became a list.
-    const rooms = (S.liveGames||[]).filter(g=>(g.status==='lobby'||g.status==='active') && !isRaceOver(g))
+    const nowSec = Date.now()/1000;
+    const rooms = (S.liveGames||[]).filter(g=>{
+        if(g.status!=='lobby' && g.status!=='active') return false;
+        if(isRaceOver(g)) return false;
+        if(g.status==='lobby'){
+          const opened=(g.createdAt && g.createdAt.seconds)||0;
+          if(opened && (nowSec-opened) > LOBBY_MAX_AGE_SEC) return false;
+        }
+        return true;
+      })
       .sort((a,b)=>{
         if(!a.hostUid && b.hostUid) return -1;
         if(a.hostUid && !b.hostUid) return 1;
@@ -10615,9 +10643,14 @@ function raceExitButton(label, onClick, danger){
 // them saw a different single race and none of them could find each other.
 function joinableRaces(){
   const myClassId = S.profile && S.profile.classId;
+  const nowSec = Date.now()/1000;
   const rooms = (S.liveGames||[]).filter(g=>{
     if(g.status!=='lobby' && g.status!=='active') return false;
     if(isRaceOver(g)) return false;
+    if(g.status==='lobby'){
+      const opened=(g.createdAt && g.createdAt.seconds)||0;
+      if(opened && (nowSec-opened) > LOBBY_MAX_AGE_SEC) return false;
+    }
     if(g.classId && myClassId && g.classId!==myClassId) return false;
     return true;
   });
