@@ -228,6 +228,20 @@
     font-size:12.5px; font-weight:600; padding:3px 9px; border-radius:999px;
     background:var(--paper-line); color:var(--ink);
   }
+  .mmc-getstarted { border:3px solid var(--ink) !important; box-shadow:6px 6px 0 var(--ink) !important;
+    background:linear-gradient(180deg,#FFFDF7,var(--paper)) !important; margin-bottom:18px; }
+  .mmc-gs-step { display:flex; gap:12px; align-items:flex-start; margin-top:14px; }
+  .mmc-gs-mark {
+    width:30px; height:30px; border-radius:50%; flex:0 0 30px; display:flex;
+    align-items:center; justify-content:center; font-weight:800; font-size:14px;
+    border:2px solid var(--ink); background:var(--paper);
+  }
+  .mmc-gs-step.done .mmc-gs-mark { background:#2E7D4F; color:#fff; border-color:#2E7D4F; }
+  .mmc-gs-step.next .mmc-gs-mark { background:var(--gold); }
+  .mmc-gs-step.later { opacity:.45; }
+  .mmc-gs-title { font-weight:750; font-size:16.5px; letter-spacing:-.01em; padding-top:4px; }
+  .mmc-gs-step.done .mmc-gs-title { text-decoration:line-through; opacity:.6; }
+  .mmc-gs-text { font-size:14px; color:var(--ink-soft); margin-top:3px; line-height:1.45; }
   .mmc-setfilter { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:16px; }
   .mmc-setchip {
     font-family:'Nunito Sans',sans-serif; font-size:13px; font-weight:700;
@@ -5384,7 +5398,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.61';
+const BUILD = '2026-08-10.62';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -5468,15 +5482,17 @@ async function ensureDefaultClass(){
   if(S.classes.length>0){ S.classesEnsured=true; return; }
   ensuringDefaultClass=true;
   try{
-    const ref=await addDoc(collection(db,'classes'), { name:'Class 1', teacherUid:S.user.uid, createdAt:serverTimestamp() });
-    // Backfill any students created before classes existed onto this new default —
-    // fetched fresh here (not from S.profiles) since that listener may not have loaded yet.
+    // This is a MIGRATION, not a setup step. It exists to give a home to students who were
+    // created before classes did. A brand-new teacher has no such students, and handing her
+    // a "Class 1" at Year 4 that she never asked for — and now cannot re-year, because the
+    // year is fixed at creation — is worse than giving her nothing. So: look first, and
+    // only create a class if there is actually something to rescue.
     const existingStudents = await getDocs(query(collection(db,'profiles'), where('teacherUid','==',S.user.uid)));
-    for(const d of existingStudents.docs){
-      const data=d.data();
-      if(data.username && !data.classId){
-        try{ await updateDoc(doc(db,'profiles',d.id), {classId:ref.id}); }catch(e){}
-      }
+    const orphans = existingStudents.docs.filter(d=>{ const x=d.data(); return x.username && !x.classId; });
+    if(!orphans.length){ S.classesEnsured=true; ensuringDefaultClass=false; return; }
+    const ref=await addDoc(collection(db,'classes'), { name:'Class 1', teacherUid:S.user.uid, createdAt:serverTimestamp(), yearLevel:DEFAULT_YEAR });
+    for(const d of orphans){
+      try{ await updateDoc(doc(db,'profiles',d.id), {classId:ref.id}); }catch(e){}
     }
     S.currentClassId=ref.id;
   }catch(e){ /* if this failed, S.classes is still empty next time and we'll retry */ }
@@ -5808,7 +5824,7 @@ const S = {
   previewStudentUid:null, previewSaved:null, setupLinkFor:null, timeOverride:null, teacherTab:'home', weeksView:'create', studentsView:'list', editingClasses:false, editingDraftId:null, showArchivedWeeks:false,
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null, ttDetailUid:null,
   stuExpandedUid:null, overviewUid:null, raceLeft:null, newClass:null, setsFilter:'ALL', justCreatedId:null, worthOpen:null,
-  externalRoomId:null, externalRoom:null, pinBusy:false, pinDraft:'',
+  externalRoomId:null, externalRoom:null, pinBusy:false, pinDraft:'', hideGetStarted:false,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
   quickDeployDone:null, resetPasswordResult:null,
@@ -6482,8 +6498,62 @@ function renderAuth(){
 }
 
 // ================= TEACHER =================
+// A guided tour with spotlights and arrows breaks the moment a screen is narrow, an
+// element moves, or a teacher wanders off mid-way. A checklist that reads the real state
+// survives all three: she can leave, come back tomorrow, and it still knows where she got
+// to — because it is not remembering, it is looking.
+function renderGetStartedCard(){
+  const classes=(S.classes||[]).length;
+  const students=Object.values(S.profiles||{}).filter(p=>p&&p.username).length;
+  const sets=(S.weeks||[]).filter(w=>w.status==='published').length;
+  const done=[classes>0, students>0, sets>0];
+  if(done.every(Boolean)) return null;              // set up: it disappears on its own
+  if(S.hideGetStarted) return null;
+
+  const steps=[
+    { done:done[0], title:'Make your first class',
+      body:'A class is one year level — pick the year as you create it. If you teach a composite room, make two classes.',
+      cta:'Make a class', go:()=>{ S.teacherTab='students'; S.studentsView='list'; S.newClass={name:'',year:DEFAULT_YEAR}; } },
+    { done:done[1], title:'Add your students',
+      body:'Paste your class list, one name per line. Everyone gets a username and password, shown once — print them straight away.',
+      cta:'Add students', go:()=>{ S.teacherTab='students'; S.studentsView='add'; } },
+    { done:done[2], title:'Give them something to do',
+      body:'Generate a practice set for the class, check the questions, and publish. Or send them to the Fast Facts Training Ground, which needs no setup at all.',
+      cta:'Create a set', go:()=>{ S.teacherTab='weeks'; S.weeksView='create'; } },
+  ];
+  const nextIdx = steps.findIndex(x=>!x.done);
+  const card=el(`<div class="mmc-card mmc-getstarted">
+    <div class="mmc-worth-head">
+      <span class="mmc-worth-title">Getting started</span>
+      <span class="mmc-worth-count">${done.filter(Boolean).length} of 3 done</span>
+    </div>
+  </div>`);
+  steps.forEach((st,i)=>{
+    const isNext = i===nextIdx;
+    const row=el(`<div class="mmc-gs-step ${st.done?'done':isNext?'next':'later'}">
+      <div class="mmc-gs-mark">${st.done?'✓':i+1}</div>
+      <div class="mmc-gs-body">
+        <div class="mmc-gs-title">${esc(st.title)}</div>
+        ${isNext?`<div class="mmc-gs-text">${esc(st.body)}</div>`:''}
+      </div>
+    </div>`);
+    if(isNext){
+      const b=el(`<button class="mmc-btn gold sm" style="margin:8px 0 2px 44px;">${esc(st.cta)} →</button>`);
+      b.onclick=()=>{ st.go(); render(); };
+      row.appendChild(b);
+    }
+    card.appendChild(row);
+  });
+  const skip=el('<button class="mmc-btn ghost sm" style="margin-top:12px;">I\'ll find my own way</button>');
+  skip.onclick=()=>{ S.hideGetStarted=true; render(); };
+  card.appendChild(skip);
+  return card;
+}
+
 function renderTeacherHome(){
   const wrap=el('<div></div>');
+  const gs=renderGetStartedCard();
+  if(gs) wrap.appendChild(gs);
   const ts = (r)=> (r && r.submittedAt && r.submittedAt.seconds) ? r.submittedAt.seconds*1000 : null;
   // Home deliberately ignores the class switcher — it's the whole-teaching-load view.
   const roster = Object.keys(S.profiles||{});
