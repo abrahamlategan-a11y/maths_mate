@@ -5449,7 +5449,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.66';
+const BUILD = '2026-08-10.67';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -5873,6 +5873,7 @@ const S = {
   previewStudentUid:null, previewSaved:null, setupLinkFor:null, timeOverride:null, teacherTab:'home', weeksView:'create', studentsView:'list', editingClasses:false, editingDraftId:null, showArchivedWeeks:false,
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null, ttDetailUid:null,
   stuExpandedUid:null, overviewUid:null, raceLeft:null, newClass:null, setsFilter:'ALL', justCreatedId:null, worthOpen:null,
+  joinedRoomId:null, pinOpen:false,
   externalRoomId:null, externalRoom:null, pinBusy:false, pinDraft:'', hideGetStarted:false, toastTone:null,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
@@ -5924,6 +5925,15 @@ function currentLiveRoom(){
   // A race joined by PIN is a deliberate choice, so it beats anything the class happens
   // to have open. Including the teacher's. Walking into a lesson would otherwise silently
   // pull a child out of the race they just joined with their sister.
+  // THE RACE YOU JOINED wins, always. Every other rule here is a guess at what someone
+  // probably wants; this one is a fact. Children could not tell whose race they were in
+  // because the app kept choosing for them, and kept choosing differently as rooms opened
+  // and closed around them.
+  if(S.joinedRoomId){
+    const mine = active.find(g=>g.id===S.joinedRoomId)
+      || (S.externalRoom && S.externalRoom.id===S.joinedRoomId && !isRaceOver(S.externalRoom) ? S.externalRoom : null);
+    if(mine) return mine;
+  }
   if(S.externalRoom && !isRaceOver(S.externalRoom)) return S.externalRoom;
   if(active.length){
     const newest = active.slice().sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
@@ -6289,6 +6299,15 @@ function scheduleToastClear(){
   }
 }
 function render(){
+  // Keep the player-list listener pointed at whatever room is actually on screen. It used
+  // to be re-pointed only when the set of rooms changed, so joining a race, or a PIN room
+  // arriving, left it watching the wrong room. That is the refreshing.
+  try{
+    if(S.user && !S.previewStudentUid){
+      const r = currentLiveRoom();
+      ensureParticipantsSub(r ? r.id : null);
+    }
+  }catch(e){}
   window.__mmcRenderCount = (window.__mmcRenderCount||0)+1;
   const root=document.getElementById('mmc');
   applyTheme();
@@ -10564,6 +10583,7 @@ async function leaveLiveGame(gameId){
       S.myLive=null;
     }
     S.lobbyReadyForRoom=null;
+    if(S.joinedRoomId===gameId) S.joinedRoomId=null;
   }catch(e){ S.toast='Could not leave. Check your connection.'; }
   render();
 }
@@ -10582,19 +10602,81 @@ function raceExitButton(label, onClick, danger){
   return b;
 }
 
+// Which races this student could join right now. Everything open and visible, not one
+// chosen by a precedence rule nobody can see. Three children hosting used to mean each of
+// them saw a different single race and none of them could find each other.
+function joinableRaces(){
+  const myClassId = S.profile && S.profile.classId;
+  const rooms = (S.liveGames||[]).filter(g=>{
+    if(g.status!=='lobby' && g.status!=='active') return false;
+    if(isRaceOver(g)) return false;
+    if(g.classId && myClassId && g.classId!==myClassId) return false;
+    return true;
+  });
+  // A race joined by PIN lives outside this student's teacher, so it is not in liveGames.
+  if(S.externalRoom && !isRaceOver(S.externalRoom) &&
+     !rooms.some(r=>r.id===S.externalRoom.id)) rooms.push(S.externalRoom);
+  // The teacher's race first, then most recent. It is not hidden from anyone, and it does
+  // not hide anyone else either.
+  return rooms.sort((a,b)=>{
+    if(!a.hostUid && b.hostUid) return -1;
+    if(a.hostUid && !b.hostUid) return 1;
+    return (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0);
+  });
+}
+async function startLiveGame(gameId){
+  try{ await updateDoc(doc(db,'liveGames',gameId), {status:'active', startedAt:serverTimestamp()}); }
+  catch(e){ S.toast='Could not start the race. Check your connection.'; render(); }
+}
+// A quiet link rather than a card. The PIN is for the uncommon case of reaching another
+// class, and giving it equal billing with "join this race" was half the confusion.
+function renderJoinByPinLink(){
+  const wrap=el('<div style="margin-top:10px;"></div>');
+  if(!S.pinOpen){
+    const a=el('<button class="mmc-btn ghost sm">🔢 Have a race PIN?</button>');
+    a.onclick=()=>{ S.pinOpen=true; render(); };
+    wrap.appendChild(a);
+    return wrap;
+  }
+  wrap.appendChild(renderJoinByPinCard());
+  return wrap;
+}
+function raceLabel(room){
+  if(!room.hostUid) return 'Your teacher\'s class race';
+  if(room.hostUid===S.user.uid) return 'Your race';
+  return (room.hostName||'A classmate')+"'s race";
+}
+
 function renderStudentLiveGame(){
   const wrap=el('<div></div>');
   const room=currentLiveRoom();
-  if(isRaceOver(room)){
-    if(room) wrap.appendChild(renderLiveLeaderboardCard('Last race', room, true));
-    wrap.appendChild(renderStartRaceCard());
-    wrap.appendChild(renderJoinByPinCard());
-    return wrap;
+
+  // ---- a race is running ----
+  if(room && room.status==='active' && !isRaceOver(room) && S.raceLeft!==room.id){
+    const joined = S.liveParticipants.some(p=>p.id===S.user.uid);
+    if(joined){
+      if(S.myLive && S.myLive.gameId===room.id && !S.myLive.answering){
+        wrap.appendChild(el(`<div class="mmc-card"><h3>⏱ Time's up!</h3><div class="meta">Waiting for the final leaderboard…</div></div>`));
+        wrap.appendChild(renderLiveLeaderboardCard('Live leaderboard', room, false));
+        return wrap;
+      }
+      wrap.appendChild(el('<div class="mmc-empty">Loading your game…</div>'));
+      return wrap;
+    }
+    // Not in this one. It is still listed below with the others, so this is only a note.
+    wrap.appendChild(el(`<div class="mmc-card"><h3>${esc(raceLabel(room))} has already started</h3><div class="meta">You can still jump in, or join one of the others.</div></div>`));
   }
-  const joined = S.liveParticipants.some(p=>p.id===S.user.uid);
-  // Someone who walked away mid-race watches the rest rather than being dumped back into
-  // it by syncMyLiveSession on the next render.
-  if(S.raceLeft===room.id && room.status==='active'){
+  // ---- a race just finished ----
+  if(room && room.status==='ended' && raceEndedSecondsAgo(room) <= RACE_RESULT_WINDOW_SEC){
+    const mine = S.liveParticipants.find(p=>p.id===S.user.uid);
+    if(mine){
+      wrap.appendChild(el(`<div class="mmc-card"><h3>Game over!</h3><div class="meta">You scored ${mine.score} correct.</div></div>`));
+      wrap.appendChild(renderRaceTrack(S.user.uid));
+      wrap.appendChild(renderLiveLeaderboardCard('Final leaderboard', room, true));
+    }
+  }
+  // ---- walked away mid-race ----
+  if(room && S.raceLeft===room.id && room.status==='active'){
     wrap.appendChild(el(`<div class="mmc-card"><h3>You left this race</h3><div class="meta">Your score is still on the leaderboard. You can rejoin, or wait for the next one.</div></div>`));
     const back=el('<button class="mmc-btn gold sm" style="width:100%;margin-bottom:10px;">↩ Rejoin the race</button>');
     back.onclick=()=>{ S.raceLeft=null; render(); };
@@ -10602,103 +10684,77 @@ function renderStudentLiveGame(){
     wrap.appendChild(renderLiveLeaderboardCard('Live leaderboard', room, false));
     return wrap;
   }
-  if(room.status==='lobby'){
-    if(!joined){
-      const isClassRace = !room.hostUid;
-      const card=el(`
-        <div class="mmc-card${isClassRace?' mmc-classrace':''}">
-          ${isClassRace ? '<div class="mmc-classflag">🏫 Class Race</div>' : ''}
-          <h3>${isClassRace
-            ? '🐎 Your teacher has started a race!'
-            : '🐎 '+esc((room.hostName||'A classmate')+"'s race")+' starting soon!'}</h3>
-          <div class="meta">${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} waiting · Room: <code class="mmc-code">${esc(room.id.slice(0,6))}</code></div>
-          <div class="meta">${isClassRace ? 'Five minutes' : 'One minute'} · questions at your own level.</div>
-          <button class="mmc-btn gold" id="mmc-live-join">${isClassRace?'Join the class race ▶':'Join ▶'}</button>
-        </div>
-      `);
-      card.querySelector('#mmc-live-join').onclick=()=>joinLiveGame(room.id);
-      wrap.appendChild(card);
-      wrap.appendChild(renderJoinByPinCard());
-      // Not everyone wants to join the race that happens to be open. Only offered for
-      // student-hosted races. Declining the teacher's class race is not a child's call.
-      if(room.hostUid){
-        wrap.appendChild(renderStartRaceCard('Not interested in that one? Start your own instead. Your classmates can join either.'));
-      }
+
+  const races = joinableRaces();
+  const myRoom = races.find(r=>r.id===(S.joinedRoomId||'')) ||
+                 races.find(r=>S.liveParticipants.some(p=>p.id===S.user.uid) && r.id===(room&&room.id));
+
+  // ---- the one you are in, stated plainly at the top ----
+  if(myRoom && myRoom.status==='lobby'){
+    const iAmHost = myRoom.hostUid===S.user.uid;
+    const isClass = !myRoom.hostUid;
+    const card=el(`<div class="mmc-card${isClass?' mmc-classrace':''}">
+      ${isClass?'<div class="mmc-classflag">🏫 Class Race</div>':''}
+      <div class="meta" style="margin:0;">You are in</div>
+      <h3 style="margin:2px 0 6px;">${esc(raceLabel(myRoom))}</h3>
+      <div class="meta">${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} in this race${iAmHost?'. Start when everyone has joined.':isClass?'. Waiting for your teacher to start.':'. Waiting for '+esc(myRoom.hostName||'the host')+' to start.'}</div>
+      ${S.liveParticipants.length?`<div class="mmc-worth-names" style="margin-top:10px;">${
+        S.liveParticipants.map(p=>`<span>${esc(p.name||'Player')}</span>`).join('')}</div>`:''}
+      ${myRoom.pin?`<div style="margin-top:14px;">
+        <div class="meta" style="margin:0;">Race PIN. Read this out so someone in another class can join</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:34px;font-weight:800;letter-spacing:.18em;">${esc(myRoom.pin)}</div></div>`:''}
+    </div>`);
+    wrap.appendChild(card);
+    wrap.appendChild(renderHorseCustomizeCard());
+    wrap.appendChild(renderCoinAnimalCard(myRoom));
+    if(iAmHost){
+      const go=el('<button class="mmc-btn gold" style="width:100%;font-size:16px;padding:12px;">🏁 Start the race</button>');
+      go.onclick=()=>startLiveGame(myRoom.id);
+      wrap.appendChild(go);
+      wrap.appendChild(raceExitButton('✕ Cancel this race', async ()=>{
+        try{ await updateDoc(doc(db,'liveGames',myRoom.id), {status:'ended', endedAt:serverTimestamp()}); await retireRacePin(myRoom); }
+        catch(e){ S.toast='Could not cancel. Check your connection.'; render(); }
+      }));
     } else {
-      const iAmHost = room.hostUid === S.user.uid;
-      if(S.lobbyReadyForRoom === room.id){
-        wrap.appendChild(el(`
-          <div class="mmc-card${room.hostUid?'':' mmc-classrace'}">
-            ${room.hostUid ? '' : '<div class="mmc-classflag">🏫 Class Race</div>'}
-            <h3>You're in! ✓</h3>
-            <div class="meta">${iAmHost
-              ? `${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} ready. Start when everyone has joined.`
-              : `Waiting for ${room.hostUid? esc(room.hostName||'the host') : 'your teacher'} to start… ${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} ready.`}</div>
-            ${room.pin?`<div style="margin-top:12px;">
-              <div class="meta" style="margin:0;">Race PIN. Read this out so someone in another class can join</div>
-              <div style="font-family:'IBM Plex Mono',monospace;font-size:38px;font-weight:800;letter-spacing:.18em;">${esc(room.pin)}</div>
-            </div>`:''}
+      wrap.appendChild(raceExitButton('← Leave this race', ()=>{ S.joinedRoomId=null; leaveLiveGame(myRoom.id); }));
+    }
+    return wrap;
+  }
+
+  // ---- not in one: every race you could join, plus your own options ----
+  if(races.length){
+    wrap.appendChild(el(`<div class="mmc-setgroup"><span class="mmc-setgroup-name">🐎 Races you can join</span>
+      <span class="mmc-setgroup-count">${races.length} open</span></div>`));
+    races.forEach(r=>{
+      const isClass=!r.hostUid;
+      const running = r.status==='active';
+      const card=el(`<div class="mmc-card${isClass?' mmc-classrace':''}" style="margin-bottom:10px;">
+        ${isClass?'<div class="mmc-classflag">🏫 Class Race</div>':''}
+        <div class="mmc-row" style="justify-content:space-between;align-items:center;gap:12px;">
+          <div style="flex:1;">
+            <h3 style="margin:0 0 2px;">${esc(raceLabel(r))}</h3>
+            <div class="meta" style="margin:0;">${(Number(r.durationSec)||300)<=60?'One minute':'Five minutes'} · questions at your own level${running?' · already running':''}</div>
           </div>
-        `));
-        if(!iAmHost) wrap.appendChild(raceExitButton('← Leave this race', ()=>leaveLiveGame(room.id)));
-        if(iAmHost){
-          const cancel=el('<button class="mmc-btn ghost sm" style="width:100%;margin-bottom:8px;">✕ Cancel this race</button>');
-          cancel.onclick=async ()=>{
-            cancel.disabled=true; cancel.textContent='Cancelling…';
-            try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended', endedAt:serverTimestamp()}); }
-            catch(e){ S.toast='Could not cancel. Check your connection.'; cancel.disabled=false; cancel.textContent='✕ Cancel this race'; render(); }
-          };
-          wrap.appendChild(cancel);
-          const go=el('<button class="mmc-btn gold" style="width:100%;font-size:16px;padding:12px;">🏁 Start the race</button>');
-          go.onclick=async ()=>{
-            go.disabled=true; go.textContent='Starting…';
-            try{ await updateDoc(doc(db,'liveGames',room.id), {status:'active', startedAt:serverTimestamp()}); }
-            catch(e){ S.toast='Could not start the race. Check your connection.'; go.disabled=false; go.textContent='🏁 Start the race'; render(); }
-          };
-          wrap.appendChild(go);
-        }
-      } else {
-        wrap.appendChild(el(`<div class="mmc-card${room.hostUid?'':' mmc-classrace'}">${room.hostUid?'':'<div class="mmc-classflag">🏫 Class Race</div>'}<h3>You're in! ✓</h3><div class="meta">Get yourself ready before the race starts.</div></div>`));
-        wrap.appendChild(renderCoinAnimalCard(room));
-        wrap.appendChild(renderHorseCustomizeCard());
-        const readyBtn=el('<button class="mmc-btn gold" style="width:100%;font-size:16px;padding:12px;">I\'m Ready! 🏁</button>');
-        readyBtn.onclick=async ()=>{ await syncParticipantCustomization(room.id); S.lobbyReadyForRoom=room.id; render(); };
-        wrap.appendChild(readyBtn);
-        wrap.appendChild(raceExitButton(room.hostUid===S.user.uid ? '✕ Cancel this race' : '← Leave this race',
-          room.hostUid===S.user.uid
-            ? async ()=>{ try{ await updateDoc(doc(db,'liveGames',room.id),{status:'ended', endedAt:serverTimestamp()}); }catch(e){ S.toast='Could not cancel. Check your connection.'; render(); } }
-            : ()=>leaveLiveGame(room.id)));
-      }
-    }
-    return wrap;
+          <button class="mmc-btn ${isClass?'gold':'ghost'} sm" style="white-space:nowrap;">${running?'Jump in ▶':'Join ▶'}</button>
+        </div>
+      </div>`);
+      card.querySelector('button').onclick=()=>{ S.joinedRoomId=r.id; joinLiveGame(r.id); };
+      wrap.appendChild(card);
+    });
   }
-  if(room.status==='active' && !isRaceOver(room)){
-    if(!joined){
-      wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">🐎</div>This race already started. You can watch, or start your own.</div>'));
-      wrap.appendChild(renderStartRaceCard('That race is already running. Start your own one-minute race and your classmates can join yours instead.'));
-      wrap.appendChild(renderLiveLeaderboardCard('Live leaderboard', room, false));
-      return wrap;
-    }
-    if(S.myLive && S.myLive.gameId===room.id && !S.myLive.answering){
-      wrap.appendChild(el(`<div class="mmc-card"><h3>⏱ Time's up!</h3><div class="meta">Waiting for the final leaderboard…</div></div>`));
-      wrap.appendChild(renderLiveLeaderboardCard('Live leaderboard', room, false));
-      return wrap;
-    }
-    wrap.appendChild(el('<div class="mmc-empty">Loading your game…</div>'));
-    return wrap;
-  }
-  if(room.status==='ended'){
-    const mine = S.liveParticipants.find(p=>p.id===S.user.uid);
-    wrap.appendChild(el(`<div class="mmc-card"><h3>Game over!</h3><div class="meta">${mine? `You scored ${mine.score} correct.` : 'Final results are in.'}</div></div>`));
-    wrap.appendChild(renderRaceTrack(S.user.uid));
-    wrap.appendChild(renderLiveLeaderboardCard('Final leaderboard', room, true));
-    return wrap;
+  wrap.appendChild(renderStartRaceCard(races.length? 'Or start your own. Everyone above can join yours too.' : null));
+  wrap.appendChild(renderJoinByPinLink());
+
+  // ---- a result worth seeing, once, underneath everything ----
+  if(room && isRaceOver(room) && !races.some(r=>r.id===room.id)){
+    wrap.appendChild(renderLiveLeaderboardCard('Last race', room, true));
   }
   return wrap;
 }
 async function joinLiveGame(gameId){
   // Clear any "I left" marker. Joining is an explicit decision to be in this race.
   S.raceLeft=null;
+  S.joinedRoomId=gameId;
   try{
     await setDoc(doc(db,'liveGames',gameId,'participants',S.user.uid), {
       uid:S.user.uid, name:S.profile? S.profile.displayName : S.user.email,
