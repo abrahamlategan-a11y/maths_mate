@@ -841,6 +841,13 @@ import {
 // write is intercepted here at the import. Preview mode is therefore safe by
 // construction: a write path added later is guarded automatically.
 function isPreviewing(){ try { return !!S.previewStudentUid; } catch(e){ return false; } }
+// While previewing, a teacher's live listeners keep firing and would replace the narrowed
+// arrays with the whole class again mid-preview. Every snapshot goes through this, so the
+// narrowing survives however long the teacher stays in there.
+function scopeToPreview(list){
+  if(!S.previewStudentUid) return list;
+  return (list||[]).filter(r=>r && r.uid===S.previewStudentUid);
+}
 function _blockedWrite(what){
   console.info('[preview] blocked '+what+' — nothing is saved while previewing.');
   return Promise.resolve({ id:'preview-noop' });
@@ -5377,7 +5384,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.57';
+const BUILD = '2026-08-10.58';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer — a real hindrance mid-race. `pointer: coarse`
@@ -6029,9 +6036,9 @@ if(!configured){
 function subscribeData(){
   if(S.isTeacher){
     unsubs.push(onSnapshot(query(collection(db,'weeks'), where('teacherUid','==',S.user.uid)), snap=>{ S.weeks=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, (err)=>{ S.toast='Weeks error: '+err.message; render(); }));
-    unsubs.push(onSnapshot(query(collection(db,'results'), where('teacherUid','==',S.user.uid)), snap=>{ S.results=snap.docs.map(d=>({id:d.id,...d.data()})); render(); runAutoArchive(); }, (err)=>{ S.toast='Results error: '+err.message; render(); }));
+    unsubs.push(onSnapshot(query(collection(db,'results'), where('teacherUid','==',S.user.uid)), snap=>{ S.results=scopeToPreview(snap.docs.map(d=>({id:d.id,...d.data()}))); render(); runAutoArchive(); }, (err)=>{ S.toast='Results error: '+err.message; render(); }));
     unsubs.push(onSnapshot(query(collection(db,'profiles'), where('teacherUid','==',S.user.uid)), snap=>{ S.profiles={}; snap.docs.forEach(d=>S.profiles[d.id]=d.data()); render(); }, (err)=>{ S.toast='Profiles error: '+err.message; render(); }));
-    unsubs.push(onSnapshot(query(collection(db,'ttAttempts'), where('teacherUid','==',S.user.uid)), snap=>{ S.ttAttempts=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, (err)=>{ S.toast='Timetable data error: '+err.message; render(); }));
+    unsubs.push(onSnapshot(query(collection(db,'ttAttempts'), where('teacherUid','==',S.user.uid)), snap=>{ S.ttAttempts=scopeToPreview(snap.docs.map(d=>({id:d.id,...d.data()}))); render(); }, (err)=>{ S.toast='Timetable data error: '+err.message; render(); }));
     unsubs.push(onSnapshot(query(collection(db,'skillPractice'), where('teacherUid','==',S.user.uid)), snap=>{ S.allSkillPracticeRecords=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, (err)=>{ S.toast='Skill practice data error: '+err.message; render(); }));
     unsubs.push(onSnapshot(query(collection(db,'classes'), where('teacherUid','==',S.user.uid)), snap=>{
       S.classes=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
@@ -6705,6 +6712,9 @@ function startStudentPreview(uid){
   S.previewSaved = {
     profile: S.profile,
     skillPracticeRecords: S.skillPracticeRecords,
+    ttAttempts: S.ttAttempts,
+    results: S.results,
+    weekProgress: S.weekProgress,
     activeWeekId: S.activeWeekId,
     quiz: S.quiz,
     studentTab: S.studentTab,
@@ -6712,6 +6722,13 @@ function startStudentPreview(uid){
   // Borrow the student's profile so difficulty targeting, groups and theme all
   // behave exactly as they do for them.
   S.profile = Object.assign({}, S.profiles[uid] || {});
+  // AND their records. For a teacher these arrays hold the WHOLE CLASS, and the student
+  // views read them directly — so previewing a child showed them their classmates' work
+  // added to their own: 162 attempts and an Expert badge for a student with 6 attempts.
+  // Only skillPracticeRecords was being narrowed, which is why it went unnoticed.
+  S.ttAttempts = (S.ttAttempts||[]).filter(a=>a.uid===uid);
+  S.results = (S.results||[]).filter(r=>r.uid===uid);
+  S.weekProgress = (S.weekProgress||[]).filter(w=>w.uid===uid);
   S.skillPracticeRecords = (S.allSkillPracticeRecords||[]).filter(r=>r.uid===uid);
   S.activeWeekId = null; S.quiz = {}; S.studentTab = 'dashboard';
   render();
@@ -6721,6 +6738,11 @@ function endStudentPreview(){
   S.previewStudentUid = null;
   S.profile = saved.profile || S.profile;
   S.skillPracticeRecords = saved.skillPracticeRecords || [];
+  // Put the full class-wide arrays back, or the teacher's own gradebook would show
+  // nothing but the child they just previewed until the next snapshot arrived.
+  S.ttAttempts = saved.ttAttempts || S.ttAttempts;
+  S.results = saved.results || S.results;
+  S.weekProgress = saved.weekProgress || S.weekProgress;
   S.activeWeekId = saved.activeWeekId || null;
   S.quiz = saved.quiz || {};
   S.studentTab = saved.studentTab || 'dashboard';
@@ -7355,6 +7377,10 @@ let autoArchiveRunning = false;
 async function runAutoArchive(){
   if(autoArchiveRunning) return;
   if(!S.user || !S.isTeacher) return;
+  // Not while previewing: S.results is narrowed to one child in there, so "everyone has
+  // finished" would be true on a single student's record. Writes are blocked in preview
+  // anyway, but this stops it reasoning on a partial picture at all.
+  if(isPreviewing()) return;
   autoArchiveRunning = true;
   try{
     const now = Date.now();
