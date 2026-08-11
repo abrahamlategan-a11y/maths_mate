@@ -5369,6 +5369,18 @@ function genTTQuestion(level, idx, year){
   const [lo,hi] = spec;
   const isDivision = level!=='easy' && idx%2===1;
   if(!isDivision){
+    // Hard used to draw BOTH factors from 4-15, so 13 x 14 and 15 x 13 came up. That is
+    // past the point of recall for a primary student. The teens are still in, because a
+    // 15 times table is worth knowing, but only ever against a single digit: 15 x 4 yes,
+    // 15 x 13 no.
+    if(hi>12){
+      const teen = Math.random()<0.4;
+      const a = teen ? randInt(13,hi) : randInt(2,12);
+      const b = teen ? randInt(2,9)   : randInt(2,12);
+      return Math.random()<0.5
+        ? { prompt:`${a} × ${b}`, answer:a*b, isDivision:false, level }
+        : { prompt:`${b} × ${a}`, answer:a*b, isDivision:false, level };
+    }
     const a=randInt(lo,hi), b=randInt(lo,hi);
     return { prompt:`${a} × ${b}`, answer:a*b, isDivision:false, level };
   }
@@ -5437,7 +5449,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.65';
+const BUILD = '2026-08-10.66';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
