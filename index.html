@@ -4727,6 +4727,27 @@ function renderStudentDashboard(opts){
   const haveSets = setsDone >= MIN_SETS_FOR_INSIGHT && withData.length>0;
   const haveTT = ttDone >= MIN_TT_FOR_INSIGHT;
 
+  // Facts do not need a threshold, only JUDGEMENTS do. A child who has done two sessions
+  // was being shown nothing at all, which reads as "none of that counted" rather than
+  // "not enough to judge yet". What they have done is always shown; what it MEANS waits
+  // until there is enough to be fair about.
+  const doneCard = (setsDone>0 || ttDone>0) ? (()=>{
+    const bits=[];
+    if(ttDone>0){
+      const best=(ttAttempts||[]).reduce((b,a)=>(a.score||0)>(b.score||0)?a:b, {score:0,attempted:0});
+      bits.push(`<div class="mmc-plainrow good">⏱ ${ttDone} Fast Facts session${ttDone===1?'':'s'}${
+        best.attempted?` · best ${best.score} out of ${best.attempted}`:''}</div>`);
+    }
+    if(setsDone>0){
+      const scored=(results||[]).filter(r=>r.total);
+      const bestSet=scored.reduce((b,r)=>(r.score/r.total)>((b.score||0)/(b.total||1))?r:b, {score:0,total:1});
+      bits.push(`<div class="mmc-plainrow good">📘 ${setsDone} practice set${setsDone===1?'':'s'} finished${
+        bestSet.total>1?` · best ${bestSet.score} out of ${bestSet.total}`:''}</div>`);
+    }
+    const box=el(`<div><h3 style="margin:6px 0 8px;">💪 What you have done</h3>${bits.join('')}</div>`);
+    return box;
+  })() : null;
+
   // A child who has only done fast facts still has something worth showing, so the two
   // are gated separately rather than behind one all-or-nothing check.
   const ttSection = haveTT ? renderTTDashboardSection(ttAttempts, forTeacher, opts.studentName) : null;
@@ -4734,11 +4755,15 @@ function renderStudentDashboard(opts){
     const name = forTeacher ? (opts.studentName||'This student') : 'you';
     const needSets = Math.max(0, MIN_SETS_FOR_INSIGHT - setsDone);
     const needTT = Math.max(0, MIN_TT_FOR_INSIGHT - ttDone);
+    if(doneCard) wrap.appendChild(doneCard);
     wrap.appendChild(el(`<div class="mmc-empty"><div class="mmc-empty-icon">🌱</div>${forTeacher
       ? `Nothing to report yet · ${esc(name)} has completed ${setsDone} practice set${setsDone===1?'':'s'} and ${ttDone} fast facts session${ttDone===1?'':'s'}. Feedback appears once there is enough to be fair about: ${MIN_SETS_FOR_INSIGHT} sets or ${MIN_TT_FOR_INSIGHT} fast facts sessions.`
-      : `Nothing here yet. And that is exactly right, because you have not done enough for this page to say anything useful. Finish ${needSets>0?`${needSets} more practice set${needSets===1?'':'s'}`:'a few more sets'}${needSets>0&&needTT>0?' or ':''}${needTT>0?`${needTT} more Fast Facts session${needTT===1?'':'s'}`:''} and your coach will start telling you what you are good at.`}</div>`));
+      : (setsDone>0||ttDone>0)
+        ? `Nice start. Your coach needs a bit more to go on before it can tell you what you are good at. ${needTT>0?`${needTT} more Fast Facts session${needTT===1?'':'s'}`:''}${needSets>0&&needTT>0?' or ':''}${needSets>0?`${needSets} more practice set${needSets===1?'':'s'}`:''} and it will start.`
+        : `Nothing here yet. Have a go at the Fast Facts Training Ground or a practice set, and your coach will start telling you what you are good at.`}</div>`));
     return wrap;
   }
+  if(doneCard) wrap.appendChild(doneCard);
   if(ttSection) wrap.appendChild(ttSection);
   if(!haveSets){
     // Fast facts have something to say; the weekly sets do not yet.
@@ -5449,7 +5474,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.69';
+const BUILD = '2026-08-10.71';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -6100,6 +6125,14 @@ function ensureParticipantsSub(gameId){
     render();
   }, (err)=>{
     if(myGen!==liveParticipantsGen) return; // stale/superseded listener erroring after being replaced. Ignore
+    // A permission error here is almost always transient: the listener attached a
+    // fraction of a second before the join was written, or it is pointed at a race in
+    // another class that this student has not entered. Neither is something a child can
+    // act on, and "Missing or insufficient permissions" in red is alarming and useless.
+    // Clear the list, let the next render re-point it, and stay quiet.
+    if(/permission|insufficient/i.test(err.message||'')){
+      S.liveParticipants=[]; render(); return;
+    }
     S.toast='Leaderboard error: '+err.message; render();
   });
 }
@@ -6324,7 +6357,15 @@ function render(){
   try{
     if(S.user && !S.previewStudentUid){
       const r = currentLiveRoom();
-      ensureParticipantsSub(r ? r.id : null);
+      // Only watch a race we are actually allowed to read: one of our own teacher's, or
+      // one we have joined. Pointing the listener at anything else produces a permission
+      // error that surfaces to the child as a red banner.
+      const mineToRead = !!r && (
+        S.isTeacher
+          ? (r.teacherUid===S.user.uid)
+          : (r.teacherUid===(S.profile&&S.profile.teacherUid) || r.id===S.joinedRoomId)
+      );
+      ensureParticipantsSub(mineToRead ? r.id : null);
     }
   }catch(e){}
   window.__mmcRenderCount = (window.__mmcRenderCount||0)+1;
