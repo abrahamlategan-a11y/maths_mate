@@ -5476,7 +5476,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.72';
+const BUILD = '2026-08-10.73';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -5725,6 +5725,33 @@ function renderNewClassForm(){
   return card;
 }
 
+// School portals export "Smith, Jasmine" and often "Smith, Jasmine (Jazz)". Neither reads
+// well as a display name, and retyping thirty of them is the kind of tedium that stops a
+// teacher trying the app at all.
+function normaliseStudentName(line, swap){
+  let t=String(line||'').trim();
+  // A preferred name in brackets wins. "Smith, Jasmine (Jazz)" is Jazz to everyone who
+  // knows her, and that is the name she should see on her own screen.
+  let preferred=null;
+  const br=t.match(/[\(\[]([^\)\]]+)[\)\]]/);
+  if(br){ preferred=br[1].trim(); t=t.replace(br[0],' ').trim(); }
+  if(t.includes(',')){
+    // A comma always means "surname first". Nobody writes "Smith, Jasmine" meaning
+    // Smith is the given name, so this does not wait for the toggle.
+    const [a,b]=t.split(',',2).map(x=>x.trim());
+    t = `${b} ${a}`;
+  } else if(swap){
+    const parts=t.split(/\s+/);
+    if(parts.length>1) t = parts.slice(1).join(' ') + ' ' + parts[0];
+  }
+  t=t.replace(/\s+/g,' ').trim();
+  if(preferred){
+    const rest=t.split(/\s+/).slice(1).join(' ');
+    t = rest ? `${preferred} ${rest}` : preferred;
+  }
+  return t;
+}
+
 async function createClass(name, yearLevel){
   name=(name||'').trim();
   if(!name) return;
@@ -5732,7 +5759,12 @@ async function createClass(name, yearLevel){
   try{
     const ref=await addDoc(collection(db,'classes'), { name, yearLevel:year, teacherUid:S.user.uid, createdAt:serverTimestamp() });
     S.currentClassId=ref.id;
+    // Returned so a caller adding students in the same breath does not have to wait for
+    // the classes listener to catch up. That race put a whole class of students into no
+    // class at all: they existed, but belonged nowhere.
+    return ref;
   }catch(e){ S.toast='Could not create class. Check your connection.'; render(); }
+  return null;
 }
 // Renaming changes the NAME only. The year level is fixed when the class is created and
 // cannot be edited afterwards. Every set, every result and every student's question
@@ -5990,6 +6022,7 @@ const S = {
   stuExpandedUid:null, overviewUid:null, raceLeft:null, newClass:null, setsFilter:'ALL', justCreatedId:null, worthOpen:null,
   joinedRoomId:null, pinOpen:false,
   externalRoomId:null, externalRoom:null, pinBusy:false, pinDraft:'', hideGetStarted:false, toastTone:null,
+  bulkSwapNames:false, bulkGroup:'mainstream', bulkTargetClassId:null,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
   quickDeployDone:null, resetPasswordResult:null,
@@ -9415,6 +9448,21 @@ function renderStudentsTab(mode){
         </div>
         <div class="meta"><strong>The year level cannot be changed later.</strong> A class is one year level. For a composite room, make two classes.</div>
       </div>
+      <div class="mmc-row" style="gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:12px;">
+        <div>
+          <label class="label2" style="display:block;margin-bottom:4px;">Names come as</label>
+          <button type="button" class="mmc-btn ghost sm" id="mmc-bulk-swap">${S.bulkSwapNames?'Surname first ⇄':'First name first ⇄'}</button>
+          <div class="meta" style="margin:4px 0 0;">A comma is always read as surname first.</div>
+        </div>
+        <div>
+          <label class="label2" style="display:block;margin-bottom:4px;">Put everyone in</label>
+          <select id="mmc-bulk-group">
+            ${['support','mainstream','extension'].map(g=>`<option value="${g}" ${(S.bulkGroup||'mainstream')===g?'selected':''}>${esc(groupLabel(g))}</option>`).join('')}
+          </select>
+          <div class="meta" style="margin:4px 0 0;">You can change individuals afterwards.</div>
+        </div>
+      </div>
+      <div id="mmc-name-preview" style="margin-bottom:10px;"></div>
       <div class="mmc-field"><label>Class list</label>
         <textarea id="mmc-bulk-names" rows="8" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--paper-line);background:var(--paper);font-size:14px;" placeholder="Susie Miller
 Tom Nguyen
@@ -9427,7 +9475,26 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
       <button class="mmc-btn gold" id="mmc-bulk-go" ${S.bulkCreating?'disabled':''}>${S.bulkCreating? `Creating… (${S.bulkProgress||''})` : 'Create student accounts'}</button>
     </div>
   `);
-  form.querySelector('#mmc-bulk-names').oninput=(e)=>{ S.bulkNamesText=e.target.value; };
+  form.querySelector('#mmc-bulk-names').oninput=(e)=>{ S.bulkNamesText=e.target.value; syncNamePreview(); };
+  // A preview, because a teacher pasting thirty names should see what they will become
+  // BEFORE thirty accounts exist. Undoing this means deleting them one at a time.
+  function syncNamePreview(){
+    const box=form.querySelector('#mmc-name-preview');
+    if(!box) return;
+    const lines=String(S.bulkNamesText||'').split('\n').map(l=>l.trim()).filter(Boolean);
+    if(!lines.length){ box.innerHTML=''; return; }
+    const shown=lines.slice(0,3).map(l=>{
+      const out=normaliseStudentName(l, S.bulkSwapNames);
+      return out===l ? `<div class="meta" style="margin:0;">${esc(l)}</div>`
+        : `<div class="meta" style="margin:0;">${esc(l)} <span style="opacity:.5;">becomes</span> <strong style="color:var(--ink);">${esc(out)}</strong></div>`;
+    }).join('');
+    box.innerHTML = shown + (lines.length>3?`<div class="meta" style="margin:2px 0 0;opacity:.6;">and ${lines.length-3} more</div>`:'');
+  }
+  setTimeout(()=>{ try{ syncNamePreview(); }catch(e){} },0);
+  const swapBtn=form.querySelector('#mmc-bulk-swap');
+  if(swapBtn) swapBtn.onclick=()=>{ S.bulkSwapNames=!S.bulkSwapNames; render(); };
+  const groupSel=form.querySelector('#mmc-bulk-group');
+  if(groupSel) groupSel.onchange=(e)=>{ S.bulkGroup=e.target.value; };
   const bulkClassSel=form.querySelector('#mmc-bulk-class');
   const bulkNote=form.querySelector('#mmc-bulk-classnote');
   const newClsBox=form.querySelector('#mmc-bulk-newcls');
@@ -9447,12 +9514,14 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
       const nm=(form.querySelector('#mmc-bulk-newname').value||'').trim();
       const yr=form.querySelector('#mmc-bulk-newyear').value;
       if(!nm){ S.toast='Give the new class a name first.'; render(); return; }
-      await createClass(nm, yr);
-      // createClass makes it current, so every account below lands in the right place.
+      const ref = await createClass(nm, yr);
       S.showAllClasses=false;
+      if(ref && ref.id) S.currentClassId=ref.id;
+      S.bulkTargetClassId = (ref && ref.id) || S.currentClassId || null;
       S.toast=`"${nm}" created as ${yearLabel(yr)}.`;
     } else if(bulkClassSel){
       S.showAllClasses=false; S.currentClassId=bulkClassSel.value;
+      S.bulkTargetClassId = bulkClassSel.value;
     }
     const namesText=form.querySelector('#mmc-bulk-names').value;
     const teacherPass=form.querySelector('#mmc-bulk-pass').value;
@@ -9467,13 +9536,23 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
     // by Firebase itself and retried below with an incremented suffix.
     const taken=new Set(Object.values(S.profiles).map(p=>String(p.username||'').toLowerCase()).filter(Boolean));
     S.bulkCreating=true; S.bulkResults=[]; S.bulkProgress=`0/${lines.length}`; render();
+    // Resolved ONCE, before the loop, and never allowed to be null. This used to read
+    // S.currentClassId inside the loop, so creating a class and adding students in one go
+    // raced the classes listener: newClassId came out null and every student was created
+    // belonging to NO class. They existed, the class looked empty, and a printed sheet
+    // came out blank.
+    const targetClassId = S.bulkTargetClassId
+      || (S.showAllClasses ? (S.classes[0] && S.classes[0].id) : S.currentClassId)
+      || ((S.classes||[])[0] && S.classes[0].id) || null;
+    if(!targetClassId){
+      S.authError='Make a class first, then add students to it.';
+      S.bulkBusy=false; render(); return;
+    }
+    const targetClass=(S.classes||[]).find(c=>c.id===targetClassId);
     for(let i=0;i<lines.length;i++){
-      const parts=lines[i].split(/\s+/); const first=parts[0]; const last=parts.slice(1).join(' ');
-      const fullName=lines[i];
-      // Which class these students land in, resolved once. A new student inherits that
-      // class's year as a STARTING POINT only. It is stored on their own profile and can
-      // be changed per student, which is what a composite class needs.
-      const newClassId = (S.showAllClasses ? (S.classes[0] && S.classes[0].id) : S.currentClassId) || null;
+      const fullName=normaliseStudentName(lines[i], S.bulkSwapNames);
+      const parts=fullName.split(/\s+/); const first=parts[0]; const last=parts.slice(1).join(' ');
+      const newClassId = targetClassId;
       let attempt=0, done=false, lastErr=null;
       while(!done && attempt<25){
         attempt++;
@@ -9482,7 +9561,7 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
         try{
           const cred=await createUserWithEmailAndPassword(auth,email,password);
           await updateProfile(cred.user,{displayName:fullName});
-          await setDoc(doc(db,'profiles',cred.user.uid),{displayName:fullName, username, email, createdByTeacher:true, teacherUid:S.user.uid, currentPassword:password, classId: newClassId, yearLevel: classYear((S.classes||[]).find(c=>c.id===newClassId))});
+          await setDoc(doc(db,'profiles',cred.user.uid),{displayName:fullName, username, email, createdByTeacher:true, teacherUid:S.user.uid, currentPassword:password, classId: newClassId, yearLevel: classYear(targetClass), group: S.bulkGroup||'mainstream'});
           await signInWithEmailAndPassword(auth,teacherEmail,teacherPass);
           S.bulkResults.push({name:fullName, username, password, status:'ok'});
           done=true;
