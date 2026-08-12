@@ -240,6 +240,13 @@
   .mmc-gs-title { font-weight:750; font-size:16.5px; letter-spacing:-.01em; padding-top:4px; }
   .mmc-gs-step.done .mmc-gs-title { text-decoration:line-through; opacity:.6; }
   .mmc-gs-text { font-size:14px; color:var(--ink-soft); margin-top:3px; line-height:1.45; }
+  .mmc-namegrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:6px; margin-bottom:12px; }
+  .mmc-nameedit {
+    font-size:14px; padding:7px 10px; border-radius:8px;
+    border:1.5px solid var(--paper-line); background:var(--paper); width:100%;
+  }
+  .mmc-nameedit.changed { border-color:var(--gold); background:#FFFDF5; }
+  .mmc-nameedit:focus { border-color:var(--ink); outline:none; }
   .mmc-speak { margin:2px 0 10px; opacity:.85; }
   .mmc-speak:hover { opacity:1; }
   .mmc-setfilter { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:16px; }
@@ -4758,7 +4765,7 @@ function renderStudentDashboard(opts){
     const needSets = Math.max(0, MIN_SETS_FOR_INSIGHT - setsDone);
     const needTT = Math.max(0, MIN_TT_FOR_INSIGHT - ttDone);
     if(doneCard) wrap.appendChild(doneCard);
-    wrap.appendChild(el(`<div class="mmc-empty"><div class="mmc-empty-icon">🌱</div>${forTeacher
+    wrap.appendChild(el(`<div class="mmc-empty">${forTeacher
       ? `Nothing to report yet · ${esc(name)} has completed ${setsDone} practice set${setsDone===1?'':'s'} and ${ttDone} fast facts session${ttDone===1?'':'s'}. Feedback appears once there is enough to be fair about: ${MIN_SETS_FOR_INSIGHT} sets or ${MIN_TT_FOR_INSIGHT} fast facts sessions.`
       : (setsDone>0||ttDone>0)
         ? `Nice start. Your coach needs a bit more to go on before it can tell you what you are good at. ${needTT>0?`${needTT} more Fast Facts session${needTT===1?'':'s'}`:''}${needSets>0&&needTT>0?' or ':''}${needSets>0?`${needSets} more practice set${needSets===1?'':'s'}`:''} and it will start.`
@@ -4931,7 +4938,7 @@ async function applyThemeChoice(primary, secondary, accent){
 function renderThemeCustomizeCard(){
   const tier = computeBadgeInfo(S.ttAttempts, S.profile).tier;
   const unlocked = palettesForTier(tier.key);
-  const card=el(`<div class="mmc-card"><h3>🎨 Page Colours</h3></div>`);
+  const card=el(`<div class="mmc-card"><h3>Page Colours</h3></div>`);
   const nextMsg = tier.key==='rookie'
     ? 'Reach Up and Comer to unlock 7 more, and Expert for all 20 plus any colour you like.'
     : tier.key==='upandcomer'
@@ -5476,7 +5483,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.73';
+const BUILD = '2026-08-10.74';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -6022,7 +6029,7 @@ const S = {
   stuExpandedUid:null, overviewUid:null, raceLeft:null, newClass:null, setsFilter:'ALL', justCreatedId:null, worthOpen:null,
   joinedRoomId:null, pinOpen:false,
   externalRoomId:null, externalRoom:null, pinBusy:false, pinDraft:'', hideGetStarted:false, toastTone:null,
-  bulkSwapNames:false, bulkGroup:'mainstream', bulkTargetClassId:null,
+  bulkSwapNames:false, bulkGroup:'mainstream', bulkTargetClassId:null, bulkFinalNames:null,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
   quickDeployDone:null, resetPasswordResult:null,
@@ -6516,7 +6523,7 @@ function render(){
     body.appendChild(toastEl);
   }
   if(S.error) body.appendChild(el(`<div class="mmc-toast">${esc(S.error)}</div>`));
-  if(S.loading){ body.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">✏️</div>Loading…</div>')); }
+  if(S.loading){ body.appendChild(el('<div class="mmc-empty">Loading…</div>')); }
   else if(!configured){ /* error already shown above */ }
   else if(!S.user){ body.appendChild(renderAuth()); }
   else if(S.previewStudentUid){ body.appendChild(renderStudentPreview()); }
@@ -7757,7 +7764,7 @@ function renderArchivedWeeksList(){
   const wrap=el('<div></div>');
   const archived = S.weeks.filter(w=>w.status==='archived').sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
   if(archived.length===0){
-    wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">📦</div>No archived sets. Anything you archive from the active list shows up here, ready to reuse next year.</div>'));
+    wrap.appendChild(el('<div class="mmc-empty">No archived sets. Anything you archive from the active list shows up here, ready to reuse next year.</div>'));
     return wrap;
   }
   archived.forEach(week=>{
@@ -7909,10 +7916,10 @@ function buildWeekControlPanel(week, isEditing, suffix){
   }
   // Two buttons rather than one: a blank paper for the class, and a marked copy for the
   // teacher. Wanting the answers is a different job from wanting the worksheet.
-  const printBtn=el('<button class="mmc-btn ghost sm" title="Opens your print dialog. Choose Save as PDF there to keep a copy">🖨 Print</button>');
+  const printBtn=el('<button class="mmc-btn ghost sm" title="Opens your print dialog. Choose Save as PDF there to keep a copy">Print</button>');
   printBtn.onclick=()=>printWeekSheet(week, {answers:false});
   btnRow.appendChild(printBtn);
-  const printAnsBtn=el('<button class="mmc-btn ghost sm" title="The same paper with an answer sheet on the back">🖨 + answers</button>');
+  const printAnsBtn=el('<button class="mmc-btn ghost sm" title="The same paper with an answer sheet on the back">Print with answers</button>');
   printAnsBtn.onclick=()=>printWeekSheet(week, {answers:true});
   btnRow.appendChild(printAnsBtn);
   const archiveBtn=el('<button class="mmc-btn ghost sm">Archive</button>');
@@ -8335,7 +8342,7 @@ function renderLedgerSummary(){
   wrap.appendChild(exportBtn);
 
   if(pubWeeks.length===0 || studentUids.length===0){
-    wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">📒</div>Once weeks are published and students sign up &amp; submit, results collect here automatically. Live, from any device.</div>'));
+    wrap.appendChild(el('<div class="mmc-empty">Once weeks are published and students sign up &amp; submit, results collect here automatically. Live, from any device.</div>'));
     return wrap;
   }
   const tableWrap=el('<div class="mmc-ledger-wrap"></div>');
@@ -8382,7 +8389,7 @@ function renderLedgerByWeek(){
   const pubWeeks = S.weeks.filter(w=>isWeekLive(w) && weekInCurrentClass(w))
     .sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
   if(pubWeeks.length===0){
-    wrap.appendChild(el(`<div class="mmc-empty"><div class="mmc-empty-icon">📒</div>${
+    wrap.appendChild(el(`<div class="mmc-empty">${
       S.showAllClasses ? 'No published sets yet.'
         : 'No published sets for '+esc(currentClassLabel())+' yet. Switch to another class, or All classes, to see others.'}</div>`));
     return wrap;
@@ -8450,7 +8457,7 @@ function renderLedgerByWeek(){
 
 function renderLedgerByQuestion(){
   const wrap=el('<div></div>');
-  wrap.appendChild(el('<div class="meta" style="margin-bottom:12px;">Accuracy per question, across every published week each student has completed. 🟩 80%+ · 🟧 50–79% · 🟥 under 50% ·. Not attempted yet. Click a cell to see the question history.</div>'));
+  wrap.appendChild(el('<div class="meta" style="margin-bottom:12px;">Accuracy per question, across every published week each student has completed.  80%+ ·  50–79% ·  under 50% ·. Not attempted yet. Click a cell to see the question history.</div>'));
   const detail=renderGradebookDetail();
   if(detail && S.gradebookDetail && S.gradebookDetail.type==='question') wrap.appendChild(detail);
 
@@ -8496,7 +8503,7 @@ function renderLedgerByQuestion(){
     if(avgTotal===0) avgRow.appendChild(el('<td style="color:var(--ink-soft);">-</td>'));
     else {
       const pct=Math.round((avgCorrect/avgTotal)*100);
-      const emoji = pct>=80?'🟩':(pct>=50?'🟧':'🟥');
+      const emoji = pct>=80?'':(pct>=50?'':'');
       avgRow.appendChild(el(`<td title="${avgCorrect}/${avgTotal} correct across the class">${emoji} ${pct}%</td>`));
     }
   });
@@ -8515,7 +8522,7 @@ function renderLedgerByQuestion(){
       if(total===0){ tr.appendChild(el('<td style="color:var(--ink-soft);">-</td>')); }
       else {
         const pct=Math.round((correctCount/total)*100);
-        const emoji = pct>=80?'🟩':(pct>=50?'🟧':'🟥');
+        const emoji = pct>=80?'':(pct>=50?'':'');
         const td=el('<td></td>');
         const btn=el(`<button type="button" title="${correctCount}/${total} correct" style="background:none;border:none;cursor:pointer;font-weight:700;">${emoji} ${pct}%</button>`);
         btn.onclick=()=>{ S.gradebookDetail={type:'question', uid, skill:code}; render(); };
@@ -8564,7 +8571,7 @@ function renderTeacherTimetable(){
 
   // Class picture first. It is what a teacher plans a lesson from.
   const cls=computeTTClassInsights(S.ttAttempts, studentUids);
-  const clsCard=el('<div class="mmc-card" style="margin-bottom:14px;"><h3>🔍 What this class needs</h3></div>');
+  const clsCard=el('<div class="mmc-card" style="margin-bottom:14px;"><h3>What this class needs</h3></div>');
   if(!cls.length){
     clsCard.appendChild(el('<div class="meta">No shared pattern yet. This fills in once students have done a few sessions. It only counts something when two or more students show the same gap.</div>'));
   } else {
@@ -8748,7 +8755,7 @@ function renderOverviewProfile(uid){
   // paper, which is worse than showing nothing. A teacher could act on it.
   const setsDone = new Set((res||[]).map(r=>r.weekId)).size;
   if(setsDone < MIN_SETS_FOR_INSIGHT && tt.length < MIN_TT_FOR_INSIGHT){
-    wrap.appendChild(el(`<div class="mmc-empty" style="margin-top:16px;"><div class="mmc-empty-icon">🌱</div>
+    wrap.appendChild(el(`<div class="mmc-empty" style="margin-top:16px;">
       Nothing to report yet. ${esc(first)} has completed ${setsDone} practice set${setsDone===1?'':'s'} and ${tt.length} fast facts session${tt.length===1?'':'s'}. Feedback appears from ${MIN_SETS_FOR_INSIGHT} sets or ${MIN_TT_FOR_INSIGHT} fast facts sessions, so that what it says is worth acting on.</div>`));
     return wrap;
   }
@@ -9476,19 +9483,28 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
     </div>
   `);
   form.querySelector('#mmc-bulk-names').oninput=(e)=>{ S.bulkNamesText=e.target.value; syncNamePreview(); };
-  // A preview, because a teacher pasting thirty names should see what they will become
-  // BEFORE thirty accounts exist. Undoing this means deleting them one at a time.
+  // A sample of three was not enough. A teacher pasting thirty names needs to see all
+  // thirty and be able to correct the ones the parser got wrong, BEFORE any account
+  // exists. Undoing this afterwards means deleting students one at a time.
   function syncNamePreview(){
     const box=form.querySelector('#mmc-name-preview');
     if(!box) return;
     const lines=String(S.bulkNamesText||'').split('\n').map(l=>l.trim()).filter(Boolean);
     if(!lines.length){ box.innerHTML=''; return; }
-    const shown=lines.slice(0,3).map(l=>{
-      const out=normaliseStudentName(l, S.bulkSwapNames);
-      return out===l ? `<div class="meta" style="margin:0;">${esc(l)}</div>`
-        : `<div class="meta" style="margin:0;">${esc(l)} <span style="opacity:.5;">becomes</span> <strong style="color:var(--ink);">${esc(out)}</strong></div>`;
-    }).join('');
-    box.innerHTML = shown + (lines.length>3?`<div class="meta" style="margin:2px 0 0;opacity:.6;">and ${lines.length-3} more</div>`:'');
+    const names=lines.map(l=>normaliseStudentName(l, S.bulkSwapNames));
+    S.bulkFinalNames=names.slice();
+    box.innerHTML=`<div class="mmc-setgroup" style="margin:4px 0 6px;">
+        <span class="mmc-setgroup-name">Check these ${names.length} name${names.length===1?'':'s'}</span>
+        <span class="mmc-setgroup-count">tap any to fix it</span>
+      </div>
+      <div class="mmc-namegrid">${names.map((nm,i)=>{
+        const changed = nm!==lines[i];
+        return `<input type="text" class="mmc-nameedit${changed?' changed':''}" data-i="${i}" value="${esc(nm)}"
+          title="${changed?esc('Pasted as: '+lines[i]):''}">`;
+      }).join('')}</div>`;
+    box.querySelectorAll('.mmc-nameedit').forEach(inp=>{
+      inp.oninput=(e)=>{ S.bulkFinalNames[+e.target.dataset.i]=e.target.value; };
+    });
   }
   setTimeout(()=>{ try{ syncNamePreview(); }catch(e){} },0);
   const swapBtn=form.querySelector('#mmc-bulk-swap');
@@ -9550,7 +9566,9 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
     }
     const targetClass=(S.classes||[]).find(c=>c.id===targetClassId);
     for(let i=0;i<lines.length;i++){
-      const fullName=normaliseStudentName(lines[i], S.bulkSwapNames);
+      // The names the teacher REVIEWED, not the raw paste. Falls back to the parser for
+      // anything not on screen, so it can never create a blank-named account.
+      const fullName=((S.bulkFinalNames||[])[i]||'').trim() || normaliseStudentName(lines[i], S.bulkSwapNames);
       const parts=fullName.split(/\s+/); const first=parts[0]; const last=parts.slice(1).join(' ');
       const newClassId = targetClassId;
       let attempt=0, done=false, lastErr=null;
@@ -9803,7 +9821,7 @@ function renderWeeklyPassport(){
   const wrap=el('<div></div>');
   const myWeeks = S.weeks.filter(weekVisibleToMe);
   if(myWeeks.length===0){
-    wrap.appendChild(el('<div class="mmc-empty"><div class="mmc-empty-icon">📭</div>No quizzes published yet. Check back soon!</div>'));
+    wrap.appendChild(el('<div class="mmc-empty">No quizzes published yet. Check back soon!</div>'));
     return wrap;
   }
   wrap.appendChild(el('<h3 style="font-family:Fredoka,sans-serif;margin:4px 0 12px;">Your maths passport</h3>'));
@@ -9967,7 +9985,7 @@ function renderStatusBanner(){
 }
 function renderStatusUpgradePanel(currentTierKey){
   const wrap=el('<div class="mmc-card" style="margin-top:14px;"></div>');
-  wrap.appendChild(el('<h3 style="margin-bottom:10px;">📈 How to level up</h3>'));
+  wrap.appendChild(el('<h3 style="margin-bottom:10px;">How to level up</h3>'));
   const tiers=[
     { key:'rookie', emoji:'🐴', label:'Rookie', reach:'Everyone starts here.', keep:'-', perks:'3 page colour schemes.' },
     { key:'upandcomer', emoji:'🌟', label:'Up and Comer', reach:'15+ practice attempts with 50%+ average accuracy.', keep:'Practice at least once every 14 days.', perks:'2 extra horse colours, 1 hat, and 10 page colour schemes.' },
@@ -10057,7 +10075,7 @@ const TT_PRACTICE_TOTAL = 30;
 // not to present a report.
 function renderTTFocusCard(){
   const ins=computeTTInsights(S.ttAttempts||[]);
-  const card=el('<div class="mmc-card" style="margin-top:16px;"><h3>🔍 What to work on</h3></div>');
+  const card=el('<div class="mmc-card" style="margin-top:16px;"><h3>What to work on</h3></div>');
   if(!ins.items.length){
     card.appendChild(el(`<div class="meta">${ins.hasData
       ? "Nothing standing out right now. Keep practising and this will tell you where to focus."
@@ -10504,7 +10522,7 @@ function renderTeacherLiveGame(){
         <h3>Start the Racing Ground</h3>
         <div class="meta">Students join a lobby, then everyone's 5-minute timer starts together with a live leaderboard.</div>
         <div class="meta">Every student races at <strong>their own year level and group</strong>Support gets Easy, Mainstream Medium, Extension Hard. Harder questions move a horse further, so a mixed-ability class is a real contest rather than a foregone conclusion.</div>
-        <button class="mmc-btn gold" id="mmc-live-create">🐎 Create Room</button>
+        <button class="mmc-btn gold" id="mmc-live-create">Create Room</button>
       </div>
     `);
     form.querySelector('#mmc-live-create').onclick=()=>createLiveRoom();
@@ -10533,7 +10551,7 @@ function renderTeacherLiveGame(){
         return (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0);
       });
     if(rooms.length>1){
-      wrap.appendChild(el(`<div class="mmc-setgroup"><span class="mmc-setgroup-name">🐎 Races open now</span>
+      wrap.appendChild(el(`<div class="mmc-setgroup"><span class="mmc-setgroup-name">Races open now</span>
         <span class="mmc-setgroup-count">${rooms.length}</span></div>`));
     }
     rooms.forEach(r=>{
@@ -10543,7 +10561,7 @@ function renderTeacherLiveGame(){
       const stale = mins!=null && mins>=20;
       const players = (r.id===(room&&room.id)) ? S.liveParticipants : null;
       const card=el(`<div class="mmc-card${isMine?' mmc-classrace':''}" style="margin-bottom:10px;">
-        ${isMine?'<div class="mmc-classflag">🏫 Your class race</div>':''}
+        ${isMine?'<div class="mmc-classflag">Your class race</div>':''}
         <h3 style="margin:0 0 2px;">${isMine ? 'Your race' : esc((r.hostName||'A student')+"'s race")}</h3>
         <div class="meta" style="margin:0;">${r.status==='active'?'Running now':'Waiting to start'} · ${(Number(r.durationSec)||300)<=60?'one minute':'five minutes'}${mins!=null?` · opened ${mins} min ago`:''}</div>
         ${r.pin?`<div class="meta" style="margin-top:6px;">Race PIN <code class="mmc-code" style="font-size:15px;letter-spacing:.12em;">${esc(r.pin)}</code></div>`:''}
@@ -10569,7 +10587,7 @@ function renderTeacherLiveGame(){
       wrap.appendChild(card);
     });
     // A teacher can always open another, even with student races running.
-    const another=el(`<button class="mmc-btn ${rooms.some(r=>!r.hostUid)?'ghost':'gold'} sm" style="margin-top:6px;">🐎 ${rooms.some(r=>!r.hostUid)?'Start another class race':'Start a class race'}</button>`);
+    const another=el(`<button class="mmc-btn ${rooms.some(r=>!r.hostUid)?'ghost':'gold'} sm" style="margin-top:6px;">${rooms.some(r=>!r.hostUid)?'Start another class race':'Start a class race'}</button>`);
     another.onclick=()=>createLiveRoom();
     wrap.appendChild(another);
     return wrap;
@@ -10776,7 +10794,7 @@ async function hostStudentRace(){
 // across to another class, so it cannot be tucked behind a state.
 function renderJoinByPinCard(){
   const card=el(`<div class="mmc-card">
-    <h3 style="margin:0 0 4px;">🔢 Join with a PIN</h3>
+    <h3 style="margin:0 0 4px;">Join with a PIN</h3>
     <div class="meta" style="margin-bottom:10px;">Racing someone in another class? Ask them for their 4-number race PIN.</div>
     <div class="mmc-row" style="gap:8px;align-items:center;">
       <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="mmc-pin-in"
