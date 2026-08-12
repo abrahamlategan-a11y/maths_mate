@@ -5716,7 +5716,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.87';
+const BUILD = '2026-08-10.88';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -7753,10 +7753,10 @@ function renderTeacherWeeks(){
         <span class="mmc-stepnum">1</span>
         <div style="flex:1;">
           <div class="mmc-steplabel">Which class? <span class="mmc-req">*</span></div>
-          ${S.classes.length>1 ? `<div class="mmc-row" style="gap:16px;">
-            <label class="mmc-pick"><input type="checkbox" id="mmc-gen-class-all"> All classes</label>
-            ${S.classes.map(c=>`<label class="mmc-pick"><input type="checkbox" class="mmc-gen-class-cb" value="${c.id}"> ${esc(c.name)}</label>`).join('')}
-          </div>` : `<div class="meta" style="margin:0;">${esc(((S.classes||[])[0]||{}).name || 'Your class')}</div>`}
+          ${S.classes.length>1 ? `<div class="mmc-row" style="gap:16px;flex-wrap:wrap;">
+            ${S.classes.map(c=>`<label class="mmc-pick" data-y="${classYear(c)}"><input type="checkbox" class="mmc-gen-class-cb" value="${c.id}" data-y="${classYear(c)}"> ${esc(c.name)} · ${esc(yearLabel(classYear(c)))}</label>`).join('')}
+          </div>
+          <div class="meta" style="margin:6px 0 0;" id="mmc-gen-yearnote"></div>` : `<div class="meta" style="margin:0;">${esc(((S.classes||[])[0]||{}).name || 'Your class')} · ${esc(yearLabel(classYear((S.classes||[])[0])))}</div>`}
         </div>
       </div>
 
@@ -7766,7 +7766,6 @@ function renderTeacherWeeks(){
           <div class="mmc-steplabel">Which group? <span class="mmc-req">*</span></div>
           <div class="meta" style="margin:0 0 8px;">Sets the difficulty automatically. Change it below if you'd rather.</div>
           <div class="mmc-row" style="gap:16px;">
-            <label class="mmc-pick"><input type="checkbox" id="mmc-gen-group-all"> Everyone</label>
             ${STUDENT_GROUPS.map(g=>`<label class="mmc-pick"><input type="checkbox" class="mmc-gen-group-cb" value="${g.key}"> ${esc(g.label)}</label>`).join('')}
           </div>
         </div>
@@ -7807,7 +7806,6 @@ function renderTeacherWeeks(){
       </div>
     </div>
   `);
-  const allCb=form.querySelector('#mmc-gen-group-all');
   const groupCbs=[...form.querySelectorAll('.mmc-gen-group-cb')];
   // Picking a group sets the matching difficulty, using the same mapping as
   // quick deploy (support→easy, mainstream→medium, extension→hard). The
@@ -7826,11 +7824,7 @@ function renderTeacherWeeks(){
       if(box) box.style.display='';
     }
   };
-  allCb.onchange=()=>{ if(allCb.checked) groupCbs.forEach(cb=>cb.checked=false); syncDifficulty(); };
-  groupCbs.forEach(cb=>cb.onchange=()=>{
-    if(cb.checked) allCb.checked=false;
-    syncDifficulty();
-  });
+  groupCbs.forEach(cb=>cb.onchange=()=>{ syncDifficulty(); });
   syncDifficulty();
   // The old label read "Generate 24 questions" whatever you were about to make, because it
   // asked the CURRENTLY SELECTED class rather than the class this form is targeting. It
@@ -7838,9 +7832,9 @@ function renderTeacherWeeks(){
   const genCountEl=form.querySelector('#mmc-gen-count');
   const syncGenCount=()=>{
     if(!genCountEl) return;
-    const ids = !allClassCb ? (S.showAllClasses ? [] : (S.currentClassId?[S.currentClassId]:[]))
-      : (allClassCb.checked ? [] : classCbs.filter(cb=>cb.checked).map(cb=>cb.value));
-    const from = (ids && ids.length===1) ? (S.classes||[]).find(c=>c.id===ids[0])
+    const ids = classCbs.length ? classCbs.filter(cb=>cb.checked).map(cb=>cb.value)
+      : (S.currentClassId?[S.currentClassId]:[]);
+    const from = ids.length ? (S.classes||[]).find(c=>c.id===ids[0])
       : (S.currentClassId ? (S.classes||[]).find(c=>c.id===S.currentClassId) : (S.classes||[])[0]);
     const y = classYear(from);
     if(!hasCurriculum(y)){
@@ -7852,23 +7846,34 @@ function renderTeacherWeeks(){
       genCountEl.textContent = `This will make ${slotsForYear(y).length} questions for ${yearLabel(y)}${from?` · ${from.name}`:''}${note}.`;
     }
   };
-  const allClassCb=form.querySelector('#mmc-gen-class-all');
   const classCbs=[...form.querySelectorAll('.mmc-gen-class-cb')];
-  if(allClassCb){
-    // If any specific class was pre-checked (matching the current view), reflect that in "All classes" too.
-    if(classCbs.some(cb=>cb.checked)) allClassCb.checked=false;
-    allClassCb.onchange=()=>{ if(allClassCb.checked) classCbs.forEach(cb=>cb.checked=false); syncGenCount(); };
-    classCbs.forEach(cb=>cb.onchange=()=>{
-      if(cb.checked) allClassCb.checked=false;
-      if(classCbs.every(c=>!c.checked)) allClassCb.checked=true;
-      syncGenCount();
+  // A set is generated for ONE year level, so classes of another year cannot be on it.
+  // Ticking a Year 4 class greys out every class that is not Year 4. This was not a
+  // tidiness problem: a mixed selection produced Year 4 questions and handed them to a
+  // Year 3 class, silently.
+  const yearNote=form.querySelector('#mmc-gen-yearnote');
+  const syncYearLock=()=>{
+    const picked=classCbs.filter(cb=>cb.checked);
+    const lockY = picked.length ? picked[0].dataset.y : null;
+    classCbs.forEach(cb=>{
+      const off = lockY!==null && cb.dataset.y!==lockY;
+      cb.disabled=off;
+      const lab=cb.closest('.mmc-pick');
+      if(lab){ lab.style.opacity = off?'.35':''; lab.style.cursor = off?'not-allowed':''; }
     });
-  }
+    if(yearNote){
+      yearNote.textContent = lockY!==null
+        ? `A set covers one year level, so only ${yearLabel(+lockY)} classes can be added.`
+        : '';
+    }
+  };
+  classCbs.forEach(cb=>cb.onchange=()=>{ syncYearLock(); syncGenCount(); });
+  syncYearLock();
   syncGenCount();   // and on first render, not only after a change
   form.querySelector('#mmc-gen-btn').onclick=async ()=>{
     // Nothing is preselected, so a teacher must choose deliberately rather than
     // discovering after publishing that it went to the wrong class or group.
-    if(allClassCb && !allClassCb.checked && !classCbs.some(cb=>cb.checked)){
+    if(classCbs.length && !classCbs.some(cb=>cb.checked)){
       S.toast='Choose which class this set is for.'; render(); return;
     }
     if(!allCb.checked && !groupCbs.some(cb=>cb.checked)){
@@ -7885,8 +7890,8 @@ function renderTeacherWeeks(){
     const timeSel=form.querySelector('#mmc-gen-time');
     S.timeOverride = timeSel ? (timeSel.value||null) : null;
     const targetGroups = allCb.checked ? [] : groupCbs.filter(cb=>cb.checked).map(cb=>cb.value);
-    const classIds = !allClassCb ? (S.showAllClasses ? [] : (S.currentClassId?[S.currentClassId]:[]))
-      : (allClassCb.checked ? [] : classCbs.filter(cb=>cb.checked).map(cb=>cb.value));
+    const classIds = classCbs.length ? classCbs.filter(cb=>cb.checked).map(cb=>cb.value)
+      : (S.currentClassId?[S.currentClassId]:[]);
     // yearLevel is recorded on the set now so that when the generators become
     // year-aware, existing sets already carry the year they were built for.
     // Taken from the targeted class; falls back to the current class, then DEFAULT_YEAR.
