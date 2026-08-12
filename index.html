@@ -268,6 +268,9 @@
   .mmc-q.lo  .mmc-qbtn { color:#9B2C1A; }
   .mmc-qbtn:hover { text-decoration:underline; }
   .mmc-qbtn { cursor:pointer; }
+  /* The cell you clicked, kept obvious while the panel is open. */
+  .mmc-q.picked { outline:3px solid var(--ink); outline-offset:-3px; position:relative; z-index:1; }
+  .mmc-q.picked .mmc-qbtn { text-decoration:underline; }
   .mmc-q:hover { filter:brightness(.96); }
   /* An instant tooltip. The native one is slow enough that a teacher scanning a row gives
      up before it appears, and there was nothing on screen to suggest hovering at all. */
@@ -5753,7 +5756,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.1';
+const BUILD = '2026-08-12.2';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -6305,7 +6308,7 @@ const S = {
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null, ttDetailUid:null,
   stuExpandedUid:null, overviewUid:null, raceLeft:null, newClass:null, setsFilter:'ALL', justCreatedId:null, worthOpen:null,
   joinedRoomId:null, pinOpen:false,
-  externalRoomId:null, externalRoom:null, pinBusy:false, pinDraft:'', hideGetStarted:false, toastTone:null,
+  externalRoomId:null, externalRoom:null, pinBusy:false, pinDraft:'', hideGetStarted:false, toastTone:null, gbScrollLeft:0,
   bulkSwapNames:false, bulkGroup:'mainstream', bulkTargetClassId:null, bulkFinalNames:null, bulkResultClassId:null,
   raceMinutes:2,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
@@ -8815,8 +8818,6 @@ function qBand(pct){ return pct>=80 ? 'hi' : (pct>=50 ? 'mid' : 'lo'); }
 function renderLedgerByQuestion(){
   const wrap=el('<div></div>');
   wrap.appendChild(el('<div class="meta" style="margin-bottom:12px;">Accuracy per question, across every published week each student has completed. Click any cell to see the history for that question.</div>'));
-  const detail=renderGradebookDetail();
-  if(detail && S.gradebookDetail && S.gradebookDetail.type==='question') wrap.appendChild(detail);
 
   const pubWeeks = S.weeks.filter(w=>isWeekLive(w) && weekInCurrentClass(w));
   const qidToSlotByWeek={};
@@ -8831,6 +8832,13 @@ function renderLedgerByQuestion(){
   if(studentUids.length===0){ wrap.appendChild(el('<div class="mmc-empty">No students yet.</div>')); return wrap; }
 
   const tableWrap=el('<div class="mmc-ledger-wrap"></div>');
+  // Restore where the teacher was looking. Done on the next frame because the table has
+  // to be laid out before it can be scrolled.
+  setTimeout(()=>{
+    if(S.gbScrollLeft) tableWrap.scrollLeft = S.gbScrollLeft;
+    const cell=tableWrap.querySelector('.mmc-q.picked');
+    if(cell && cell.scrollIntoView) cell.scrollIntoView({block:'nearest', inline:'nearest'});
+  },0);
   // Arrow buttons and shift+wheel, because dragging a scrollbar at the bottom of a long
   // table is the least discoverable control on the page.
   const nav=el('<div class="mmc-scrollnav"><button type="button" data-s="-1" title="Earlier questions">&lsaquo;</button><button type="button" data-s="1" title="Later questions">&rsaquo;</button></div>');
@@ -8901,9 +8909,19 @@ function renderLedgerByQuestion(){
       if(total===0){ tr.appendChild(el('<td style="color:var(--ink-soft);">-</td>')); }
       else {
         const pct=Math.round((correctCount/total)*100);
-        const td=el(`<td class="mmc-q ${qBand(pct)}"></td>`);
+        const picked = S.gradebookDetail && S.gradebookDetail.type==='question'
+          && S.gradebookDetail.uid===uid && S.gradebookDetail.skill===code;
+        const td=el(`<td class="mmc-q ${qBand(pct)}${picked?' picked':''}"></td>`);
         const btn=el(`<button type="button" class="mmc-qbtn" title="${esc(S.profiles[uid].displayName||uid)} · ${esc(skillTitle(code))} · ${correctCount} of ${total} correct">${pct}%</button>`);
-        btn.onclick=()=>{ S.gradebookDetail={type:'question', uid, skill:code}; render(); };
+        btn.onclick=()=>{
+          // Keep the sideways scroll position AND mark the cell. Re-rendering reset the
+          // table to column one, so clicking Q20 opened the right panel and then scrolled
+          // Q20 off screen entirely, leaving no clue what had been clicked.
+          const wrapEl=btn.closest('.mmc-ledger-wrap');
+          S.gbScrollLeft = wrapEl ? wrapEl.scrollLeft : 0;
+          S.gradebookDetail={type:'question', uid, skill:code};
+          render();
+        };
         td.appendChild(btn);
         tr.appendChild(td);
       }
@@ -8913,6 +8931,11 @@ function renderLedgerByQuestion(){
   table.appendChild(tbody);
   tableWrap.appendChild(table);
   wrap.appendChild(tableWrap);
+  // Underneath the grid, not above it. Appending the panel first pushed the whole table
+  // down the page the moment you clicked, which is half of why the cell you had just
+  // chosen disappeared from view.
+  const detail=renderGradebookDetail();
+  if(detail && S.gradebookDetail && S.gradebookDetail.type==='question') wrap.appendChild(detail);
   return wrap;
 }
 
