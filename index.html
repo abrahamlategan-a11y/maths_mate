@@ -5716,7 +5716,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.84';
+const BUILD = '2026-08-10.85';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -6663,7 +6663,7 @@ if(!configured){
 function subscribeData(){
   if(S.isTeacher){
     unsubs.push(onSnapshot(query(collection(db,'weeks'), where('teacherUid','==',S.user.uid)), snap=>{ S.weeks=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, (err)=>{ S.toast='Weeks error: '+err.message; render(); }));
-    unsubs.push(onSnapshot(query(collection(db,'results'), where('teacherUid','==',S.user.uid)), snap=>{ S.results=scopeToPreview(snap.docs.map(d=>({id:d.id,...d.data()}))); render(); runAutoArchive(); }, (err)=>{ S.toast='Results error: '+err.message; render(); }));
+    unsubs.push(onSnapshot(query(collection(db,'results'), where('teacherUid','==',S.user.uid)), snap=>{ S.results=scopeToPreview(snap.docs.map(d=>({id:d.id,...d.data()}))); render(); }, (err)=>{ S.toast='Results error: '+err.message; render(); }));
     unsubs.push(onSnapshot(query(collection(db,'profiles'), where('teacherUid','==',S.user.uid)), snap=>{ S.profiles={}; snap.docs.forEach(d=>S.profiles[d.id]=d.data()); render(); }, (err)=>{ S.toast='Profiles error: '+err.message; render(); }));
     unsubs.push(onSnapshot(query(collection(db,'ttAttempts'), where('teacherUid','==',S.user.uid)), snap=>{ S.ttAttempts=scopeToPreview(snap.docs.map(d=>({id:d.id,...d.data()}))); render(); }, (err)=>{ S.toast='Timetable data error: '+err.message; render(); }));
     unsubs.push(onSnapshot(query(collection(db,'skillPractice'), where('teacherUid','==',S.user.uid)), snap=>{ S.allSkillPracticeRecords=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, (err)=>{ S.toast='Skill practice data error: '+err.message; render(); }));
@@ -8087,51 +8087,10 @@ function weekResultCount(week){
 // mess auto-archiving is meant to prevent. Archiving only hides it; all results
 // stay in the gradebook and every report.
 const AUTO_ARCHIVE_DAYS = 21;
-let autoArchiveRunning = false;
-async function runAutoArchive(){
-  if(autoArchiveRunning) return;
-  if(!S.user || !S.isTeacher) return;
-  // Not while previewing: S.results is narrowed to one child in there, so "everyone has
-  // finished" would be true on a single student's record. Writes are blocked in preview
-  // anyway, but this stops it reasoning on a partial picture at all.
-  if(isPreviewing()) return;
-  autoArchiveRunning = true;
-  try{
-    const now = Date.now();
-    const roster = Object.keys(S.profiles||{});
-    for(const w of (S.weeks||[])){
-      if(w.status!=='published') continue;
-      if(w.autoArchiveOff) continue;          // teacher explicitly kept it live
-      const created = (w.createdAt && w.createdAt.seconds) ? w.createdAt.seconds*1000 : null;
-      const ageDays = created ? (now-created)/86400000 : 0;
-      // Who this set was actually aimed at. Archiving on "everyone" would never
-      // fire for a set targeted at one ability group.
-      const audience = roster.filter(uid=>{
-        const p=S.profiles[uid]; if(!p||!p.username) return false;
-        if(Array.isArray(w.classIds) && w.classIds.length && p.classId && w.classIds.indexOf(p.classId)===-1) return false;
-        const wYears = (Array.isArray(w.targetYears) && w.targetYears.length) ? w.targetYears
-          : (w.yearLevel!==null && w.yearLevel!==undefined && w.yearLevel!=='' ? [+w.yearLevel] : null);
-        if(wYears && wYears.indexOf(studentYear(p))===-1) return false;
-        if(Array.isArray(w.targetGroups) && w.targetGroups.length){
-          const g = p.group || 'mainstream';
-          if(w.targetGroups.indexOf(g)===-1) return false;
-        }
-        return true;
-      });
-      const done = new Set((S.results||[]).filter(r=>r.weekId===w.id).map(r=>r.uid));
-      const everyoneDone = audience.length>0 && audience.every(uid=>done.has(uid));
-      const tooOld = ageDays >= AUTO_ARCHIVE_DAYS;
-      if(!everyoneDone && !tooOld) continue;
-      try{
-        await updateDoc(doc(db,'weeks',w.id), {
-          status:'archived', scheduledAt:null,
-          archivedAutomatically:true,
-          archivedReason: everyoneDone ? 'all_completed' : 'age',
-        });
-      }catch(e){ /* a failed archive is harmless. It retries next render */ }
-    }
-  } finally { autoArchiveRunning = false; }
-}
+// Auto-archive removed. A set used to disappear by itself once everyone had finished,
+// which meant work vanishing without a teacher doing anything, and needed a "Keep live"
+// toggle to opt out of. The completion count on each set now says when it is done and the
+// Archive button turns green at that moment, so archiving is a deliberate act.
 
 async function deleteWeekAction(week){
   const n = weekResultCount(week);
@@ -8238,14 +8197,6 @@ function buildWeekControlPanel(week, isEditing, suffix){
   if(week.status==='published'){
     // Escape hatch: a set a teacher wants left up (revision, a catch-up week)
     // shouldn't be retired out from under them by the automatic rule.
-    const keepBtn=el(`<button class="mmc-btn ghost sm">${week.autoArchiveOff?'Auto-archive off':'Keep live'}</button>`);
-    keepBtn.onclick=async ()=>{
-      try{ await updateDoc(doc(db,'weeks',week.id), { autoArchiveOff: !week.autoArchiveOff });
-        S.toast = week.autoArchiveOff ? 'This set will auto-archive again when everyone finishes.' : 'This set will stay live until you archive it.';
-      }catch(e){ S.toast='Could not update. Check your connection.'; }
-      render();
-    };
-    btnRow.appendChild(keepBtn);
   }
   const doneCount = weekResultCount(week);
   if(doneCount===0){
