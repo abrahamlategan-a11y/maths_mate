@@ -5483,7 +5483,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.75';
+const BUILD = '2026-08-10.77';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -6200,8 +6200,14 @@ async function joinRaceByPin(pin){
     S.raceLeft=null;
     S.toast=`You've joined ${info.hostName? info.hostName+"'s" : 'the'} race!`;
   }catch(e){
-    // The most likely refusal by far, so name it rather than showing a raw error.
-    S.toast='Could not join. Cross-class racing may be switched off for one of your classes.';
+    // Naming one likely cause was wrong: this fired for every failure, so a real bug in
+    // the rules read as "a teacher turned it off" and hid itself for a week. Say what is
+    // known, and put the actual reason where it can be found.
+    const msg=String((e&&e.message)||'');
+    S.toast = /permission|insufficient/i.test(msg)
+      ? 'Could not join that race. Either the teacher has switched off racing between classes, or the race has finished.'
+      : 'Could not join that race. Check your connection and try again.';
+    try{ console.warn('Mathmentum joinRaceByPin failed:', e); }catch(_){}
   }
   S.pinBusy=false; render();
 }
@@ -8936,9 +8942,24 @@ async function resetStudentPassword(uid, displayName, btnEl){
   if(btnEl){ btnEl.disabled=false; btnEl.textContent=originalText; }
   render();
 }
+// How much work a student would lose. A typo in a class list is the common case and there
+// is nothing to protect; a child with a term of results behind them is a different matter.
+function studentWorkCount(uid){
+  const n = (S.results||[]).filter(r=>r.uid===uid).length
+          + (S.ttAttempts||[]).filter(a=>a.uid===uid).length
+          + (S.allSkillPracticeRecords||[]).filter(r=>r.uid===uid).length;
+  return n;
+}
 async function deleteStudentAccount(uid, displayName, btnEl){
-  const typed = prompt(`This permanently deletes ${displayName}'s login AND every result, attempt, and dashboard record they have. This cannot be undone.\n\nType their name exactly ("${displayName}") to confirm:`);
-  if(typed!==displayName) { if(typed!==null) alert('Name didn\'t match exactly. Nothing was deleted.'); return; }
+  // Typing a name to delete an empty account is friction that protects nothing. The
+  // barrier should match what is actually at stake.
+  const work = studentWorkCount(uid);
+  if(work===0){
+    if(!confirm(`Delete ${displayName}?\n\nThey have not done any work yet, so there is nothing to lose. Their login stops working straight away.`)) return;
+  } else {
+    const typed = prompt(`${displayName} has ${work} recorded result${work===1?'':'s'}. Deleting removes their login AND every one of those records. This cannot be undone.\n\nType their name exactly ("${displayName}") to confirm:`);
+    if(typed!==displayName) { if(typed!==null) alert('Name did not match exactly. Nothing was deleted.'); return; }
+  }
   const originalText = btnEl ? btnEl.textContent : '';
   if(btnEl){ btnEl.disabled=true; btnEl.textContent='Deleting…'; }
   try{
@@ -8946,7 +8967,7 @@ async function deleteStudentAccount(uid, displayName, btnEl){
     await call({ uid });
     if(S.profiles[uid]) delete S.profiles[uid];
   }catch(e){
-    S.toast = 'Could not delete student: '+(e.message||'unknown error')+'make sure the Cloud Function is deployed.';
+    S.toast = 'Could not delete student: '+(e.message||'unknown error');
   }
   if(btnEl){ btnEl.disabled=false; btnEl.textContent=originalText; }
   render();
@@ -9143,7 +9164,9 @@ function renderStudentsTab(mode){
   </div>`);
   crossCard.querySelector('#mmc-cross-toggle').onclick=async ()=>{
     try{
-      await updateDoc(doc(db,'profiles',S.user.uid), {allowCrossClassRacing: !crossOn});
+      // setDoc with merge, not updateDoc. A teacher has no profile document until they
+      // change a setting, and updateDoc on a missing document fails.
+      await setDoc(doc(db,'profiles',S.user.uid), {allowCrossClassRacing: !crossOn}, {merge:true});
       S.profile = Object.assign({}, S.profile, {allowCrossClassRacing: !crossOn});
       S.toast = crossOn ? 'Your students can now only race within your own class.'
                         : 'Your students can now join races in other classes using a PIN.';
