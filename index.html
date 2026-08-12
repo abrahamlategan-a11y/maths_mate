@@ -5716,7 +5716,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.88';
+const BUILD = '2026-08-10.89';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -7681,7 +7681,7 @@ function renderTeacherWeeks(){
   const quickForm=el(`
     <div class="mmc-card mmc-quickcard" style="border-color:var(--purple);background:#F5F1FF;">
       <h3>In a rush?</h3>
-      <div class="meta">Pick a class and go. Every student gets questions at their own level. Support get Easy, Mainstream get Medium, Extension get Hard, and anyone unassigned gets Mainstream. Live immediately, no review step.</div>
+      <div class="meta">Pick a class and go. Every student gets questions at their own level. Each group gets its own set, and anyone not in a group is treated as Mainstream. Live immediately, no review step.</div>
       <div class="mmc-row" style="align-items:flex-end;gap:14px;margin-top:12px;">
         ${S.classes.length>1
           ? `<div class="mmc-field" style="margin-bottom:0;"><label>Class</label>
