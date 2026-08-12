@@ -246,6 +246,11 @@
     background:var(--paper-line); color:var(--ink);
   }
   .mmc-lobbyname.me { background:var(--ink); color:#fff; }
+  .mmc-donecount {
+    font-size:12.5px; font-weight:800; padding:5px 11px; border-radius:999px;
+    background:var(--paper-line); color:var(--ink-soft); white-space:nowrap; align-self:center;
+  }
+  .mmc-donecount.all { background:#2E7D4F; color:#fff; }
   .mmc-namegrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:6px; margin-bottom:12px; }
   .mmc-nameedit {
     font-size:14px; padding:7px 10px; border-radius:8px;
@@ -5711,7 +5716,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.83';
+const BUILD = '2026-08-10.84';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -8190,8 +8195,45 @@ function buildWeekControlPanel(week, isEditing, suffix){
   const printAnsBtn=el('<button class="mmc-btn ghost sm" title="The same paper with an answer sheet on the back">Print with answers</button>');
   printAnsBtn.onclick=()=>printWeekSheet(week, {answers:true});
   btnRow.appendChild(printAnsBtn);
-  const archiveBtn=el('<button class="mmc-btn ghost sm">Archive</button>');
-  archiveBtn.onclick=()=>archiveWeekAction(week);
+  // How many of the students this set was AIMED AT have finished it. Green when everyone
+  // has, so a glance at the list tells a teacher which sets are done.
+  const aimed = weekAudienceUids(week, Object.keys(S.profiles||{}));
+  const doneSet = new Set((S.results||[]).filter(r=>r.weekId===week.id).map(r=>r.uid));
+  const doneN = aimed.filter(u=>doneSet.has(u)).length;
+  const allDone = aimed.length>0 && doneN===aimed.length;
+  if(aimed.length){
+    btnRow.appendChild(el(`<span class="mmc-donecount${allDone?' all':''}">${doneN}/${aimed.length} done</span>`));
+  }
+  const isPri = !!week.priority;
+  const priBtn=el(`<button class="mmc-btn ${isPri?'gold':'ghost'} sm" title="Students cannot use Fast Facts or the Racing Ground until they have finished this">${isPri?'★ Finish first':'☆ Finish first'}</button>`);
+  priBtn.onclick=async ()=>{
+    try{
+      if(isPri){
+        await updateDoc(doc(db,'weeks',week.id), {priority:false});
+        S.toast='No longer required first. Everything is open again.';
+      } else {
+        // Only one at a time, or two sets can lock each other and nobody can do either.
+        for(const w of (S.weeks||[])){
+          if(w.priority && w.id!==week.id){ try{ await updateDoc(doc(db,'weeks',w.id), {priority:false}); }catch(e){} }
+        }
+        await updateDoc(doc(db,'weeks',week.id), {priority:true, priorityAt:serverTimestamp()});
+        S.toast=`"${week.label}" must be finished before Fast Facts or racing. This clears itself after ${PRIORITY_MAX_DAYS} days.`;
+      }
+    }catch(e){ S.toast='Could not change that. Check your connection.'; }
+    render();
+  };
+  btnRow.appendChild(priBtn);
+  const archiveBtn=el(`<button class="mmc-btn ${allDone?'gold':'ghost'} sm">Archive</button>`);
+  archiveBtn.onclick=()=>{
+    const missing = aimed.filter(u=>!doneSet.has(u))
+      .map(u=>(S.profiles[u]&&S.profiles[u].displayName)||'').filter(Boolean);
+    if(missing.length){
+      const who = missing.length<=4 ? missing.join(', ')
+        : `${missing.slice(0,4).join(', ')} and ${missing.length-4} more`;
+      if(!confirm(`${missing.length} student${missing.length===1?" hasn't":"s haven't"} finished this yet:\n\n${who}\n\nArchive it anyway?`)) return;
+    }
+    archiveWeekAction(week);
+  };
   btnRow.appendChild(archiveBtn);
   if(week.status==='published'){
     // Escape hatch: a set a teacher wants left up (revision, a catch-up week)
@@ -10031,10 +10073,26 @@ function renderStudent(){
   syncMyLiveSession();
   if(S.myLive && S.myLive.answering) return renderMyLiveSession();
   const wrap=el('<div></div>');
-  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-st="dashboard">My Dashboard</button><button class="mmc-tab" data-st="weekly">Skills Practice</button><button class="mmc-tab" data-st="timetable">Fast Facts Training Ground</button><button class="mmc-tab" data-st="live">🐎 Racing Ground</button><button class="mmc-tab" data-st="settings">⚙️ Settings</button></div>`);
+  const lockW = priorityWeekForMe();
+  const tabs=el(`<div class="mmc-tabs"><button class="mmc-tab" data-st="dashboard">My Dashboard</button><button class="mmc-tab" data-st="weekly">Skills Practice${lockW?' ⭐':''}</button><button class="mmc-tab" data-st="timetable">Fast Facts Training Ground${lockW?' 🔒':''}</button><button class="mmc-tab" data-st="live">🐎 Racing Ground${lockW?' 🔒':''}</button><button class="mmc-tab" data-st="settings">⚙️ Settings</button></div>`);
   tabs.querySelectorAll('.mmc-tab').forEach(b=>{ if(b.dataset.st===S.studentTab) b.classList.add('active');
     b.onclick=()=>{ S.studentTab=b.dataset.st; render(); }; });
   wrap.appendChild(tabs);
+  // Blocked, with the reason and a way straight to it. A locked door with no explanation
+  // is the fastest way to make a child give up on the whole app.
+  const blocked = priorityBlocked(S.studentTab);
+  if(blocked){
+    const card=el(`<div class="mmc-card" style="text-align:center;">
+      <div style="font-size:34px;">⭐</div>
+      <h3>Finish ${esc(blocked.label)} first</h3>
+      <div class="meta">Your teacher has asked everyone to do this set before anything else. It only takes a few minutes, and then everything opens back up.</div>
+    </div>`);
+    const go=el('<button class="mmc-btn gold" style="width:100%;font-size:16px;padding:12px;margin-top:6px;">Go to it now</button>');
+    go.onclick=()=>{ S.studentTab='weekly'; render(); };
+    card.appendChild(go);
+    wrap.appendChild(card);
+    return wrap;
+  }
   wrap.appendChild(
     S.studentTab==='dashboard' ? renderStudentDashboard() :
     S.studentTab==='weekly' ? renderWeeklyPassport() :
@@ -10081,6 +10139,43 @@ async function deleteWeekProgress(weekId){
   try{ await deleteDoc(doc(db,'weekProgress', `${S.user.uid}_${weekId}`)); }catch(e){}
 }
 function studentEffectiveGroup(){ return (S.profile && S.profile.group) || 'mainstream'; }
+
+// ---------- "Finish this first" ----------
+// A set can be marked as the one thing that must be done before Fast Facts or the Racing
+// Ground. Four things make it safe rather than a trap:
+//   1. It only ever applies to a student the set was actually AIMED AT. A child outside
+//      the audience can never complete it, so they must never be held by it.
+//   2. It expires on its own after PRIORITY_MAX_DAYS. A teacher who forgets does not leave
+//      a class locked out at home indefinitely.
+//   3. A teacher's live class race always overrides it. Being unable to join the race your
+//      own teacher just started would be maddening mid-lesson.
+//   4. Only one set at a time, so two cannot deadlock each other.
+const PRIORITY_MAX_DAYS = 7;
+function priorityWeekForMe(){
+  if(S.isTeacher) return null;
+  const now=Date.now();
+  const w=(S.weeks||[]).filter(x=>x.priority && isWeekLive(x) && x.status!=='archived')
+    .filter(x=>{
+      const set=(x.priorityAt && x.priorityAt.seconds) ? x.priorityAt.seconds*1000 : 0;
+      return !set || (now-set) < PRIORITY_MAX_DAYS*86400000;
+    })
+    .filter(x=>weekVisibleToMe(x))
+    .sort((a,b)=>(b.priorityAt?.seconds||0)-(a.priorityAt?.seconds||0))[0];
+  if(!w) return null;
+  const done=(S.results||[]).some(r=>r.weekId===w.id && r.uid===S.user.uid);
+  return done ? null : w;
+}
+// A live class race is the teacher explicitly wanting these children racing right now.
+function priorityBlocked(tab){
+  if(tab!=='timetable' && tab!=='live') return null;
+  const w=priorityWeekForMe();
+  if(!w) return null;
+  if(tab==='live'){
+    const classRace=(S.liveGames||[]).find(g=>!g.hostUid && (g.status==='lobby'||g.status==='active') && !isRaceOver(g));
+    if(classRace) return null;
+  }
+  return w;
+}
 // Who a set is actually for. The same rule the student's own view uses, so a teacher's
 // "still outstanding" count can never disagree with what children were given.
 function weekAudienceUids(week, roster){
