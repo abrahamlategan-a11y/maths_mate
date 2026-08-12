@@ -5431,7 +5431,14 @@ function genTTQuestion(level, idx, year){
   // The wide 2-50 quotient spread is a Year 4 Hard feature. For Year 3 it would produce
   // 245 ÷ 5, which is not a Year 3 question. They get the ordinary in-table division.
   if(level==='hard' && +year!==3){
-    const divisor=randInt(2,12), quotient=randInt(2,50); const dividend=divisor*quotient;
+    // The quotient used to run to 50, giving 276 ÷ 6 = 46. That is not a times-table fact,
+    // it is short division, and it does not belong in a recall drill. Both the divisor and
+    // the answer now sit inside the tables, matching what multiplication already does:
+    // the teens are allowed, but only against a single digit.
+    const teen = Math.random()<0.3;
+    const divisor  = teen ? randInt(13,15) : randInt(2,12);
+    const quotient = teen ? randInt(2,9)   : randInt(2,12);
+    const dividend = divisor*quotient;
     return { prompt:`${dividend} ÷ ${divisor}`, answer:quotient, isDivision:true, level };
   }
   const divisor=randInt(lo,hi), quotient=randInt(lo,hi); const dividend=divisor*quotient;
@@ -5489,7 +5496,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.79';
+const BUILD = '2026-08-10.80';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -6043,6 +6050,7 @@ const S = {
   joinedRoomId:null, pinOpen:false,
   externalRoomId:null, externalRoom:null, pinBusy:false, pinDraft:'', hideGetStarted:false, toastTone:null,
   bulkSwapNames:false, bulkGroup:'mainstream', bulkTargetClassId:null, bulkFinalNames:null, bulkResultClassId:null,
+  raceMinutes:2,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
   quickDeployDone:null, resetPasswordResult:null,
@@ -6202,7 +6210,9 @@ async function joinRaceByPin(pin){
       horseHat:(S.profile&&S.profile.horseHat)||'none'
     });
     S.externalRoomId = info.gameId;
+    S.joinedRoomId = info.gameId;
     subscribeExternalRoom(info.gameId);
+    ensureParticipantsSub(info.gameId);   // same reason: do not wait for a render
     S.raceLeft=null;
     S.toast=`You've joined ${info.hostName? info.hostName+"'s" : 'the'} race!`;
   }catch(e){
@@ -10815,7 +10825,8 @@ function renderMyLiveSession(){
 // A student hosting their own race. Deliberately scoped to their OWN teacher's students:
 // teacherUid is copied from their profile and the rules refuse anything else, so a race
 // can never reach a child in another teacher's class. hostUid marks who may start it.
-const STUDENT_RACE_SECONDS = 60;
+const STUDENT_RACE_SECONDS = 60;   // the default, kept for older rooms
+const STUDENT_RACE_CHOICES = [2,3,4,5];
 async function hostStudentRace(){
   // One race per child, and that includes a race already RUNNING. Only lobbies were
   // checked, so a host whose race had started could open a second one, end up in neither
@@ -10846,11 +10857,16 @@ async function hostStudentRace(){
       // A student challenge is a quick duel between friends, not the class event. One
       // minute, so it can be run again and again at lunchtime without eating the hour.
       // The teacher's own races stay at five minutes.
-      status: 'lobby', createdAt: serverTimestamp(), durationSec: STUDENT_RACE_SECONDS,
+      status: 'lobby', createdAt: serverTimestamp(),
+      durationSec: (STUDENT_RACE_CHOICES.indexOf(+S.raceMinutes)!==-1 ? +S.raceMinutes : 2)*60,
       classId: S.profile.classId || null
     });
     await publishRacePin(pin, ref.id, S.profile.displayName||'');
     await joinLiveGame(ref.id);
+    // Watch the room straight away rather than waiting for the liveGames listener to
+    // deliver it. Until that arrives, currentLiveRoom() cannot find the room, so nothing
+    // attaches to the player list and the host sees an empty lobby until they refresh.
+    ensureParticipantsSub(ref.id);
   }catch(e){ S.toast='Could not start the race. Check your connection.'; render(); }
 }
 
@@ -10899,7 +10915,21 @@ function renderStartRaceCard(sub){
         : "Start a one-minute race and anyone in your class can join. Everyone gets questions at their own level, so it's a fair race."))}</div>
     </div>
   `);
-  const btn=el(`<button class="mmc-btn ${waiting?'ghost':'gold'}" style="width:100%;${waiting?'':'font-size:16px;padding:12px;'}margin-top:6px;">Start a race</button>`);
+  // The host picks the length. A one-minute race is over before a class has finished
+  // joining; five is a lesson-sized event. Only the host chooses, so there is nothing to
+  // negotiate.
+  const mins = STUDENT_RACE_CHOICES.indexOf(+S.raceMinutes)!==-1 ? +S.raceMinutes : 2;
+  const picker=el(`<div style="margin-top:10px;">
+    <div class="meta" style="margin:0 0 6px;">How long?</div>
+    <div class="mmc-row" style="gap:6px;justify-content:center;flex-wrap:wrap;">
+      ${STUDENT_RACE_CHOICES.map(m=>`<button type="button" class="mmc-setchip${m===mins?' active':''}" data-min="${m}">${m} min</button>`).join('')}
+    </div>
+  </div>`);
+  picker.querySelectorAll('[data-min]').forEach(b=>{
+    b.onclick=()=>{ S.raceMinutes=+b.dataset.min; render(); };
+  });
+  card.appendChild(picker);
+  const btn=el(`<button class="mmc-btn ${waiting?'ghost':'gold'}" style="width:100%;${waiting?'':'font-size:16px;padding:12px;'}margin-top:10px;">Start a ${mins} minute race</button>`);
   btn.onclick=hostStudentRace;
   card.appendChild(btn);
   return card;
@@ -11107,7 +11137,7 @@ function renderStudentLiveGame(){
         <div class="mmc-row" style="justify-content:space-between;align-items:center;gap:12px;">
           <div style="flex:1;">
             <h3 style="margin:0 0 2px;">${esc(raceLabel(r))}</h3>
-            <div class="meta" style="margin:0;">${(Number(r.durationSec)||300)<=60?'One minute':'Five minutes'} · questions at your own level${running?' · already running':''}</div>
+            <div class="meta" style="margin:0;">${Math.round((Number(r.durationSec)||300)/60)} minute${Math.round((Number(r.durationSec)||300)/60)===1?'':'s'} · questions at your own level${running?' · already running':''}</div>
           </div>
           ${running
             ? '<span class="meta" style="margin:0;white-space:nowrap;font-weight:700;">Already started</span>'
@@ -11149,6 +11179,9 @@ async function joinLiveGame(gameId){
       horseHat: S.profile && S.profile.horseHat ? S.profile.horseHat : 'none',
       score:0, attempted:0, position:0, joinedAt:serverTimestamp()
     });
+    // Attach to the player list now, not on the next render. Waiting meant the joiner saw
+    // an empty lobby until something else happened to trigger a re-render.
+    ensureParticipantsSub(gameId);
   }catch(e){ S.toast='Could not join. Check your connection.'; render(); }
 }
 async function syncParticipantCustomization(gameId){
