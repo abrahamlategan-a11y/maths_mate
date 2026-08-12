@@ -5489,7 +5489,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.78';
+const BUILD = '2026-08-10.79';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -6256,6 +6256,8 @@ function ensureParticipantsSub(gameId){
     if(liveParticipantsUnsub){ liveParticipantsUnsub(); liveParticipantsUnsub=null; }
     liveParticipantsRoomId=null; S.liveParticipants=[]; liveParticipantsGen++; return;
   }
+  // Same room: nothing to do. Crucially this does NOT clear the list, so a re-render
+  // while a race is live never empties the lobby.
   if(liveParticipantsRoomId===gameId) return;
   if(liveParticipantsUnsub) liveParticipantsUnsub();
   liveParticipantsRoomId=gameId;
@@ -6506,15 +6508,21 @@ function render(){
   try{
     if(S.user && !S.previewStudentUid){
       const r = currentLiveRoom();
-      // Only watch a race we are actually allowed to read: one of our own teacher's, or
-      // one we have joined. Pointing the listener at anything else produces a permission
-      // error that surfaces to the child as a red banner.
       const mineToRead = !!r && (
         S.isTeacher
           ? (r.teacherUid===S.user.uid)
           : (r.teacherUid===(S.profile&&S.profile.teacherUid) || r.id===S.joinedRoomId)
       );
-      ensureParticipantsSub(mineToRead ? r.id : null);
+      // ONLY ever re-point at a real room. Passing null tears the listener down and wipes
+      // the player list, and currentLiveRoom() returns null for a moment on any number of
+      // ordinary events: a snapshot arriving, a stale race expiring, a room changing
+      // status. A host watched her whole lobby empty itself, assumed it had failed, and
+      // started a second race while still hosting the first.
+      //
+      // A list for a race that has genuinely gone is cleared by the room's own listener,
+      // not by this. Showing a slightly stale list for one render is harmless; showing an
+      // empty one is not.
+      if(mineToRead) ensureParticipantsSub(r.id);
     }
   }catch(e){}
   window.__mmcRenderCount = (window.__mmcRenderCount||0)+1;
@@ -10809,12 +10817,16 @@ function renderMyLiveSession(){
 // can never reach a child in another teacher's class. hostUid marks who may start it.
 const STUDENT_RACE_SECONDS = 60;
 async function hostStudentRace(){
-  // One race per child. Pressing Start twice, or pressing it while already hosting,
-  // left abandoned lobbies scattered across the class for everyone else to trip over.
-  const already=(S.liveGames||[]).find(g=>g.hostUid===S.user.uid && g.status==='lobby' && !isRaceOver(g));
+  // One race per child, and that includes a race already RUNNING. Only lobbies were
+  // checked, so a host whose race had started could open a second one, end up in neither
+  // properly, and take her class with her.
+  const already=(S.liveGames||[]).find(g=>g.hostUid===S.user.uid &&
+    (g.status==='lobby'||g.status==='active') && !isRaceOver(g));
   if(already){
     S.joinedRoomId=already.id;
-    S.toast='You already have a race waiting. This is it.';
+    S.toast = already.status==='active'
+      ? 'Your race is already running. This is it.'
+      : 'You already have a race waiting. This is it.';
     render(); return;
   }
   S.raceLeft=null;
@@ -10952,7 +10964,25 @@ function joinableRaces(){
   });
 }
 async function startLiveGame(gameId){
-  try{ await updateDoc(doc(db,'liveGames',gameId), {status:'active', startedAt:serverTimestamp()}); }
+  try{
+    // The host must actually BE in their own race. Robyn started one and was "in it but
+    // not in it": her participant record was missing, so she had no horse, no score and
+    // no way back in. Written before the race starts, and harmless if it already exists.
+    const me=(S.liveParticipants||[]).some(p=>p.id===S.user.uid);
+    if(!me && !S.isTeacher){
+      try{
+        await setDoc(doc(db,'liveGames',gameId,'participants',S.user.uid), {
+          uid:S.user.uid,
+          name:(S.profile&&S.profile.displayName)||(S.profile&&S.profile.username)||'Player',
+          score:0, position:0, joinedAt:serverTimestamp(),
+          horseColor:(S.profile&&S.profile.horseColor)||'default',
+          horseHat:(S.profile&&S.profile.horseHat)||'none'
+        }, {merge:true});
+      }catch(e2){}
+    }
+    S.joinedRoomId=gameId;
+    await updateDoc(doc(db,'liveGames',gameId), {status:'active', startedAt:serverTimestamp()});
+  }
   catch(e){ S.toast='Could not start the race. Check your connection.'; render(); }
 }
 // A quiet link rather than a card. The PIN is for the uncommon case of reaching another
