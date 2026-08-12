@@ -240,6 +240,12 @@
   .mmc-gs-title { font-weight:750; font-size:16.5px; letter-spacing:-.01em; padding-top:4px; }
   .mmc-gs-step.done .mmc-gs-title { text-decoration:line-through; opacity:.6; }
   .mmc-gs-text { font-size:14px; color:var(--ink-soft); margin-top:3px; line-height:1.45; }
+  .mmc-lobbylist { display:flex; flex-wrap:wrap; gap:7px; margin-top:4px; }
+  .mmc-lobbyname {
+    font-size:15px; font-weight:700; padding:6px 13px; border-radius:999px;
+    background:var(--paper-line); color:var(--ink);
+  }
+  .mmc-lobbyname.me { background:var(--ink); color:#fff; }
   .mmc-namegrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:6px; margin-bottom:12px; }
   .mmc-nameedit {
     font-size:14px; padding:7px 10px; border-radius:8px;
@@ -5483,7 +5489,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.77';
+const BUILD = '2026-08-10.78';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -10803,6 +10809,14 @@ function renderMyLiveSession(){
 // can never reach a child in another teacher's class. hostUid marks who may start it.
 const STUDENT_RACE_SECONDS = 60;
 async function hostStudentRace(){
+  // One race per child. Pressing Start twice, or pressing it while already hosting,
+  // left abandoned lobbies scattered across the class for everyone else to trip over.
+  const already=(S.liveGames||[]).find(g=>g.hostUid===S.user.uid && g.status==='lobby' && !isRaceOver(g));
+  if(already){
+    S.joinedRoomId=already.id;
+    S.toast='You already have a race waiting. This is it.';
+    render(); return;
+  }
   S.raceLeft=null;
   if(!S.profile || !S.profile.teacherUid){ S.toast='You need to be in a class to start a race.'; render(); return; }
   // Belt and braces: the button is hidden while a class race is open, but the rule belongs
@@ -10860,14 +10874,20 @@ function renderStartRaceCard(sub){
       <div class="meta">Join that one. You can start your own again once it's finished.</div>
     </div>`);
   }
+  // If a race is already waiting for players, hosting a SECOND one splits the class in
+  // half. Twenty children all pressing Start at once is how you end up with twenty races
+  // of one. So when something is open, this is quiet and secondary.
+  const waiting=(S.liveGames||[]).filter(g=>g.status==='lobby' && !isRaceOver(g)).length;
   const card=el(`
     <div class="mmc-card" style="text-align:center;">
-      <div style="font-size:34px;">🐎</div>
-      <h3>Challenge your class</h3>
-      <div class="meta">${esc(sub || "Start a one-minute race and anyone in your class can join. Everyone gets questions at their own level, so it's a fair race.")}</div>
+      ${waiting?'' : '<div style="font-size:34px;">🐎</div>'}
+      <h3 style="${waiting?'font-size:17px;':''}">${waiting?'Start your own instead':'Challenge your class'}</h3>
+      <div class="meta">${esc(sub || (waiting
+        ? 'There is already a race waiting above. Join that one if you can, or start your own here.'
+        : "Start a one-minute race and anyone in your class can join. Everyone gets questions at their own level, so it's a fair race."))}</div>
     </div>
   `);
-  const btn=el('<button class="mmc-btn gold" style="width:100%;font-size:16px;padding:12px;margin-top:6px;">🏁 Start a race</button>');
+  const btn=el(`<button class="mmc-btn ${waiting?'ghost':'gold'}" style="width:100%;${waiting?'':'font-size:16px;padding:12px;'}margin-top:6px;">Start a race</button>`);
   btn.onclick=hostStudentRace;
   card.appendChild(btn);
   return card;
@@ -11000,23 +11020,37 @@ function renderStudentLiveGame(){
   if(myRoom && myRoom.status==='lobby'){
     const iAmHost = myRoom.hostUid===S.user.uid;
     const isClass = !myRoom.hostUid;
+    // The whole screen answers one question: who is in this race, and when does it start.
+    // Everything else was noise while twenty children tried to find each other.
+    const names=S.liveParticipants.slice().sort((a,b)=>(a.joinedAt?.seconds||0)-(b.joinedAt?.seconds||0));
     const card=el(`<div class="mmc-card${isClass?' mmc-classrace':''}">
       ${isClass?'<div class="mmc-classflag">🏫 Class Race</div>':''}
       <div class="meta" style="margin:0;">You are in</div>
-      <h3 style="margin:2px 0 6px;">${esc(raceLabel(myRoom))}</h3>
-      <div class="meta">${S.liveParticipants.length} player${S.liveParticipants.length===1?'':'s'} in this race${iAmHost?'. Start when everyone has joined.':isClass?'. Waiting for your teacher to start.':'. Waiting for '+esc(myRoom.hostName||'the host')+' to start.'}</div>
-      ${S.liveParticipants.length?`<div class="mmc-worth-names" style="margin-top:10px;">${
-        S.liveParticipants.map(p=>`<span>${esc(p.name||'Player')}</span>`).join('')}</div>`:''}
+      <h3 style="margin:2px 0 10px;font-size:26px;">${esc(raceLabel(myRoom))}</h3>
+      <div class="mmc-lobbylist">${
+        names.length ? names.map(p=>`<span class="mmc-lobbyname${p.id===S.user.uid?' me':''}">${esc(p.name||'Player')}${p.id===S.user.uid?' (you)':''}</span>`).join('')
+        : '<span class="meta" style="margin:0;">Waiting for players…</span>'}</div>
+      <div class="meta" style="margin-top:10px;font-weight:700;color:var(--ink);">${
+        names.length} in this race${iAmHost ? '. Press Start when everyone is in.'
+          : isClass ? '. Your teacher will start it.'
+          : '. '+esc(myRoom.hostName||'The host')+' will start it.'}</div>
       ${myRoom.pin?`<div style="margin-top:14px;">
-        <div class="meta" style="margin:0;">Race PIN. Read this out so someone in another class can join</div>
+        <div class="meta" style="margin:0;">Race PIN, for someone in another class</div>
         <div style="font-family:'IBM Plex Mono',monospace;font-size:34px;font-weight:800;letter-spacing:.18em;">${esc(myRoom.pin)}</div></div>`:''}
     </div>`);
     wrap.appendChild(card);
     wrap.appendChild(renderHorseCustomizeCard());
     wrap.appendChild(renderCoinAnimalCard(myRoom));
     if(iAmHost){
-      const go=el('<button class="mmc-btn gold" style="width:100%;font-size:16px;padding:12px;">🏁 Start the race</button>');
-      go.onclick=()=>startLiveGame(myRoom.id);
+      const n=S.liveParticipants.length;
+      const go=el(`<button class="mmc-btn gold" style="width:100%;font-size:18px;padding:14px;">Start the race${n>1?` (${n} players)`:''}</button>`);
+      go.onclick=()=>{
+        // Nobody else has joined. Almost always means they are still finding it, so say so
+        // rather than starting a race of one.
+        if(S.liveParticipants.length<2 &&
+           !confirm('Nobody else has joined yet. Start anyway?')) return;
+        startLiveGame(myRoom.id);
+      };
       wrap.appendChild(go);
       wrap.appendChild(raceExitButton('✕ Cancel this race', async ()=>{
         try{ await updateDoc(doc(db,'liveGames',myRoom.id), {status:'ended', endedAt:serverTimestamp()}); await retireRacePin(myRoom); }
@@ -11034,6 +11068,9 @@ function renderStudentLiveGame(){
       <span class="mmc-setgroup-count">${races.length} open</span></div>`));
     races.forEach(r=>{
       const isClass=!r.hostUid;
+      // Once a race is running it is closed. Joining halfway is unfair on everyone already
+      // in it and made it impossible to tell who was actually racing. I added a "Jump in"
+      // button, which was the wrong call.
       const running = r.status==='active';
       const card=el(`<div class="mmc-card${isClass?' mmc-classrace':''}" style="margin-bottom:10px;">
         ${isClass?'<div class="mmc-classflag">🏫 Class Race</div>':''}
@@ -11042,10 +11079,13 @@ function renderStudentLiveGame(){
             <h3 style="margin:0 0 2px;">${esc(raceLabel(r))}</h3>
             <div class="meta" style="margin:0;">${(Number(r.durationSec)||300)<=60?'One minute':'Five minutes'} · questions at your own level${running?' · already running':''}</div>
           </div>
-          <button class="mmc-btn ${isClass?'gold':'ghost'} sm" style="white-space:nowrap;">${running?'Jump in ▶':'Join ▶'}</button>
+          ${running
+            ? '<span class="meta" style="margin:0;white-space:nowrap;font-weight:700;">Already started</span>'
+            : `<button class="mmc-btn ${isClass?'gold':'ghost'} sm" style="white-space:nowrap;">Join</button>`}
         </div>
       </div>`);
-      card.querySelector('button').onclick=()=>{ S.joinedRoomId=r.id; joinLiveGame(r.id); };
+      const jb=card.querySelector('button');
+      if(jb) jb.onclick=()=>{ S.joinedRoomId=r.id; joinLiveGame(r.id); };
       wrap.appendChild(card);
     });
   }
@@ -11059,6 +11099,14 @@ function renderStudentLiveGame(){
   return wrap;
 }
 async function joinLiveGame(gameId){
+  // A started race is closed. Enforced here as well as in the interface, because a stale
+  // screen is exactly how somebody ends up halfway through someone else's race.
+  const target=(S.liveGames||[]).find(g=>g.id===gameId) ||
+    (S.externalRoom && S.externalRoom.id===gameId ? S.externalRoom : null);
+  if(target && (target.status==='active' || isRaceOver(target))){
+    S.toast='That race has already started. Join the next one or start your own.';
+    S.joinedRoomId=null; render(); return;
+  }
   // Clear any "I left" marker. Joining is an explicit decision to be in this race.
   S.raceLeft=null;
   S.joinedRoomId=gameId;
