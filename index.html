@@ -271,18 +271,19 @@
   .mmc-q:hover { filter:brightness(.96); }
   /* An instant tooltip. The native one is slow enough that a teacher scanning a row gives
      up before it appears, and there was nothing on screen to suggest hovering at all. */
-  .mmc-qhead { position:relative; cursor:help; }
+  .mmc-qhead { position:relative; cursor:help; overflow:visible; }
+  .mmc-ledger thead { position:relative; z-index:5; }
   .mmc-qhead::after {
-    content:attr(data-tip); position:absolute; left:50%; bottom:100%;
-    transform:translate(-50%,-6px); background:var(--ink); color:#fff;
+    content:attr(data-tip); position:absolute; left:50%; top:100%;
+    transform:translate(-50%,6px); background:var(--ink); color:#fff;
     font-size:12px; font-weight:600; letter-spacing:0; text-transform:none;
     padding:5px 9px; border-radius:7px; white-space:nowrap;
     opacity:0; pointer-events:none; transition:opacity .08s; z-index:6;
   }
   .mmc-qhead::before {
-    content:''; position:absolute; left:50%; bottom:100%;
-    transform:translate(-50%,1px); border:5px solid transparent;
-    border-top-color:var(--ink); opacity:0; transition:opacity .08s; z-index:6;
+    content:''; position:absolute; left:50%; top:100%;
+    transform:translate(-50%,-4px); border:5px solid transparent;
+    border-bottom-color:var(--ink); opacity:0; transition:opacity .08s; z-index:6;
   }
   .mmc-qhead:hover::after, .mmc-qhead:hover::before { opacity:1; }
   .mmc-qhead span { border-bottom:1.5px dotted currentColor; padding-bottom:1px; }
@@ -5752,7 +5753,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.93';
+const BUILD = '2026-08-10.94';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -8644,7 +8645,7 @@ function renderGradebookDetail(){
     const card=el(`
       <div class="mmc-card" style="border-color:var(--purple);">
         <div class="mmc-row" style="justify-content:space-between;">
-          <h3>${esc(d.skill ? skillTitle(d.skill) : ('Q'+d.slot))} history · ${esc(studentName)}</h3>
+          <h3>Q${esc(String(d.slot||''))} · ${esc(d.skill ? skillTitle(d.skill) : 'Question')} · ${esc(studentName)}</h3>
           <button class="mmc-btn ghost sm" id="mmc-gb-close">✕ Close</button>
         </div>
       </div>
