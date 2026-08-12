@@ -251,6 +251,41 @@
     background:var(--paper-line); color:var(--ink-soft); white-space:nowrap; align-self:center;
   }
   .mmc-donecount.all { background:#2E7D4F; color:#fff; }
+  /* Colour was carried by an emoji square, which went when the teacher pages were
+     de-emojied. A background band is what it should always have been: it tints the whole
+     cell rather than sitting beside the number, so a row is readable at a glance. */
+  .mmc-q { text-align:center; font-variant-numeric:tabular-nums; }
+  .mmc-q.hi  { background:#E7F6EC; }
+  .mmc-q.mid { background:#FFF3DC; }
+  .mmc-q.lo  { background:#FDE8E4; }
+  .mmc-qbtn {
+    background:none; border:0; cursor:pointer; width:100%; padding:6px 4px;
+    font-family:inherit; font-size:13px; font-weight:700; color:var(--ink);
+    font-variant-numeric:tabular-nums; letter-spacing:-.01em;
+  }
+  .mmc-q.hi  .mmc-qbtn { color:#1F6340; }
+  .mmc-q.mid .mmc-qbtn { color:#8A5B02; }
+  .mmc-q.lo  .mmc-qbtn { color:#9B2C1A; }
+  .mmc-qbtn:hover { text-decoration:underline; }
+  .mmc-qbtn { cursor:pointer; }
+  .mmc-q:hover { filter:brightness(.96); }
+  /* An instant tooltip. The native one is slow enough that a teacher scanning a row gives
+     up before it appears, and there was nothing on screen to suggest hovering at all. */
+  .mmc-qhead { position:relative; cursor:help; }
+  .mmc-qhead::after {
+    content:attr(data-tip); position:absolute; left:50%; bottom:100%;
+    transform:translate(-50%,-6px); background:var(--ink); color:#fff;
+    font-size:12px; font-weight:600; letter-spacing:0; text-transform:none;
+    padding:5px 9px; border-radius:7px; white-space:nowrap;
+    opacity:0; pointer-events:none; transition:opacity .08s; z-index:6;
+  }
+  .mmc-qhead::before {
+    content:''; position:absolute; left:50%; bottom:100%;
+    transform:translate(-50%,1px); border:5px solid transparent;
+    border-top-color:var(--ink); opacity:0; transition:opacity .08s; z-index:6;
+  }
+  .mmc-qhead:hover::after, .mmc-qhead:hover::before { opacity:1; }
+  .mmc-qhead span { border-bottom:1.5px dotted currentColor; padding-bottom:1px; }
   .mmc-gcount { font-size:12px; font-weight:700; color:var(--ink-soft); }
   .mmc-namegrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:6px; margin-bottom:12px; }
   .mmc-nameedit {
@@ -5717,7 +5752,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.91';
+const BUILD = '2026-08-10.93';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -8773,9 +8808,12 @@ function renderLedgerByWeek(){
   return wrap;
 }
 
+// One place that decides which band a percentage falls in, so the colours can never
+// disagree between the class average row and a student's own cell.
+function qBand(pct){ return pct>=80 ? 'hi' : (pct>=50 ? 'mid' : 'lo'); }
 function renderLedgerByQuestion(){
   const wrap=el('<div></div>');
-  wrap.appendChild(el('<div class="meta" style="margin-bottom:12px;">Accuracy per question, across every published week each student has completed.  80%+ ·  50–79% ·  under 50% ·. Not attempted yet. Click a cell to see the question history.</div>'));
+  wrap.appendChild(el('<div class="meta" style="margin-bottom:12px;">Accuracy per question, across every published week each student has completed. Click any cell to see the history for that question.</div>'));
   const detail=renderGradebookDetail();
   if(detail && S.gradebookDetail && S.gradebookDetail.type==='question') wrap.appendChild(detail);
 
@@ -8792,6 +8830,25 @@ function renderLedgerByQuestion(){
   if(studentUids.length===0){ wrap.appendChild(el('<div class="mmc-empty">No students yet.</div>')); return wrap; }
 
   const tableWrap=el('<div class="mmc-ledger-wrap"></div>');
+  // Arrow buttons and shift+wheel, because dragging a scrollbar at the bottom of a long
+  // table is the least discoverable control on the page.
+  const nav=el('<div class="mmc-scrollnav"><button type="button" data-s="-1" title="Earlier questions">&lsaquo;</button><button type="button" data-s="1" title="Later questions">&rsaquo;</button></div>');
+  nav.querySelectorAll('button').forEach(b=>{
+    b.onclick=()=>{ tableWrap.scrollBy({left:(+b.dataset.s)*320, behavior:'smooth'}); };
+  });
+  wrap.appendChild(nav);
+  tableWrap.addEventListener('wheel', (e)=>{
+    if(e.shiftKey || Math.abs(e.deltaX)>Math.abs(e.deltaY)) return;
+    if(e.deltaY===0) return;
+    // Only take the wheel when there IS somewhere sideways to go, and not at either end,
+    // or the page stops scrolling over the table and that is worse than the original.
+    const room=tableWrap.scrollWidth-tableWrap.clientWidth;
+    if(room<=0) return;
+    if(tableWrap.scrollLeft<=0 && e.deltaY<0) return;
+    if(tableWrap.scrollLeft>=room-1 && e.deltaY>0) return;
+    e.preventDefault();
+    tableWrap.scrollLeft += e.deltaY;
+  }, {passive:false});
   const table=el('<table class="mmc-ledger"></table>');
   const thead=el('<thead><tr></tr></thead>');
   const trh=thead.querySelector('tr');
@@ -8806,7 +8863,11 @@ function renderLedgerByQuestion(){
   present.forEach(c=>{ if(ordered.indexOf(c)===-1) ordered.push(c); });   // retired skills last
   const COLS = ordered;
   const SLOT_COUNT = COLS.length;
-  COLS.forEach((code,i)=> trh.appendChild(el(`<th title="${esc(skillTitle(code))}">Q${i+1}</th>`)));
+  // The skill name was already on a `title`, but nothing said so and the browser's own
+  // tooltip takes about a second to appear. A dotted underline and a help cursor say
+  // "there is more here", and the tooltip below shows instantly.
+  COLS.forEach((code,i)=> trh.appendChild(el(
+    `<th class="mmc-qhead" data-tip="${esc(skillTitle(code))}"><span>Q${i+1}</span></th>`)));
   table.appendChild(thead);
   const tbody=el('<tbody></tbody>');
 
@@ -8821,8 +8882,7 @@ function renderLedgerByQuestion(){
     if(avgTotal===0) avgRow.appendChild(el('<td style="color:var(--ink-soft);">-</td>'));
     else {
       const pct=Math.round((avgCorrect/avgTotal)*100);
-      const emoji = pct>=80?'':(pct>=50?'':'');
-      avgRow.appendChild(el(`<td title="${avgCorrect}/${avgTotal} correct across the class">${emoji} ${pct}%</td>`));
+      avgRow.appendChild(el(`<td class="mmc-q ${qBand(pct)}" title="${avgCorrect}/${avgTotal} correct across the class">${pct}%</td>`));
     }
   });
   tbody.appendChild(avgRow);
@@ -8840,9 +8900,8 @@ function renderLedgerByQuestion(){
       if(total===0){ tr.appendChild(el('<td style="color:var(--ink-soft);">-</td>')); }
       else {
         const pct=Math.round((correctCount/total)*100);
-        const emoji = pct>=80?'':(pct>=50?'':'');
-        const td=el('<td></td>');
-        const btn=el(`<button type="button" title="${correctCount}/${total} correct" style="background:none;border:none;cursor:pointer;font-weight:700;">${emoji} ${pct}%</button>`);
+        const td=el(`<td class="mmc-q ${qBand(pct)}"></td>`);
+        const btn=el(`<button type="button" class="mmc-qbtn" title="${esc(S.profiles[uid].displayName||uid)} · ${esc(skillTitle(code))} · ${correctCount} of ${total} correct">${pct}%</button>`);
         btn.onclick=()=>{ S.gradebookDetail={type:'question', uid, skill:code}; render(); };
         td.appendChild(btn);
         tr.appendChild(td);
