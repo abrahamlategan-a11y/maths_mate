@@ -5483,7 +5483,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.74';
+const BUILD = '2026-08-10.75';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -5735,6 +5735,13 @@ function renderNewClassForm(){
 // School portals export "Smith, Jasmine" and often "Smith, Jasmine (Jazz)". Neither reads
 // well as a display name, and retyping thirty of them is the kind of tedium that stops a
 // teacher trying the app at all.
+// Which class the last batch actually went into. Named on the results card because a
+// batch landing in the wrong class is otherwise invisible until somebody notices weeks
+// later that a Year 1 is doing Year 4 work.
+function bulkResultClassName(){
+  const c=(S.classes||[]).find(x=>x.id===S.bulkResultClassId);
+  return c ? `${c.name} · Year Level: ${classYear(c)===0?'Pre-Primary':classYear(c)}` : 'your class';
+}
 function normaliseStudentName(line, swap){
   let t=String(line||'').trim();
   // A preferred name in brackets wins. "Smith, Jasmine (Jazz)" is Jazz to everyone who
@@ -6029,7 +6036,7 @@ const S = {
   stuExpandedUid:null, overviewUid:null, raceLeft:null, newClass:null, setsFilter:'ALL', justCreatedId:null, worthOpen:null,
   joinedRoomId:null, pinOpen:false,
   externalRoomId:null, externalRoom:null, pinBusy:false, pinDraft:'', hideGetStarted:false, toastTone:null,
-  bulkSwapNames:false, bulkGroup:'mainstream', bulkTargetClassId:null, bulkFinalNames:null,
+  bulkSwapNames:false, bulkGroup:'mainstream', bulkTargetClassId:null, bulkFinalNames:null, bulkResultClassId:null,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
   skillPracticeRecords:[], skillSession:null, allSkillPracticeRecords:[], viewingStudentDashboardUid:null,
   quickDeployDone:null, resetPasswordResult:null,
@@ -9403,8 +9410,8 @@ function renderStudentsTab(mode){
   if(S.bulkResults){
     const card=el(`
       <div class="mmc-card">
-        <h3>Accounts created ✓</h3>
-        <div class="meta">You can find these again anytime in Student Management below.</div>
+        <h3>${S.bulkResults.filter(r=>r.status==='ok').length} account${S.bulkResults.filter(r=>r.status==='ok').length===1?'':'s'} created in ${esc(bulkResultClassName())}</h3>
+        <div class="meta">Print or download these now. Passwords are shown here, and in Student Management below.</div>
         <div class="mmc-ledger-wrap"><table class="mmc-ledger"><thead><tr><th>Name</th><th>Username</th><th>Password</th><th>Status</th></tr></thead>
           <tbody>${S.bulkResults.map(r=>`<tr><td>${esc(r.name)}</td><td><code class="mmc-code">${esc(r.username)}</code></td><td><code class="mmc-code">${esc(r.password||'-')}</code></td><td>${r.status==='ok'?'✓':'✗ '+esc(r.error||'failed')}</td></tr>`).join('')}</tbody>
         </table></div>
@@ -9423,9 +9430,11 @@ function renderStudentsTab(mode){
       document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
     };
     card.querySelector('#mmc-bulk-pdf').onclick=()=>generateLoginCardsPDF(S.bulkResults);
-    card.querySelector('#mmc-bulk-done').onclick=()=>{ S.bulkResults=null; S.bulkNamesText=''; render(); };
+    card.querySelector('#mmc-bulk-done').onclick=()=>{ S.bulkResults=null; S.bulkNamesText=''; S.bulkFinalNames=null; render(); };
     wrap.appendChild(card);
-    return wrap;
+    // Deliberately NOT returning here. This used to replace the whole tab, so a teacher
+    // who had just made a class could not see their class list, or add a second group,
+    // until they found the Done button.
   }
 
   const form=el(`
@@ -9524,6 +9533,10 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
   // No classes at all: default to making one rather than showing an empty selector.
   if(bulkClassSel && !(S.classes||[]).length){ bulkClassSel.value='__new__'; syncBulkNote(); }
   form.querySelector('#mmc-bulk-go').onclick=async ()=>{
+    // Cleared FIRST, every time. This was set on one run and never reset, so a second
+    // batch in the same session silently went to the first batch's class, whatever the
+    // dropdown said. Ten students landed in the wrong class that way.
+    S.bulkTargetClassId = null;
     // If they chose "+ A new class", create it first and make it current, so
     // every account created below lands in the right place.
     if(bulkClassSel && bulkClassSel.value==='__new__'){
@@ -9565,6 +9578,7 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
       S.bulkBusy=false; render(); return;
     }
     const targetClass=(S.classes||[]).find(c=>c.id===targetClassId);
+    S.bulkResultClassId=targetClassId;
     for(let i=0;i<lines.length;i++){
       // The names the teacher REVIEWED, not the raw paste. Falls back to the parser for
       // anything not on screen, so it can never create a blank-named account.
@@ -9597,6 +9611,7 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
       S.bulkProgress=`${i+1}/${lines.length}`; render();
     }
     S.bulkCreating=false;
+    S.bulkTargetClassId=null;
     await handleAuthChange(auth.currentUser);
     render();
   };
