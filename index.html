@@ -270,6 +270,21 @@
   .mmc-qbtn { cursor:pointer; }
   /* The cell you clicked, kept obvious while the panel is open. */
   .mmc-q.picked { outline:3px solid var(--ink); outline-offset:-3px; position:relative; z-index:1; }
+  .mmc-qpop {
+    position:fixed; z-index:60; max-width:min(440px, calc(100vw - 20px)); opacity:0;
+    transition:opacity .1s; filter:drop-shadow(0 6px 20px rgba(0,0,0,.22));
+  }
+  .mmc-qpop .mmc-card { margin:0; }
+  /* A soft shadow at whichever edge is about to pull, so it is clear the grid will move
+     before it does. */
+  .mmc-ledger-wrap { position:relative; }
+  .mmc-ledger-wrap.edge-l { box-shadow:inset 22px 0 18px -18px rgba(0,0,0,.35); }
+  .mmc-ledger-wrap.edge-r { box-shadow:inset -22px 0 18px -18px rgba(0,0,0,.35); }
+  .mmc-qpop::after {
+    content:''; position:absolute; left:var(--tipx,50%); border:9px solid transparent;
+  }
+  .mmc-qpop.up::after { top:100%; margin-left:-9px; border-top-color:var(--paper); }
+  .mmc-qpop.down::after { bottom:100%; margin-left:-9px; border-bottom-color:var(--paper); }
   .mmc-q.picked .mmc-qbtn { text-decoration:underline; }
   .mmc-q:hover { filter:brightness(.96); }
   /* An instant tooltip. The native one is slow enough that a teacher scanning a row gives
@@ -5756,7 +5771,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.2';
+const BUILD = '2026-08-12.3';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -6308,7 +6323,7 @@ const S = {
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null, ttDetailUid:null,
   stuExpandedUid:null, overviewUid:null, raceLeft:null, newClass:null, setsFilter:'ALL', justCreatedId:null, worthOpen:null,
   joinedRoomId:null, pinOpen:false,
-  externalRoomId:null, externalRoom:null, pinBusy:false, pinDraft:'', hideGetStarted:false, toastTone:null, gbScrollLeft:0,
+  externalRoomId:null, externalRoom:null, pinBusy:false, pinDraft:'', hideGetStarted:false, toastTone:null, gbScrollLeft:0, gbAnchor:null,
   bulkSwapNames:false, bulkGroup:'mainstream', bulkTargetClassId:null, bulkFinalNames:null, bulkResultClassId:null,
   raceMinutes:2,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
@@ -8846,6 +8861,29 @@ function renderLedgerByQuestion(){
     b.onclick=()=>{ tableWrap.scrollBy({left:(+b.dataset.s)*320, behavior:'smooth'}); };
   });
   wrap.appendChild(nav);
+  // Move the pointer near either edge and the grid rolls that way, faster the closer you
+  // get. Nothing to grab, and it cannot be confused with clicking a cell, which dragging
+  // would have been.
+  let edgeTimer=null;
+  const stopEdge=()=>{ if(edgeTimer){ cancelAnimationFrame(edgeTimer); edgeTimer=null; } };
+  tableWrap.addEventListener('mousemove', (e)=>{
+    const r=tableWrap.getBoundingClientRect();
+    const ZONE=70;
+    const dl=e.clientX-r.left, dr=r.right-e.clientX;
+    let dir=0, strength=0;
+    if(dl<ZONE){ dir=-1; strength=(ZONE-dl)/ZONE; }
+    else if(dr<ZONE){ dir=1; strength=(ZONE-dr)/ZONE; }
+    stopEdge();
+    if(!dir) { tableWrap.classList.remove('edge-l','edge-r'); return; }
+    tableWrap.classList.toggle('edge-l', dir<0);
+    tableWrap.classList.toggle('edge-r', dir>0);
+    const step=()=>{
+      tableWrap.scrollLeft += dir * (1 + strength*11);
+      edgeTimer=requestAnimationFrame(step);
+    };
+    step();
+  });
+  tableWrap.addEventListener('mouseleave', ()=>{ stopEdge(); tableWrap.classList.remove('edge-l','edge-r'); });
   tableWrap.addEventListener('wheel', (e)=>{
     if(e.shiftKey || Math.abs(e.deltaX)>Math.abs(e.deltaY)) return;
     if(e.deltaY===0) return;
@@ -8914,11 +8952,14 @@ function renderLedgerByQuestion(){
         const td=el(`<td class="mmc-q ${qBand(pct)}${picked?' picked':''}"></td>`);
         const btn=el(`<button type="button" class="mmc-qbtn" title="${esc(S.profiles[uid].displayName||uid)} · ${esc(skillTitle(code))} · ${correctCount} of ${total} correct">${pct}%</button>`);
         btn.onclick=()=>{
-          // Keep the sideways scroll position AND mark the cell. Re-rendering reset the
-          // table to column one, so clicking Q20 opened the right panel and then scrolled
-          // Q20 off screen entirely, leaving no clue what had been clicked.
+          // Remember the sideways position AND where on screen the cell is, so the bubble
+          // can be pinned to it. Re-rendering used to reset the table to column one, so
+          // clicking Q20 scrolled Q20 out of sight and the panel appeared somewhere else
+          // entirely, with nothing connecting the two.
           const wrapEl=btn.closest('.mmc-ledger-wrap');
           S.gbScrollLeft = wrapEl ? wrapEl.scrollLeft : 0;
+          const r=btn.getBoundingClientRect();
+          S.gbAnchor={ x:r.left+r.width/2, y:r.top, bottom:r.bottom };
           S.gradebookDetail={type:'question', uid, skill:code};
           render();
         };
@@ -8931,11 +8972,37 @@ function renderLedgerByQuestion(){
   table.appendChild(tbody);
   tableWrap.appendChild(table);
   wrap.appendChild(tableWrap);
-  // Underneath the grid, not above it. Appending the panel first pushed the whole table
-  // down the page the moment you clicked, which is half of why the cell you had just
-  // chosen disappeared from view.
+  // A bubble pinned over the grid rather than a panel below it. position:fixed is what
+  // makes this work: the table wrapper scrolls, so anything inside it gets clipped, and a
+  // fixed element is measured against the viewport instead.
+  // Lives on document.body to escape the scroll clipping, which means the normal render
+  // never removes it. Cleared explicitly, or they stack up.
+  document.querySelectorAll('.mmc-qpop').forEach(x=>x.remove());
   const detail=renderGradebookDetail();
-  if(detail && S.gradebookDetail && S.gradebookDetail.type==='question') wrap.appendChild(detail);
+  if(detail && S.gradebookDetail && S.gradebookDetail.type==='question'){
+    const a=S.gbAnchor;
+    const bubble=el('<div class="mmc-qpop"></div>');
+    bubble.appendChild(detail);
+    document.body.appendChild(bubble);
+    setTimeout(()=>{
+      if(!a){ bubble.style.cssText='position:fixed;left:50%;top:80px;transform:translateX(-50%);'; return; }
+      const bw=bubble.offsetWidth, bh=bubble.offsetHeight;
+      // Above the cell by default. Below it if there is no room, which happens on the
+      // first few rows.
+      const above = a.y - bh - 14 > 8;
+      const top = above ? a.y - bh - 12 : a.bottom + 12;
+      let left = a.x - bw/2;
+      left = Math.max(10, Math.min(left, window.innerWidth - bw - 10));
+      bubble.style.left = left+'px';
+      bubble.style.top = top+'px';
+      bubble.classList.add(above?'up':'down');
+      bubble.style.setProperty('--tipx', (a.x-left)+'px');
+      bubble.style.opacity='1';
+    },0);
+    // Clicking anywhere else closes it, which is what a bubble should do.
+    const away=(e)=>{ if(!bubble.contains(e.target)){ S.gradebookDetail=null; render(); } };
+    setTimeout(()=>document.addEventListener('click', away, {once:true}), 0);
+  }
   return wrap;
 }
 
