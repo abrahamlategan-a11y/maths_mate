@@ -1017,9 +1017,16 @@ function drawAngle(deg){
   function pt(a,len){ const rad=a*Math.PI/180; return [cx+len*Math.cos(rad), cy-len*Math.sin(rad)]; }
   const [x1,y1]=pt(0,r), [x2,y2]=pt(deg,r), [ax1,ay1]=pt(0,arcR), [ax2,ay2]=pt(deg,arcR);
   const largeArc = deg>180?1:0;
+  // A right angle is marked with a SQUARE, not an arc. That is the convention every maths
+  // book uses, and an arc on a 90 degree angle reads as "some angle" rather than "this one
+  // is exactly square".
+  const mark = deg===90
+    ? (()=>{ const k=26; const [px,py]=pt(0,k), [qx,qy]=pt(90,k);
+        return `<path d="M ${px} ${py} L ${px+(qx-cx)} ${py+(qy-cy)} L ${qx} ${qy}" fill="none" stroke="#C4801F" stroke-width="2.5"/>`; })()
+    : `<path d="M ${ax1} ${ay1} A ${arcR} ${arcR} 0 ${largeArc} 0 ${ax2} ${ay2}" fill="none" stroke="#C4801F" stroke-width="2.5"/>`;
   return svgWrap(`<line x1="${cx}" y1="${cy}" x2="${x1}" y2="${y1}" stroke="#2B2620" stroke-width="3"/>
     <line x1="${cx}" y1="${cy}" x2="${x2}" y2="${y2}" stroke="#2B2620" stroke-width="3"/>
-    <path d="M ${ax1} ${ay1} A ${arcR} ${arcR} 0 ${largeArc} 0 ${ax2} ${ay2}" fill="none" stroke="#C4801F" stroke-width="2.5"/>
+    ${mark}
     <circle cx="${cx}" cy="${cy}" r="3" fill="#2B2620"/>`, 240,190);
 }
 function drawCompositeAngle(a1,a2){
@@ -1555,6 +1562,38 @@ function drawCutoutShape(sh){
 }
 
 function genArea(diff, _strategy, year){
+  if(+year===6 && diff!=='easy'){
+    // Grid counting is a Year 3 question and it was still here at Year 6 Medium. A named
+    // object with two measurements is the Year 4 Hard shape, which is where Year 6 starts.
+    // Each object carries its own plausible size. Without this a noticeboard came out
+    // 10.9 m wide, which is a distraction a child does not need mid-question.
+    const things=[
+      ['a tennis court',[18,26],[9,14]], ['a classroom floor',[7,12],[6,10]],
+      ['a vegetable patch',[3,9],[2,6]], ['a rug',[2,4],[1,3]],
+      ['a noticeboard',[2,4],[1,2]],     ['a car park bay',[4,6],[2,3]],
+      ['a swimming pool',[20,50],[8,25]],['a basketball court',[24,28],[13,16]],
+    ];
+    const [thing,LR,WR]=pick(things);
+    if(diff==='medium'){
+      const a=randInt(LR[0],LR[1]), b=randInt(WR[0],WR[1]);
+      return { prompt:`${thing.charAt(0).toUpperCase()+thing.slice(1)} measures ${a} m by ${b} m. What are its area and perimeter?`,
+        answer:`Area = ${a*b} m², Perimeter = ${2*(a+b)} m`,
+        apArea:a*b, apPerim:2*(a+b),
+        explanation:`Area = ${a} × ${b} = ${a*b} m². Perimeter = 2 × (${a} + ${b}) = ${2*(a+b)} m.`,
+        subskill:'area_perimeter' };
+    }
+    // Hard: a decimal on each side, and the tenths digit is never zero, or "7.0 m by 5.0 m"
+    // reads as two whole numbers and the extra step disappears.
+    const dec=(lo,hi)=>Number((randInt(lo,hi)+randInt(1,9)/10).toFixed(1));
+    const a=dec(LR[0],LR[1]);
+    const b=dec(WR[0],WR[1]);
+    const area=Number((a*b).toPrecision(12)), per=Number((2*(a+b)).toPrecision(12));
+    return { prompt:`${thing.charAt(0).toUpperCase()+thing.slice(1)} measures ${a} m by ${b} m. What are its area and perimeter?`,
+      answer:`Area = ${area} m², Perimeter = ${per} m`,
+      apArea:area, apPerim:per,
+      explanation:`Area = ${a} × ${b} = ${area} m². Perimeter = 2 × (${a} + ${b}) = ${per} m.`,
+      subskill:'area_perimeter' };
+  }
   // Year 3 counts squares rather than using a formula, so it stays on the grid at every
   // level. But a bigger, more awkward grid is genuinely harder to count.
   if(+year===3) return genAreaY4(diff==='easy' ? 'easy' : 'medium');
@@ -1653,7 +1692,8 @@ function genFractionSimplify(diff, _strategy, year){
     const [n,d]=pick(pairs);
     const g=gcd2(n,d);
     return { prompt:`Simplify this fraction to its lowest terms.`, inputType:'fracHard',
-      givenNum:n, givenDen:d, answer:`${n/g}/${d/g}`,
+      givenNum:n, givenDen:d, answer:`${n/g}/${d/g}`, requireSimplest:true,
+      hint: diff==='easy' ? 'Whatever you do to the top, you must also do to the bottom.' : undefined,
       explanation:`${n}/${d} ÷ ${g}/${g} = ${n/g}/${d/g}.`, subskill:'simplifying_fractions' };
   }
   return genFractionSimplifyY4(diff);
@@ -1739,7 +1779,53 @@ function genConversion(diff){
   return { prompt:`Complete the conversion: ${val} ${c.from} = ___ ${c.to}`, answer:correct, inputType:'choice', choices,
     explanation:`${val} ${c.from} × ${c.factor} = ${result} ${c.to}.` };
 }
+// An isometric rectangular prism. Two offset faces and three joining edges is enough to
+// read as a solid, and it makes the volume question about a shape rather than a sentence.
+function drawPrism(l,w,h){
+  const S=13, ox=40, oy=125;
+  const W=l*S, H=h*S, D=Math.min(w*S, 46)*0.72;
+  const x=ox, y=oy-H;
+  const p=(a,b)=>`${a},${b}`;
+  return svgWrap(`
+    <polygon points="${p(x,y)} ${p(x+W,y)} ${p(x+W,y+H)} ${p(x,y+H)}"
+      fill="#FFF6E2" stroke="#2B2620" stroke-width="2.5"/>
+    <polygon points="${p(x,y)} ${p(x+D,y-D)} ${p(x+W+D,y-D)} ${p(x+W,y)}"
+      fill="#FFEFC6" stroke="#2B2620" stroke-width="2.5"/>
+    <polygon points="${p(x+W,y)} ${p(x+W+D,y-D)} ${p(x+W+D,y+H-D)} ${p(x+W,y+H)}"
+      fill="#F6E3B8" stroke="#2B2620" stroke-width="2.5"/>
+    <text x="${x+W/2}" y="${y+H+18}" text-anchor="middle" font-size="13" font-family="sans-serif">${l} cm</text>
+    <text x="${x-8}" y="${y+H/2}" text-anchor="end" font-size="13" font-family="sans-serif">${h} cm</text>
+    <text x="${x+W+D+6}" y="${y-D/2+4}" font-size="13" font-family="sans-serif">${w} cm</text>
+  `, Math.max(200, W+D+64), 165);
+}
+
 function genAngle(diff, _strategy, year){
+  if(+year===6 && diff!=='easy'){
+    // Naming an angle from a picture is a Year 3 question. Year 6 uses the angle FACTS:
+    // a straight line is 180, a full turn is 360, a triangle is 180.
+    const kind = diff==='medium' ? pick(['line','point']) : pick(['line','point','triangle']);
+    if(kind==='line'){
+      const a=randInt(25,155);
+      return { prompt:`These two angles sit on a straight line. One is ${a}°. What is the other?`,
+        answer:String(180-a), svg:drawCompositeAngle(a,180-a),
+        hint:'Angles on a straight line add to 180°.',
+        explanation:`180 − ${a} = ${180-a}°.`, subskill:'angles_on_a_line' };
+    }
+    if(kind==='point'){
+      const a=randInt(60,150), b=randInt(60,150);
+      if(a+b>320) return genAngle(diff,_strategy,year);
+      return { prompt:`Three angles meet at a point. Two of them are ${a}° and ${b}°. What is the third?`,
+        answer:String(360-a-b),
+        hint:'Angles around a point add to 360°.',
+        explanation:`360 − ${a} − ${b} = ${360-a-b}°.`, subskill:'angles_around_a_point' };
+    }
+    const a=randInt(30,90), b=randInt(30,120);
+    if(a+b>=175) return genAngle(diff,_strategy,year);
+    return { prompt:`A triangle has angles of ${a}° and ${b}°. What is the third angle?`,
+      answer:String(180-a-b),
+      hint:'The angles in a triangle add to 180°.',
+      explanation:`180 − ${a} − ${b} = ${180-a-b}°.`, subskill:'angles_in_a_triangle' };
+  }
   // Year 3 identifies right angles and compares others to them; the Year 4 classify-three
   // and reflex work is a year early. Mapping all three levels onto Y4 'easy' left this
   // completely flat, so Year 3 gets its own ladder.
@@ -2407,6 +2493,23 @@ function genPartitionY4(diff){
 // ---------- Q2 NUMBER PATTERNS ----------
 // Constant step only. Direction, step size, missing position and start all vary.
 function genSequenceV2(diff, _strategy, year){
+  if(+year===6 && diff==='medium'){
+    // Counting on by 25 is a Year 3 pattern. Year 6 Medium gets a doubling or halving
+    // pattern, or a difference that grows, which is where the real thinking is.
+    if(Math.random()<0.5){
+      const r=pick([2,3]), start=pick([2,3,4,5,6]);
+      const terms=[start]; for(let i=1;i<5;i++) terms.push(terms[i-1]*r);
+      return { prompt:`Fill in the missing number: ${terms.slice(0,4).join(', ')}, ?`,
+        answer:String(terms[4]),
+        explanation:`Each term is multiplied by ${r}, so the next is ${terms[4]}.` };
+    }
+    const start=randInt(2,9), d0=randInt(2,5);
+    const terms=[start]; let d=d0;
+    for(let i=1;i<5;i++){ terms.push(terms[i-1]+d); d+=randInt(1,2); }
+    return { prompt:`Fill in the missing number: ${terms.slice(0,4).join(', ')}, ?`,
+      answer:String(terms[4]),
+      explanation:`The gap grows each time, so the next number is ${terms[4]}.` };
+  }
   if(+year===6 && diff==='hard'){
     // Doubling, tripling, or a difference that grows by one each step. One clear rule,
     // never an ambiguous puzzle.
@@ -2630,9 +2733,11 @@ function genAdditionV2(diff, _strategy, year){
         subskill:'whole_number_addition' };
     }
     if(diff==='medium'){
-      const a=randInt(300,3900), b=randInt(120,890);
-      return { prompt:`${formatGrouped(a)} + ${formatGrouped(b)} = ?`, answer:String(a+b),
-        explanation:`Partition: ${a} + ${Math.floor(b/100)*100} + ${b%100} = ${formatGrouped(a+b)}.`,
+      // Was 1 584 + 568, which a Year 4 handles at Hard. Three addends now, same shape as
+      // Year 4 Hard but bigger, so Year 6 Medium starts where Year 4 finished.
+      const a=randInt(1200,6800), b=randInt(400,2900), c=randInt(30,290);
+      return { prompt:`${formatGrouped(a)} + ${formatGrouped(b)} + ${c} = ?`, answer:String(a+b+c),
+        explanation:`Add the big parts first: ${formatGrouped(a+b)}, then + ${c} = ${formatGrouped(a+b+c)}.`,
         subskill:'whole_number_addition' };
     }
     const near=pick([998,1998,2998,3005,4995,5002]);
@@ -2690,9 +2795,10 @@ function genSubtractionV2(diff, _strategy, year){
         explanation:`Take off whole hundreds: ${formatGrouped(a-b)}.`, subskill:'whole_number_subtraction' };
     }
     if(diff==='medium'){
-      const b=randInt(120,480), a=b+randInt(150,600);
+      // Year 4 Hard reaches six digits, so 875 − 350 was well below where Year 6 starts.
+      const b=randInt(2400,29000), a=b+randInt(3000,60000);
       return { prompt:`${formatGrouped(a)} − ${formatGrouped(b)} = ?`, answer:String(a-b),
-        explanation:`Partition the ${b}: ${formatGrouped(a-b)}.`, subskill:'whole_number_subtraction' };
+        explanation:`Partition the ${formatGrouped(b)}: ${formatGrouped(a-b)}.`, subskill:'whole_number_subtraction' };
     }
     // 3005 - 998 wants 3005 - 1000 + 2, not borrowing across three zeros.
     const sub=pick([98,198,398,498,998,1998]);
@@ -2792,10 +2898,13 @@ function genMultiplicationV2(diff, _strategy, year){
         subskill:'mental_multiplication' };
     }
     if(diff==='medium'){
-      const a=randInt(120,980), b=pick([4,5,6]);
+      // A two-digit multiplier, which is where Year 4 Hard already sits. Kept to numbers
+      // with a mental route: x15 is x10 plus half, x12 is x10 plus x2.
+      const a=randInt(120,980), b=pick([11,12,15,20,21,25]);
       return { prompt:`${formatGrouped(a)} × ${b} = ?`, answer:String(a*b),
-        explanation: b===5?`${a} × 10 = ${formatGrouped(a*10)}, halved is ${formatGrouped(a*5)}.`
-          :`Partition: ${Math.floor(a/100)*100} × ${b} + ${a%100} × ${b} = ${formatGrouped(a*b)}.`,
+        explanation: b===15?`${a} × 10 = ${formatGrouped(a*10)}, plus half again = ${formatGrouped(a*15)}.`
+          : b===25?`${a} × 100 = ${formatGrouped(a*100)}, then ÷ 4 = ${formatGrouped(a*25)}.`
+          :`${a} × ${Math.floor(b/10)*10} + ${a} × ${b%10} = ${formatGrouped(a*b)}.`,
         subskill:'mental_multiplication' };
     }
     // The classic Year 6 shortcuts: x25 via quarters, x8 via doubling, x99 via compensation.
@@ -2864,7 +2973,8 @@ function genDivisionV2(diff, _strategy, year){
         explanation:`${b} × ${q} = ${b*q}.`, subskill:'mental_division' };
     }
     if(diff==='medium'){
-      const b=pick([4,5,6,7,8]), q=randInt(40,320);
+      // Single-digit divisor at Medium, always. Two-digit divisors are a Hard idea.
+      const b=randInt(3,9), q=randInt(40,420);
       return { prompt:`${formatGrouped(b*q)} ÷ ${b} = ?`, answer:String(q),
         explanation:`Partition: ${formatGrouped(b*q)} ÷ ${b} = ${formatGrouped(q)}.`,
         subskill:'mental_division' };
@@ -2916,9 +3026,23 @@ const METRIC_PAIRS=[
 let _convDepth = 0;
 function genConversionV2(diff, _strategy, year){
   if(+year===6){
-    const P=[{b:'m',s:'cm',k:100},{b:'km',s:'m',k:1000},{b:'kg',s:'g',k:1000},
-             {b:'L',s:'mL',k:1000},{b:'tonne',s:'kg',k:1000}];
+    // Length, weight and capacity every time, chosen at random, so a set never happens to
+    // test only one. Tonnes are dropped from Easy: a Year 6 meeting conversions at the
+    // easiest level should be on units they handle daily.
+    const EASY=[{b:'m',s:'cm',k:100},{b:'km',s:'m',k:1000},{b:'kg',s:'g',k:1000},{b:'L',s:'mL',k:1000}];
+    const P = diff==='easy' ? EASY : EASY.concat([{b:'tonne',s:'kg',k:1000}]);
     const p=pick(P);
+    if(diff==='hard'){
+      // Both sides must balance, with the units doing the work. Harder than a plain
+      // conversion because the child converts AND subtracts.
+      const whole=randInt(2,9), part=randInt(1,9)*(p.k/10);
+      const total=whole*p.k;
+      return { prompt:`Complete this so both sides are equal: ${whole} ${p.b} = ${total-part} ${p.s} + ___ ${p.s}`,
+        answer:String(part),
+        hint:`1 ${p.b} = ${p.k} ${p.s}.`,
+        explanation:`${whole} ${p.b} = ${total} ${p.s}, and ${total} − ${total-part} = ${part} ${p.s}.`,
+        subskill:`balance_${p.b}_${p.s}` };
+    }
     if(diff==='easy'){ const n=randInt(2,9);
       return { prompt:`Complete the conversion: ${n} ${p.b} = ___ ${p.s}`, answer:String(n*p.k),
         explanation:`1 ${p.b} = ${p.k} ${p.s}, so ${n} ${p.b} = ${n*p.k} ${p.s}.`,
@@ -3063,8 +3187,9 @@ function genPrimeFactors(diff){
   const fs=[]; let x=n;
   for(const pr of PRIMES_TO_50){ while(x%pr===0){ fs.push(pr); x/=pr; } if(x===1) break; }
   return { prompt:`Write ${n} as a product of its prime factors.`,
-    inputType:'parts', partsLead:`${n} =`, partsJoin:'×',
+    inputType:'parts', partsLead:`${n} =`, partsJoin:'×', partsAnyOrder:true,
     parts:fs.map(()=>({})), answer:fs.join(','),
+    hint:'They can go in any order.',
     explanation:`${n} = ${fs.join(' × ')}`, subskill:'prime_factorisation' };
 }
 
@@ -3148,8 +3273,10 @@ function genEquivFraction(diff, _strategy, year){
         givenNum:n, givenDen:d, targetDen:d*k, answer:String(n*k),
         explanation:`${n}/${d} = ${n*k}/${d*k}. Both parts multiplied by ${k}.`,
         subskill:'equivalent_fractions' }
-    : { prompt:`${n}/${d} = ${n*k}/?. What is the missing denominator?`,
+    : { prompt:`What is the missing denominator?`,
+        fracEq:[{n,d},'=',{n:n*k,d:'?'}],
         answer:String(d*k),
+        hint:'Whatever you do to the top, you must also do to the bottom.',
         explanation:`The numerator was multiplied by ${k}, so the denominator is ${d} × ${k} = ${d*k}.`,
         subskill:'equivalent_fractions' };
 }
@@ -3161,9 +3288,11 @@ function genFractionAddSub(diff, _strategy, year){
     const d=pick([5,7,8,9,10]);
     const a=randInt(1,d-2), b=randInt(1,d-1-a);
     return add
-      ? { prompt:`${a}/${d} + ${b}/${d} = ?`, answer:`${a+b}/${d}`,
+      ? { prompt:`Work this out.`, inputType:'fracHard', fracEq:[{n:a,d},'+',{n:b,d},'=','?'],
+          answer:`${a+b}/${d}`,
           explanation:`Same denominator, so add the numerators: ${a+b}/${d}.`, subskill:'fraction_addition' }
-      : { prompt:`${a+b}/${d} − ${b}/${d} = ?`, answer:`${a}/${d}`,
+      : { prompt:`Work this out.`, inputType:'fracHard', fracEq:[{n:a+b,d},'−',{n:b,d},'=','?'],
+          answer:`${a}/${d}`,
           explanation:`Same denominator, so subtract the numerators: ${a}/${d}.`, subskill:'fraction_subtraction' };
   }
   // Related denominators. One is a multiple of the other, so no hunting for a common one.
@@ -3174,13 +3303,17 @@ function genFractionAddSub(diff, _strategy, year){
   const asSmall=sn*k;
   if(add){
     const total=bn+asSmall; if(total>=bd) return genFractionAddSub(diff);
-    return { prompt:`${bn}/${bd} + ${sn}/${sd} = ?`, answer:`${total}/${bd}`,
+    return { prompt:`Work this out.`, inputType:'fracHard',
+      fracEq:[{n:bn,d:bd},'+',{n:sn,d:sd},'=','?'], answer:`${total}/${bd}`,
+      hint:'Make the denominators match first.',
       explanation:`${sn}/${sd} = ${asSmall}/${bd}, so ${bn}/${bd} + ${asSmall}/${bd} = ${total}/${bd}.`,
       subskill:'fraction_addition' };
   }
   const bigger=Math.max(bn,asSmall)+randInt(0,1);
   if(bigger<=asSmall || bigger>=bd) return genFractionAddSub(diff);
-  return { prompt:`${bigger}/${bd} − ${sn}/${sd} = ?`, answer:`${bigger-asSmall}/${bd}`,
+  return { prompt:`Work this out.`, inputType:'fracHard',
+    fracEq:[{n:bigger,d:bd},'−',{n:sn,d:sd},'=','?'], answer:`${bigger-asSmall}/${bd}`,
+    hint:'Make the denominators match first.',
     explanation:`${sn}/${sd} = ${asSmall}/${bd}, so ${bigger}/${bd} − ${asSmall}/${bd} = ${bigger-asSmall}/${bd}.`,
     subskill:'fraction_subtraction' };
 }
@@ -3196,8 +3329,10 @@ function genFracDecPct(diff, _strategy, year){
   const fact=pick(FDP_FACTS);
   if(diff==='easy'){
     const asPct=Math.random()<0.5;
+    const [fn,fd]=fact.f.split('/').map(Number);
     return asPct
-      ? { prompt:`${fact.f} = ___%`, answer:String(fact.p),
+      ? { prompt:`Write this as a percentage.`, fracEq:[{n:fn,d:fd},'=','___%'],
+          answer:String(fact.p),
           explanation:`${fact.f} = ${fact.d} = ${fact.p}%.`, subskill:'fdp_equivalence' }
       : { prompt:`${fact.d} = ___%`, answer:String(fact.p),
           explanation:`${fact.d} = ${fact.p}%.`, subskill:'fdp_equivalence' };
@@ -3212,7 +3347,9 @@ function genFracDecPct(diff, _strategy, year){
   const opts=shuffleArr([`${fact.p}%`, String(fact.d), `${decoyPct}%`, String(decoyDec)]
     .filter((v,i,a)=>a.indexOf(v)===i));
   const want=opts.filter(o=> o===`${fact.p}%` || o===String(fact.d));
-  return { prompt:`Select all the values equal to ${fact.f}.`, inputType:'multi',
+  const [sfn,sfd]=fact.f.split('/').map(Number);
+  return { prompt:`Select all the values equal to this fraction.`, inputType:'multi',
+    fracEq:[{n:sfn,d:sfd}],
     choices:opts, answer:want.join(','),
     explanation:`${fact.f} = ${fact.d} = ${fact.p}%.`, subskill:'fdp_equivalence' };
 }
@@ -3318,14 +3455,25 @@ function genVolume(diff){
   const l = diff==='easy'? randInt(2,5) : diff==='medium'? randInt(3,8) : randInt(4,12);
   const w = diff==='easy'? randInt(2,4) : randInt(2,6);
   const h = diff==='easy'? randInt(2,4) : randInt(2,7);
-  if(diff!=='easy' && Math.random()<0.35){
+  if(diff!=='easy' && Math.random()<0.30){
     // Capacity from volume · 1 mL = 1 cm³, which is the fact being tested.
     const v=l*w*h*randInt(2,9);
     return { prompt:`A container has a volume of ${v} cm³. What is its capacity in millilitres? (1 mL = 1 cm³)`,
       answer:String(v), explanation:`1 mL = 1 cm³, so ${v} cm³ holds ${v} mL.`, subskill:'volume_capacity' };
   }
-  return { prompt:`A rectangular prism is ${l} cm long, ${w} cm wide and ${h} cm high. What is its volume in cm³?`,
-    answer:String(l*w*h), explanation:`${l} × ${w} × ${h} = ${l*w*h} cm³.`, subskill:'volume' };
+  if(diff==='hard'){
+    // One measurement carries a decimal, so it is not simply three whole numbers
+    // multiplied. The decimal sits on the length and the rest stay whole, which keeps a
+    // mental route: find the whole-number volume, then take the tenths.
+    const ld = Number((randInt(25,95)/10).toFixed(1));
+    const vol = Number((ld*w*h).toPrecision(12));
+    return { prompt:`Find the volume of this rectangular prism, in cm³.`,
+      svg:drawPrism(ld,w,h), answer:String(vol),
+      explanation:`${ld} × ${w} × ${h} = ${vol} cm³.`, subskill:'volume' };
+  }
+  return { prompt:`Find the volume of this rectangular prism, in cm³.`,
+    svg:drawPrism(l,w,h), answer:String(l*w*h),
+    explanation:`${l} × ${w} × ${h} = ${l*w*h} cm³.`, subskill:'volume' };
 }
 
 // ---------- Year 3: measurement, 3D shapes, fact families ----------
@@ -4314,6 +4462,13 @@ function gradeQuestion(q, given){
   if(q.checkType==='numset'){ const gi=new Set(parseNumList(given)), an=new Set(parseNumList(q.answer));
     if(gi.size!==an.size) return false; for(const v of an) if(!gi.has(v)) return false; return true; }
   if(q.inputType==='choice'){ return normalize(given)===normalize(q.answer); }
+  // Prime factorisation has no natural order: 2 × 2 × 3 and 3 × 2 × 2 are the same answer,
+  // and insisting on one order tests obedience rather than factorising.
+  if(q.inputType==='parts' && q.partsAnyOrder){
+    const gv=(Array.isArray(given)?given:[]).map(x=>numVal(x)).filter(v=>v!==null).sort((a,b)=>a-b);
+    const wv=String(q.answer).split(',').map(x=>numVal(x)).filter(v=>v!==null).sort((a,b)=>a-b);
+    return gv.length===wv.length && gv.every((v,i)=>v===wv[i]);
+  }
   if(q.inputType==='parts'){
     // Every box must be right for the question to count. Order is fixed for
     // partitioning (largest place first) and for the three powers-of-ten parts.
@@ -4352,7 +4507,15 @@ function gradeQuestion(q, given){
     const gm=String(given).match(/^\s*(-?\d+)\s*\/\s*(-?\d+)\s*$/);
     if(!gm) return false;
     const am=String(q.answer).match(/^(-?\d+)\/(-?\d+)$/);
-    return !!am && gm[1]===am[1] && gm[2]===am[2];
+    if(!am) return false;
+    const gn=+gm[1], gd=+gm[2], an=+am[1], ad=+am[2];
+    if(!gd || !ad) return false;
+    // When the question IS "simplify this", simplest form is the whole point, so the
+    // answer must match exactly. Everywhere else, any equivalent fraction is correct:
+    // 4/6 − 1/3 is 2/6, and a child who writes 1/3 has done MORE work, not less. Marking
+    // that wrong is the same failure as marking 0.50 wrong against 0.5.
+    if(q.requireSimplest) return gn===an && gd===ad;
+    return gn*ad === an*gd;
   }
   return checkAnswer(given, q.answer);
 }
@@ -5496,7 +5659,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.80';
+const BUILD = '2026-08-10.81';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -6348,6 +6511,14 @@ function nudgeText(q, given){
   return `Remember to simplify · ${n}/${d} can be written as ${sn}/${sd}.`;
 }
 function fracPromptHTML(q){
+  // A row of fractions and operators: [{n,d}, '+', {n,d}, '=', '?']. Written once here so
+  // every fraction question on the paper looks like a fraction rather than "2/9 + 3/9".
+  if(Array.isArray(q.fracEq) && q.fracEq.length){
+    return `<div class="mmc-frac-eq" style="margin-top:10px;gap:12px;">${
+      q.fracEq.map(x=> (x && typeof x==='object')
+        ? fracHTML(x.n, x.d)
+        : `<span style="font-size:24px;font-weight:700;">${esc(x)}</span>`).join('')}</div>`;
+  }
   if(q.compareLead && q.leftNum!=null){
     return `<div class="mmc-frac-eq" style="margin-top:10px;gap:18px;">${fracHTML(q.leftNum,q.leftDen)}
       <span class="mmc-cmpgap">?</span>${fracHTML(q.rightNum,q.rightDen)}</div>`;
