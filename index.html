@@ -5716,7 +5716,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.85';
+const BUILD = '2026-08-10.87';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -7671,7 +7671,7 @@ function renderTeacherWeeks(){
     const banner=el(`<div class="mmc-card" style="background:#E7F9EE;border-color:#2E9E4F;margin-bottom:14px;">
       <div class="mmc-row" style="justify-content:space-between;align-items:center;">
         <div><h3 style="margin:0;">"${esc(S.quickDeployDone)}" deployed instantly</h3>
-          <div class="meta">Support got Easy, Mainstream got Medium, Extension got Hard. No review needed, already live for students.</div></div>
+          <div class="meta">Each group got its own set. No review needed, already live for students.</div></div>
         <button class="mmc-btn ghost sm" id="mmc-quick-dismiss">Dismiss</button>
       </div>
     </div>`);
@@ -7780,7 +7780,7 @@ function renderTeacherWeeks(){
             <div class="mmc-field" style="flex:2;min-width:150px;margin-bottom:0;"><label>Week label</label>
               <input type="text" id="mmc-gen-label" placeholder="e.g. Week 6" value="${esc(S.genForm.label)}"></div>
             <div class="mmc-field" id="mmc-diff-wrap" style="flex:1;min-width:110px;margin-bottom:0;"><label>Difficulty</label>
-              <select id="mmc-gen-diff">${['easy','medium','hard'].map(d=>`<option value="${d}" ${S.genForm.difficulty===d?'selected':''}>${d[0].toUpperCase()+d.slice(1)}</option>`).join('')}</select></div>
+              <select id="mmc-gen-diff">${['easy','medium','hard'].map(d=>`<option value="${d}" ${S.genForm.difficulty===d?'selected':''}>${esc(difficultyLabel(d))}</option>`).join('')}</select></div>
             <div class="mmc-field" style="flex:1;min-width:150px;margin-bottom:0;"><label>Q8 / Q9 variant</label>
               <select id="mmc-gen-rot">
                 <option value="">Auto (every 3rd set)</option>
@@ -8046,18 +8046,44 @@ function renderArchivedWeeksList(){
         <div class="mmc-row" style="justify-content:space-between;">
           <div>
             <h3>${esc(week.label)} <span style="color:var(--ink-soft);font-size:12px;font-weight:700;">ARCHIVED</span></h3>
-            <div class="meta">${esc(week.difficulty)} · ${visibleQuestions(week).length} questions</div>
+            <div class="meta">${esc(weekClassification(week))} · ${visibleQuestions(week).length} questions</div>
           </div>
           <div class="mmc-row">
-            <button class="mmc-btn gold sm" data-act="restore">↩ Restore</button>
+            <button class="mmc-btn gold sm" data-act="restore">Reassign</button>
             <button class="mmc-btn danger sm" data-act="delete">Delete permanently</button>
           </div>
         </div>
       </div>
     `);
     card.querySelector('[data-act="restore"]').onclick=async ()=>{
-      try{ await updateDoc(doc(db,'weeks',week.id), {status:'draft', scheduledAt:null}); }
-      catch(e){ S.toast='Could not restore. Check your connection.'; render(); }
+      // Reassign, not restore. A set built for Year 4 Hard is worth using again with a
+      // different Year 4 class, and bringing it back into the class it came from is only
+      // one of the things a teacher might want. Only classes of the right year are
+      // offered, because the questions were generated for that year and no other.
+      const wYear = (Array.isArray(week.targetYears)&&week.targetYears.length) ? +week.targetYears[0]
+        : (week.yearLevel!=null && week.yearLevel!=='' ? +week.yearLevel : null);
+      const eligible=(S.classes||[]).filter(c=> wYear===null || classYear(c)===wYear);
+      if(!eligible.length){
+        S.toast = wYear===null ? 'No classes to assign this to.'
+          : `This set was built for ${yearLabel(wYear)}, and you have no ${yearLabel(wYear)} class.`;
+        render(); return;
+      }
+      const listed=eligible.map((c,i)=>`${i+1}. ${c.name}`).join('\n');
+      const pick=prompt(`Reassign "${week.label}" (${weekClassification(week)}) to which class?\n\n${listed}\n\nType a number:`);
+      if(pick===null) return;
+      const idx=parseInt(pick,10)-1;
+      if(!(idx>=0 && idx<eligible.length)){ S.toast='That was not one of the numbers listed.'; render(); return; }
+      const target=eligible[idx];
+      try{
+        await updateDoc(doc(db,'weeks',week.id), {
+          status:'draft', scheduledAt:null,
+          classIds:[target.id], targetYears:[classYear(target)], yearLevel:classYear(target)
+        });
+        S.weeksView='list';
+        S.toast=`"${week.label}" is back as a draft for ${target.name}. Publish it when you are ready.`;
+      }
+      catch(e){ S.toast='Could not reassign. Check your connection.'; }
+      render();
     };
     card.querySelector('[data-act="delete"]').onclick=async ()=>{
       if(!confirm(`Permanently delete "${week.label}"? This can't be undone.`)) return;
@@ -8382,7 +8408,7 @@ function renderWeekCard(week){
   const card=el(`
     <div class="mmc-card">
       <h3>${esc(week.label)} ${statusBadge}</h3>
-      <div class="meta" style="margin-bottom:6px;">${esc(week.difficulty)} · ${visibleQuestions(week).length} question${visibleQuestions(week).length===1?'':'s'}${(week.questions||[]).length!==visibleQuestions(week).length?` (${(week.questions||[]).length-visibleQuestions(week).length} hidden)`:''} · ${esc(groupText)}</div>
+      <div class="meta" style="margin-bottom:6px;">${esc(weekClassification(week))} · ${visibleQuestions(week).length} question${visibleQuestions(week).length===1?'':'s'}${(week.questions||[]).length!==visibleQuestions(week).length?` (${(week.questions||[]).length-visibleQuestions(week).length} hidden)`:''} · ${esc(groupText)}</div>
       <div class="meta" style="margin-bottom:10px;font-weight:700;color:${forWhom.length?'var(--ink)':'var(--incorrect)'};">
         ${forWhom.length? `Will be sat by ${forWhom.length} student${forWhom.length===1?'':'s'}: ${esc(names)}` : 'No students match this set. Check the year level and group.'}
       </div>
@@ -10090,6 +10116,29 @@ async function deleteWeekProgress(weekId){
   try{ await deleteDoc(doc(db,'weekProgress', `${S.user.uid}_${weekId}`)); }catch(e){}
 }
 function studentEffectiveGroup(){ return (S.profile && S.profile.group) || 'mainstream'; }
+// What a set is, in one line: the year it was built for and its level, properly cased.
+// "hard" in lower case reads like a typo, and the year was missing entirely, so an
+// archived set gave no clue which class it belonged to.
+// A practice set's level, in the language teachers already use for their groups. The
+// STORED value stays easy/medium/hard: every existing set carries it, every generator
+// switches on it, and renaming the data would break both for no gain. This is the label
+// only, which means no migration and nothing to go wrong.
+//
+// Deliberately NOT applied to the Fast Facts Training Ground. There a child picks their
+// own level, and offering a nine-year-old a button marked "Support" is a different and
+// much worse thing than offering one marked "Easy".
+const SET_LEVEL_LABEL = { easy:'Support', medium:'Mainstream', hard:'Extension' };
+function difficultyLabel(d){
+  const x=String(d||'').toLowerCase();
+  if(SET_LEVEL_LABEL[x]) return SET_LEVEL_LABEL[x];
+  return x ? x.charAt(0).toUpperCase()+x.slice(1) : '';
+}
+function weekClassification(week){
+  const ys = (Array.isArray(week.targetYears) && week.targetYears.length) ? week.targetYears
+    : (week.yearLevel!==null && week.yearLevel!==undefined && week.yearLevel!=='' ? [+week.yearLevel] : []);
+  const y = ys.length ? ys.map(v=>yearLabel(v)).join(', ') : '';
+  return [y, difficultyLabel(week.difficulty)].filter(Boolean).join(' · ');
+}
 
 // ---------- "Finish this first" ----------
 // A set can be marked as the one thing that must be done before Fast Facts or the Racing
@@ -10168,7 +10217,7 @@ function renderWeeklyPassport(){
     const rec = S.results.find(r=>r.weekId===week.id);
     const card=el(`
       <div class="mmc-card mmc-row" style="justify-content:space-between;">
-        <div><h3>${esc(week.label)}</h3><div class="meta">${visibleQuestions(week).length} questions · ${esc(week.difficulty)}</div></div>
+        <div><h3>${esc(week.label)}</h3><div class="meta">${visibleQuestions(week).length} questions</div></div>
         <div></div>
       </div>
     `);
@@ -10938,7 +10987,7 @@ function renderTeacherLiveGame(){
       <div class="mmc-card">
         <h3>Start the Racing Ground</h3>
         <div class="meta">Students join a lobby, then everyone's 5-minute timer starts together with a live leaderboard.</div>
-        <div class="meta">Every student races at <strong>their own year level and group</strong>Support gets Easy, Mainstream Medium, Extension Hard. Harder questions move a horse further, so a mixed-ability class is a real contest rather than a foregone conclusion.</div>
+        <div class="meta">Every student races at <strong>their own year level and group</strong>Each student answers at their own group's level, and harder questions move a horse further, so a mixed-ability class is a real contest rather than a foregone conclusion.</div>
         <button class="mmc-btn gold" id="mmc-live-create">Create Room</button>
       </div>
     `);
