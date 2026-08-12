@@ -251,6 +251,7 @@
     background:var(--paper-line); color:var(--ink-soft); white-space:nowrap; align-self:center;
   }
   .mmc-donecount.all { background:#2E7D4F; color:#fff; }
+  .mmc-gcount { font-size:12px; font-weight:700; color:var(--ink-soft); }
   .mmc-namegrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:6px; margin-bottom:12px; }
   .mmc-nameedit {
     font-size:14px; padding:7px 10px; border-radius:8px;
@@ -5716,7 +5717,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-10.89';
+const BUILD = '2026-08-10.91';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -7764,9 +7765,9 @@ function renderTeacherWeeks(){
         <span class="mmc-stepnum">2</span>
         <div style="flex:1;">
           <div class="mmc-steplabel">Which group? <span class="mmc-req">*</span></div>
-          <div class="meta" style="margin:0 0 8px;">Sets the difficulty automatically. Change it below if you'd rather.</div>
+          <div class="meta" style="margin:0 0 8px;">Each group you tick gets its own set at its own level.</div>
           <div class="mmc-row" style="gap:16px;">
-            ${STUDENT_GROUPS.map(g=>`<label class="mmc-pick"><input type="checkbox" class="mmc-gen-group-cb" value="${g.key}"> ${esc(g.label)}</label>`).join('')}
+            ${STUDENT_GROUPS.map(g=>`<label class="mmc-pick" data-g="${g.key}"><input type="checkbox" class="mmc-gen-group-cb" value="${g.key}"> ${esc(g.label)} <span class="mmc-gcount"></span></label>`).join('')}
           </div>
         </div>
       </div>
@@ -7778,8 +7779,7 @@ function renderTeacherWeeks(){
           <div class="mmc-row" style="align-items:flex-end;">
             <div class="mmc-field" style="flex:2;min-width:150px;margin-bottom:0;"><label>Week label</label>
               <input type="text" id="mmc-gen-label" placeholder="e.g. Week 6" value="${esc(S.genForm.label)}"></div>
-            <div class="mmc-field" id="mmc-diff-wrap" style="flex:1;min-width:110px;margin-bottom:0;"><label>Difficulty</label>
-              <select id="mmc-gen-diff">${['easy','medium','hard'].map(d=>`<option value="${d}" ${S.genForm.difficulty===d?'selected':''}>${esc(difficultyLabel(d))}</option>`).join('')}</select></div>
+            <div class="mmc-field" id="mmc-diff-wrap" style="display:none;"><select id="mmc-gen-diff">${['easy','medium','hard'].map(d=>`<option value="${d}" ${S.genForm.difficulty===d?'selected':''}>${esc(difficultyLabel(d))}</option>`).join('')}</select></div>
             <div class="mmc-field" style="flex:1;min-width:150px;margin-bottom:0;"><label>Q8 / Q9 variant</label>
               <select id="mmc-gen-rot">
                 <option value="">Auto (every 3rd set)</option>
@@ -7811,18 +7811,37 @@ function renderTeacherWeeks(){
   // quick deploy (support→easy, mainstream→medium, extension→hard). The
   // teacher can still override it afterwards. This only sets a sensible default.
   const GROUP_DIFF={support:'easy',mainstream:'medium',extension:'hard'};
+  // The group IS the level. Now that a set is labelled Support / Mainstream / Extension,
+  // a separate Difficulty control was a second name for the same decision, and its caption
+  // offered to "change it below" while the code hid the control. Kept in the DOM so the
+  // submit path still reads a value, but never shown and never contradicted.
   const syncDifficulty=()=>{
     const picked=groupCbs.filter(cb=>cb.checked).map(cb=>cb.value);
     const sel=form.querySelector('#mmc-gen-diff');
-    const box=form.querySelector('#mmc-diff-wrap');
-    if(picked.length===1 && GROUP_DIFF[picked[0]]){
-      if(sel) sel.value=GROUP_DIFF[picked[0]];
-      // Determined by the group, so showing the control would only invite a
-      // contradiction between what's picked and what's generated.
-      if(box) box.style.display='none';
-    } else {
-      if(box) box.style.display='';
-    }
+    if(sel && picked.length && GROUP_DIFF[picked[0]]) sel.value=GROUP_DIFF[picked[0]];
+  };
+  // A group with nobody in it makes a set nobody can ever sit. Greyed out, with the count
+  // shown, so a teacher can see at a glance who is actually in each group. Recalculated
+  // whenever the class selection changes, since the answer depends on it.
+  const syncGroupCounts=()=>{
+    const ids = classCbs.length ? classCbs.filter(cb=>cb.checked).map(cb=>cb.value)
+      : (S.currentClassId?[S.currentClassId]:[]);
+    const roster = Object.values(S.profiles||{}).filter(p=>{
+      if(!p || !p.username) return false;
+      return !ids.length || (p.classId && ids.indexOf(p.classId)!==-1);
+    });
+    groupCbs.forEach(cb=>{
+      const n = roster.filter(p=>(p.group||'mainstream')===cb.value).length;
+      const lab = cb.closest('.mmc-pick');
+      const tag = lab && lab.querySelector('.mmc-gcount');
+      // Before a class is chosen there is nothing to count against, so nothing is greyed.
+      const empty = ids.length>0 && n===0;
+      if(tag) tag.textContent = ids.length ? `(${n})` : '';
+      if(empty && cb.checked) cb.checked=false;
+      cb.disabled = empty;
+      if(lab){ lab.style.opacity = empty?'.35':''; lab.style.cursor = empty?'not-allowed':''; }
+      if(lab) lab.title = empty ? 'Nobody in that group in this class' : '';
+    });
   };
   groupCbs.forEach(cb=>cb.onchange=()=>{ syncDifficulty(); });
   syncDifficulty();
@@ -7867,8 +7886,9 @@ function renderTeacherWeeks(){
         : '';
     }
   };
-  classCbs.forEach(cb=>cb.onchange=()=>{ syncYearLock(); syncGenCount(); });
+  classCbs.forEach(cb=>cb.onchange=()=>{ syncYearLock(); syncGenCount(); syncGroupCounts(); });
   syncYearLock();
+  syncGroupCounts();
   syncGenCount();   // and on first render, not only after a change
   form.querySelector('#mmc-gen-btn').onclick=async ()=>{
     // Nothing is preselected, so a teacher must choose deliberately rather than
@@ -7889,7 +7909,7 @@ function renderTeacherWeeks(){
     S.rotationOverride = rotSel ? (rotSel.value||null) : null;
     const timeSel=form.querySelector('#mmc-gen-time');
     S.timeOverride = timeSel ? (timeSel.value||null) : null;
-    const targetGroups = allCb.checked ? [] : groupCbs.filter(cb=>cb.checked).map(cb=>cb.value);
+    const pickedGroups = groupCbs.filter(cb=>cb.checked).map(cb=>cb.value);
     const classIds = classCbs.length ? classCbs.filter(cb=>cb.checked).map(cb=>cb.value)
       : (S.currentClassId?[S.currentClassId]:[]);
     // yearLevel is recorded on the set now so that when the generators become
@@ -7908,17 +7928,23 @@ function renderTeacherWeeks(){
       render(); return;
     }
     try{
+      // ONE SET PER GROUP. Ticking Support and Extension used to make a single set at one
+      // level and hand it to both, which is exactly what having groups is meant to prevent.
+      // The group decides the level, so two groups means two papers.
+      const yr=years[0];
       let firstRef=null;
-      for(const yr of years){
-        const weekData={ label: years.length>1 ? `${label} · ${yearLabel(yr)}` : label,
-          difficulty, status:'draft', createdAt:serverTimestamp(), teacherUid:S.user.uid,
+      for(const g of pickedGroups){
+        const gDiff = GROUP_DIFF[g] || difficulty;
+        const weekData={ label: pickedGroups.length>1 ? `${label} · ${difficultyLabel(gDiff)}` : label,
+          difficulty:gDiff, status:'draft', createdAt:serverTimestamp(), teacherUid:S.user.uid,
           yearLevel:yr,
           timeOverride: S.timeOverride||null, rotationOverride: S.rotationOverride||null,
-          questions:generateWeekQuestions(difficulty, strategy, yr),
-          targetGroups, targetYears:[yr], classIds };
+          questions:generateWeekQuestions(gDiff, strategy, yr),
+          targetGroups:[g], targetYears:[yr], classIds };
         const r=await addDoc(collection(db,'weeks'), weekData);
         if(!firstRef) firstRef=r;
       }
+      if(pickedGroups.length>1) S.toast=`${pickedGroups.length} sets created, one for each group.`;
       const ref=firstRef;
       // Grouping sets by class put a new one inside its group, which for a teacher with
       // several classes is a long way down the page. It is pinned to the top until
