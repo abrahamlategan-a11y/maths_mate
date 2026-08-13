@@ -332,6 +332,42 @@
   }
   .mmc-qhead:hover::after, .mmc-qhead:hover::before { opacity:1; }
   .mmc-qhead span { border-bottom:1.5px dotted currentColor; padding-bottom:1px; }
+  /* ---- Pick your own: built for a six-year-old on an iPad ---- */
+  /* Apple and Google both put the minimum comfortable touch target at 44px. The old chips
+     were about 30px high and packed together, which is fine for a mouse and not for a
+     small finger. These are 84px with real space between them. */
+  .mmc-pick-title {
+    font-family:'Baloo 2',sans-serif; font-weight:800; text-align:center;
+    font-size:clamp(22px,4.5vw,32px); line-height:1.1; margin:2px 0 4px; color:var(--ink);
+  }
+  .mmc-pick-step {
+    text-align:center; font-weight:800; font-size:12px; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--ink-soft); margin-bottom:14px;
+  }
+  .mmc-pick-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+  .mmc-pick-grid.two { grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); }
+  .mmc-pick-grid.tables { grid-template-columns:repeat(auto-fit,minmax(84px,1fr)); }
+  .mmc-bigbtn {
+    min-height:84px; padding:14px 12px; border-radius:18px;
+    border:3px solid var(--ink); background:var(--paper); cursor:pointer;
+    font-family:'Baloo 2',sans-serif; font-weight:800; font-size:18px; color:var(--ink);
+    box-shadow:0 5px 0 var(--ink); transition:transform .06s, box-shadow .06s;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+    text-align:center; line-height:1.15;
+  }
+  .mmc-bigbtn:hover { transform:translateY(-2px); box-shadow:0 7px 0 var(--ink); }
+  /* Presses down like a real button. Small children look for that. */
+  .mmc-bigbtn:active { transform:translateY(4px); box-shadow:0 1px 0 var(--ink); }
+  .mmc-bigbtn.on { background:var(--gold); }
+  .mmc-bigbtn .em { font-size:30px; line-height:1; }
+  .mmc-bigbtn .sub { font-size:12.5px; font-weight:700; opacity:.72; }
+  .mmc-bigbtn.tall { min-height:104px; font-size:20px; }
+  .mmc-pick-back {
+    display:block; margin:16px auto 0; border:0; background:none; cursor:pointer;
+    font-family:'Baloo 2',sans-serif; font-weight:800; font-size:16px; color:var(--ink-soft);
+    padding:10px 18px;
+  }
+  .mmc-pick-back:hover { color:var(--ink); }
   .mmc-gcount { font-size:12px; font-weight:700; color:var(--ink-soft); }
   .mmc-namegrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:6px; margin-bottom:12px; }
   .mmc-nameedit {
@@ -5887,7 +5923,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.21';
+const BUILD = '2026-08-12.22';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -11018,92 +11054,100 @@ function renderTTFocusCard(){
 // One question at a time. The old card put tables, operations and a Go button on screen
 // together, which is a form rather than a choice, and it only ever offered times tables.
 // A child now walks: what kind of maths, what to work on, which operations, how long.
+// Built for a six-year-old on an iPad: one question per screen, buttons big enough for a
+// small finger, and a title that looks like the rest of the Arena rather than a form.
 function renderTTCustomCard(){
   const c=S.ttCustom;
-  const card=el(`<div class="mmc-card" style="margin-top:16px;"><h3>🎯 Pick your own</h3></div>`);
-  const step=(n,total,title)=>el(`<div class="meta" style="margin:2px 0 10px;">Step ${n} of ${total} · <strong style="color:var(--ink);">${esc(title)}</strong></div>`);
-  const chip=(label,on,onClick,wide)=>{
-    const b=el(`<button type="button" class="mmc-btn ${on?'gold':'ghost'} sm" style="${wide?'flex:1;min-width:150px;':'min-width:56px;'}">${label}</button>`);
+  const card=el('<div class="mmc-card" style="margin-top:16px;"></div>');
+  const head=(step,total,title)=>{
+    card.appendChild(el(`<div class="mmc-pick-step">Step ${step} of ${total}</div>`));
+    card.appendChild(el(`<div class="mmc-pick-title">${esc(title)}</div>`));
+  };
+  const big=(emoji,label,sub,on,onClick,tall)=>{
+    const b=el(`<button type="button" class="mmc-bigbtn${on?' on':''}${tall?' tall':''}">
+      ${emoji?`<span class="em">${emoji}</span>`:''}
+      <span>${label}</span>
+      ${sub?`<span class="sub">${esc(sub)}</span>`:''}
+    </button>`);
     b.onclick=onClick; return b;
   };
-  const row=()=>el('<div class="mmc-row" style="flex-wrap:wrap;gap:8px;margin-bottom:6px;"></div>');
-  const back=(fn)=>{
-    const b=el('<button type="button" class="mmc-btn ghost sm" style="margin-top:10px;">← Back</button>');
+  const grid=(cls)=>el(`<div class="mmc-pick-grid ${cls||''}"></div>`);
+  const back=(fn,label)=>{
+    const b=el(`<button type="button" class="mmc-pick-back">← ${esc(label||'Back')}</button>`);
     b.onclick=fn; return b;
   };
 
   // ---- 1. which kind of maths ----
   if(!c.family){
-    card.appendChild(step(1,4,'What do you want to practise?'));
-    const r=row();
-    r.appendChild(chip('➕ ➖ Adding and taking away', false, ()=>{ c.family='addsub'; c.add=true; c.sub=true; render(); }, true));
-    r.appendChild(chip('✖️ ➗ Times and divide', false, ()=>{ c.family='multdiv'; c.mult=true; c.div=false; render(); }, true));
-    card.appendChild(r);
+    head(1,4,'What do you want to practise?');
+    const g=grid('two');
+    g.appendChild(big('➕➖','Adding and<br>taking away',null,false,
+      ()=>{ c.family='addsub'; c.add=true; c.sub=true; render(); }, true));
+    g.appendChild(big('✖️➗','Times and<br>divide',null,false,
+      ()=>{ c.family='multdiv'; c.mult=true; c.div=false; render(); }, true));
+    card.appendChild(g);
     return card;
   }
 
-  // ---- 2. what exactly ----
   const isAdd = c.family==='addsub';
-  if(isAdd ? !c.focus : !(c.tables && c.tables.length)){
-    card.appendChild(step(2,4, isAdd ? 'Which one?' : 'Which tables?'));
-    const r=row();
+
+  // ---- 2. what exactly ----
+  if(isAdd ? !c.focus : !c.step2done){
+    head(2,4, isAdd ? 'Which one?' : 'Which tables?');
+    const g=grid(isAdd?'':'tables');
     if(isAdd){
-      ADDSUB_FOCUS.forEach(f=>r.appendChild(chip(
-        `${f.label}<div style="font-weight:600;opacity:.7;font-size:11px;">${esc(f.hint)}</div>`,
-        false, ()=>{ c.focus=f.key; render(); }, true)));
+      ADDSUB_FOCUS.forEach(f=>g.appendChild(big(null, esc(f.label), f.hint, false,
+        ()=>{ c.focus=f.key; render(); })));
     } else {
-      TT_CUSTOM_TABLES.forEach(n=>r.appendChild(chip(`${n}×`, (c.tables||[]).indexOf(n)!==-1, ()=>{
-        c.tables=c.tables||[];
-        const i2=c.tables.indexOf(n);
-        if(i2===-1) c.tables.push(n); else c.tables.splice(i2,1);
-        render();
-      })));
+      TT_CUSTOM_TABLES.forEach(n=>g.appendChild(big(null, `${n}×`, null,
+        (c.tables||[]).indexOf(n)!==-1, ()=>{
+          c.tables=c.tables||[];
+          const i2=c.tables.indexOf(n);
+          if(i2===-1) c.tables.push(n); else c.tables.splice(i2,1);
+          render();
+        })));
     }
-    card.appendChild(r);
+    card.appendChild(g);
     if(!isAdd){
-      const go=el(`<button class="mmc-btn ${(c.tables||[]).length?'gold':'ghost'} sm" style="margin-top:8px;" ${(c.tables||[]).length?'':'disabled'}>Next →</button>`);
-      go.onclick=()=>{ c.step2done=true; render(); };
+      const n=(c.tables||[]).length;
+      const go=el(`<button type="button" class="mmc-bigbtn" style="width:100%;margin-top:14px;${n?'background:var(--gold);':'opacity:.45;'}" ${n?'':'disabled'}>${n?`Next →`:'Pick at least one'}</button>`);
+      go.onclick=()=>{ if((c.tables||[]).length){ c.step2done=true; render(); } };
       card.appendChild(go);
     }
     card.appendChild(back(()=>{ c.family=null; c.focus=null; c.tables=[]; c.step2done=false; render(); }));
     return card;
   }
-  if(!isAdd && !c.step2done){
-    // tables chosen but not confirmed
-    c.step2done=true;
-  }
 
   // ---- 3. which operations ----
   if(!c.opsDone){
-    card.appendChild(step(3,4,'Which ones?'));
-    const r=row();
+    head(3,4,'Which ones?');
+    const g=grid();
     if(isAdd){
-      r.appendChild(chip('➕ Adding', c.add && !c.sub, ()=>{ c.add=true; c.sub=false; c.opsDone=true; render(); }, true));
-      r.appendChild(chip('➖ Taking away', c.sub && !c.add, ()=>{ c.add=false; c.sub=true; c.opsDone=true; render(); }, true));
-      r.appendChild(chip('Both', c.add && c.sub, ()=>{ c.add=true; c.sub=true; c.opsDone=true; render(); }, true));
+      g.appendChild(big('➕','Adding',null,false,()=>{ c.add=true; c.sub=false; c.opsDone=true; render(); }));
+      g.appendChild(big('➖','Taking away',null,false,()=>{ c.add=false; c.sub=true; c.opsDone=true; render(); }));
+      g.appendChild(big('➕➖','Both',null,false,()=>{ c.add=true; c.sub=true; c.opsDone=true; render(); }));
     } else {
-      r.appendChild(chip('✖️ Times', c.mult && !c.div, ()=>{ c.mult=true; c.div=false; c.opsDone=true; render(); }, true));
-      r.appendChild(chip('➗ Divide', c.div && !c.mult, ()=>{ c.mult=false; c.div=true; c.opsDone=true; render(); }, true));
-      r.appendChild(chip('Both', c.mult && c.div, ()=>{ c.mult=true; c.div=true; c.opsDone=true; render(); }, true));
+      g.appendChild(big('✖️','Times',null,false,()=>{ c.mult=true; c.div=false; c.opsDone=true; render(); }));
+      g.appendChild(big('➗','Divide',null,false,()=>{ c.mult=false; c.div=true; c.opsDone=true; render(); }));
+      g.appendChild(big('✖️➗','Both',null,false,()=>{ c.mult=true; c.div=true; c.opsDone=true; render(); }));
     }
-    card.appendChild(r);
+    card.appendChild(g);
     card.appendChild(back(()=>{ if(isAdd) c.focus=null; else { c.tables=[]; c.step2done=false; } render(); }));
     return card;
   }
 
   // ---- 4. how long ----
-  card.appendChild(step(4,4,'How do you want to do it?'));
-  card.appendChild(el(`<div class="meta" style="margin:-4px 0 10px;">${esc(ttCustomLabel(c))}</div>`));
-  const r=row();
+  head(4,4,'Ready?');
+  card.appendChild(el(`<div class="meta" style="text-align:center;margin:-8px 0 14px;font-weight:700;color:var(--ink);">${esc(ttCustomLabel(c))}</div>`));
   const nQ=ttPracticeTotal(studentYear(S.profile));
-  const p=el(`<button class="mmc-btn ghost" style="flex:1;min-width:150px;">🐢 ${nQ} questions<div style="font-weight:600;opacity:.7;font-size:11px;">no clock</div></button>`);
-  p.onclick=()=>startTTPractice('custom', {...c});
-  const ch=el(`<button class="mmc-btn gold" style="flex:1;min-width:150px;">⏱ ${Math.round(TT_CHALLENGE_SECONDS/60)} minutes<div style="font-weight:600;opacity:.7;font-size:11px;">highest score</div></button>`);
-  ch.onclick=()=>startTTChallenge('custom', {...c});
-  r.appendChild(p); r.appendChild(ch);
-  card.appendChild(r);
+  const g=grid('two');
+  g.appendChild(big('🐢', `${nQ} questions`, 'no clock', false, ()=>startTTPractice('custom', {...c}), true));
+  const go=big('⏱', `${Math.round(TT_CHALLENGE_SECONDS/60)} minutes`, 'highest score', true,
+    ()=>startTTChallenge('custom', {...c}), true);
+  g.appendChild(go);
+  card.appendChild(g);
   card.appendChild(back(()=>{ c.opsDone=false; render(); }));
-  const again=el('<button type="button" class="mmc-btn ghost sm" style="margin-top:10px;margin-left:8px;">Start over</button>');
+  const again=el('<button type="button" class="mmc-pick-back" style="margin-top:2px;">Start again</button>');
   again.onclick=()=>{ S.ttCustom={tables:[],mult:true,div:false}; render(); };
   card.appendChild(again);
   return card;
