@@ -5965,7 +5965,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.25';
+const BUILD = '2026-08-12.26';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -7064,6 +7064,17 @@ function render(){
   if(speakSlot && !speakSlot.childElementCount && S.tt && S.tt.currentQ){
     const b=renderSpeakButton(S.tt.currentQ);
     if(b) speakSlot.appendChild(b);
+  }
+  // Bring the question back into view after each one. The feedback screen is taller than
+  // the question, so answering pushed the next question below the fold and a child had to
+  // scroll down for every single one.
+  if(S.tt && S.tt.active && S.tt.__scrollTop){
+    S.tt.__scrollTop=false;
+    const box=document.querySelector('.mmc-quiz-q, .mmc-card');
+    try{
+      if(box && box.scrollIntoView) box.scrollIntoView({block:'start', behavior:'smooth'});
+      else window.scrollTo({top:0, behavior:'smooth'});
+    }catch(e){ window.scrollTo(0,0); }
   }
   const ttInput=document.getElementById('mmc-tt-input');
   if(ttInput){
@@ -11219,6 +11230,7 @@ function startTTChallenge(level, custom){
            facts:{}, questionStartedAt:Date.now() };
   S.tt.currentQ = ttQuestionFor(S.tt, 0);
   S.tt.questionStartedAt = Date.now();
+  S.tt.__scrollTop=true;
   render();
   startTTTimer();
 }
@@ -11232,6 +11244,7 @@ function startTTPractice(level, custom){
   S.tt.currentQ = ttQuestionFor(S.tt, 0);
   S.tt.golden = Math.random() < 1/GOLDEN_ODDS;
   S.tt.questionStartedAt = Date.now();
+  S.tt.__scrollTop=true;
   render();
 }
 function startTTTimer(){
@@ -11271,12 +11284,14 @@ function submitTTAnswer(given){
   S.tt.qIndex++;
   S.tt.currentQ=ttQuestionFor(S.tt, S.tt.qIndex);
   S.tt.questionStartedAt=Date.now();
+  S.tt.__scrollTop=true;
   render();
 }
 // Practice only: advance past the revealed answer, or finish after the 30th.
 function nextTTPracticeQuestion(){
   if(!S.tt || S.tt.mode!=='practice') return;
   S.tt.reveal=null;
+  S.tt.__scrollTop=true;
   if(S.tt.attempted >= ttPracticeTotal(S.tt.year)){ finishTTChallenge(); return; }
   S.tt.qIndex++;
   S.tt.currentQ=ttQuestionFor(S.tt, S.tt.qIndex);
