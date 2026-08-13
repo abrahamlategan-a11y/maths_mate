@@ -271,7 +271,12 @@
   /* The cell you clicked, kept obvious while the panel is open. */
   .mmc-q.picked { outline:3px solid var(--ink); outline-offset:-3px; position:relative; z-index:1; }
   .mmc-qpop {
-    position:fixed; z-index:60; max-width:min(440px, calc(100vw - 20px)); opacity:0;
+    /* An explicit width, not just a max. The pictures are SVGs sized at width:100%, and a
+       position:fixed box with no width shrinks to fit its content, so "100% of the parent"
+       and "the parent is as wide as its content" resolve each other to ZERO. The picture
+       was present and collapsed to nothing, which is why it rendered everywhere else. */
+    position:fixed; z-index:60; width:min(400px, calc(100vw - 20px));
+    max-width:calc(100vw - 20px); opacity:0;
     transition:opacity .1s; filter:drop-shadow(0 6px 20px rgba(0,0,0,.22));
     background:var(--paper); border:2.5px solid var(--ink); border-radius:14px;
   }
@@ -5780,7 +5785,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.7';
+const BUILD = '2026-08-12.8';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
