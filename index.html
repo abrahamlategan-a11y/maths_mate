@@ -6521,7 +6521,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.55';
+const BUILD = '2026-08-12.56';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -12151,6 +12151,11 @@ function startLiveTeacherTimer(room){
     const left=liveTimeLeft(r);
     const timerEl=document.getElementById('mmc-live-timer');
     if(timerEl) timerEl.textContent=formatMMSS(left);
+    // A full redraw once a second while a race is running. The timer used to only poke a
+    // clock element, and the view built for a running race has no such element, so the
+    // whole screen sat frozen: a static clock, an empty track, and players who only
+    // appeared if something else happened to force a repaint.
+    else if(!(S.myLive && S.myLive.answering)) render();
     if(left<=0){
       clearInterval(teacherLiveTimerHandle); teacherLiveTimerHandle=null;
       try{ await updateDoc(doc(db,'liveGames',r.id), {status:'ended', endedAt:serverTimestamp()}); }
@@ -12234,6 +12239,7 @@ function renderTeacherLiveGame(){
   // to "Start the Racing Ground" with no track, no horses and nothing driving the sound.
   if(room && room.status==='active'){
     ensureParticipantsSub(room.id);
+    ensureTeacherLiveTimer();     // and keep the screen alive while it runs
     const left=liveTimeLeft(room);
     const mins=Math.floor(left/60), secs=Math.max(0,left%60);
     const head=el(`<div class="mmc-card" style="text-align:center;">
