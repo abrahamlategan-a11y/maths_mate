@@ -5490,15 +5490,75 @@ function computeTTClassInsights(attempts, uids){
 // the 2s at speed would be the cheapest possible route to a rank.
 const TT_CUSTOM_TABLES=[2,3,4,5,6,7,8,9,10,11,12];
 function ttCustomValid(c){
+  if(c && c.family==='addsub') return !!c.focus && !!(c.add || c.sub);
   return !!c && Array.isArray(c.tables) && c.tables.length>0 && (c.mult || c.div);
 }
 function ttCustomLabel(c){
+  if(c && c.family==='addsub'){
+    const f=(ADDSUB_FOCUS.find(x=>x.key===c.focus)||{}).label || 'Adding and taking away';
+    const ops = c.add && c.sub ? 'adding and taking away' : c.add ? 'adding' : 'taking away';
+    return `${f} · ${ops}`;
+  }
   if(!ttCustomValid(c)) return 'Custom';
   const t=c.tables.slice().sort((a,b)=>a-b).join(', ');
   const ops = c.mult && c.div ? '× and ÷' : c.mult ? '×' : '÷';
   return `${t} ${ops}`;
 }
+// ---------- Add and subtract drills ----------
+// The custom drill only ever did times tables, so a Year 1 who wanted to practise bonds to
+// ten had nowhere to go. Each focus is a real strategy rather than a number range, because
+// "adding within 20" is a description and "bridging ten" is something you can get better at.
+const ADDSUB_FOCUS = [
+  { key:'bonds10',  label:'Number bonds to 10',  hint:'6 and ? make 10' },
+  { key:'bonds20',  label:'Number bonds to 20',  hint:'13 and ? make 20' },
+  { key:'doubles',  label:'Doubles',             hint:'double 7' },
+  { key:'near',     label:'Near doubles',        hint:'7 + 8' },
+  { key:'bridge',   label:'Bridging ten',        hint:'8 + 5, 15 - 7' },
+  { key:'within20', label:'Anything to 20',      hint:'mixed practice' },
+  { key:'within100',label:'Two-digit numbers',   hint:'46 + 7, 52 - 8' },
+];
+function genAddSubCustom(c, idx){
+  const wantAdd = c.add && (!c.sub || idx%2===0);
+  const f = c.focus || 'within20';
+  const mk=(a,b,plus)=> plus
+    ? { prompt:`${a} + ${b}`, answer:a+b, isDivision:false, level:'custom' }
+    : { prompt:`${a+b} − ${b}`, answer:a, isDivision:false, level:'custom' };
+  if(f==='bonds10' || f==='bonds20'){
+    const total = f==='bonds10' ? 10 : 20;
+    const a=randInt(1,total-1);
+    return { prompt:`What goes with ${a} to make ${total}?`, answer:total-a,
+      isDivision:false, level:'custom' };
+  }
+  if(f==='doubles'){
+    const n = randInt(1, c.sub && !c.add ? 25 : 20);
+    return c.sub && !c.add
+      ? { prompt:`Half of ${n*2}`, answer:n, isDivision:false, level:'custom' }
+      : { prompt:`Double ${n}`, answer:n*2, isDivision:false, level:'custom' };
+  }
+  if(f==='near'){
+    const n=randInt(2,12), b=n+pick([1,-1,2]);
+    return mk(n, Math.max(1,b), wantAdd);
+  }
+  if(f==='bridge'){
+    // The ones digits must cross ten, which is the entire point of the strategy.
+    if(wantAdd){
+      const a=randInt(6,9)+randInt(0,4)*10, b=randInt(2,9);
+      return (a%10)+b>10 ? mk(a,b,true) : genAddSubCustom(c,idx);
+    }
+    const tens=randInt(2,9)*10, a=tens+randInt(1,7), b=randInt(2,9);
+    return b>(a%10) ? { prompt:`${a} − ${b}`, answer:a-b, isDivision:false, level:'custom' }
+      : genAddSubCustom(c,idx);
+  }
+  if(f==='within100'){
+    const a=randInt(21,89), b=randInt(3,9);
+    return mk(a,b,wantAdd);
+  }
+  const total=randInt(6,20), a=randInt(1,total-1);
+  return mk(a, total-a, wantAdd);
+}
+
 function genTTCustomQuestion(c, idx){
+  if(c && c.family==='addsub') return genAddSubCustom(c, idx);
   const table = pick(c.tables);
   const n = randInt(1,12);
   // Alternate when both are on, so a session can't land on one operation by chance.
@@ -5785,7 +5845,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.8';
+const BUILD = '2026-08-12.10';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -6873,6 +6933,13 @@ function render(){
   root.appendChild(body);
   // Every password field on screen gets a show/hide eye, wherever it appears.
   root.querySelectorAll('input[type="password"]').forEach(attachPasswordEye);
+  // Read-aloud lives in renderQuestionBody, which is the weekly quiz. Fast Facts draws its
+  // own question, so it never had one, and it is the part a Pre-Primary uses most.
+  const speakSlot=document.getElementById('mmc-tt-speak');
+  if(speakSlot && !speakSlot.childElementCount && S.tt && S.tt.currentQ){
+    const b=renderSpeakButton(S.tt.currentQ);
+    if(b) speakSlot.appendChild(b);
+  }
   const ttInput=document.getElementById('mmc-tt-input');
   if(ttInput){
     // Focus WITH the caret put back at the end. A bare focus() drops the caret at position
@@ -10726,8 +10793,8 @@ function renderTimetableTab(){
     <div class="mmc-coinbar" title="Gold coins found on golden questions. Spend them in the Racing Ground.">🪙 ${myCoins()}</div>
   </div>`));
   wrap.appendChild(el(`<div class="meta" style="margin-bottom:10px;">
-    <strong>🐢 Practice</strong>${TT_PRACTICE_TOTAL} questions, no clock, take your time. It shows you the answer when you get one wrong.<br>
-    <strong>⏱ Challenge</strong>5 minutes, answer as many as you can. Both build your race status, but only the Challenge counts towards your accuracy.
+    <strong>🐢 Practice</strong>${ttPracticeTotal(myYear)} questions, no clock, take your time. It shows you the answer when you get one wrong.<br>
+    <strong>⏱ Challenge</strong>${Math.round(TT_CHALLENGE_SECONDS/60)} minutes, answer as many as you can. Both build your race status, but only the Challenge counts towards your accuracy.
   </div>`));
   wrap.appendChild(cardsRow);
   wrap.appendChild(renderTTFocusCard());
@@ -10760,7 +10827,17 @@ function renderTimetableTab(){
   return wrap;
 }
 
+// Thirty questions is a long sit for a five-year-old, and a child who abandons halfway
+// records nothing at all. Scaled to the year, so a session is finishable.
 const TT_PRACTICE_TOTAL = 30;
+const TT_PRACTICE_BY_YEAR = { 0:10, 1:15, 2:20 };
+function ttPracticeTotal(year){
+  const y=+year;
+  return TT_PRACTICE_BY_YEAR[y] || TT_PRACTICE_TOTAL;
+}
+// Five minutes is a long time to hold concentration at any primary age, and it made a
+// Challenge something a class could not fit into the end of a lesson.
+const TT_CHALLENGE_SECONDS = 180;
 // The judgement, made visible. At most three, each with a one-tap drill that pre-fills
 // the custom picker. The point is to close the loop between "you need this" and doing it,
 // not to present a report.
@@ -10802,56 +10879,102 @@ function renderTTFocusCard(){
 
 // Pick-your-own drill. Chips rather than a multi-select, because a nine-year-old on a
 // tablet can tap a chip and cannot easily ctrl-click a list.
+// One question at a time. The old card put tables, operations and a Go button on screen
+// together, which is a form rather than a choice, and it only ever offered times tables.
+// A child now walks: what kind of maths, what to work on, which operations, how long.
 function renderTTCustomCard(){
   const c=S.ttCustom;
-  const card=el(`
-    <div class="mmc-card" style="margin-top:16px;">
-      <h3>🎯 Pick your own</h3>
-      <div class="meta" style="margin-bottom:8px;">Choose the tables you want to work on. Counts towards your status as practice.</div>
-      <div class="meta" style="font-weight:700;color:var(--ink);margin-bottom:4px;">Tables</div>
-      <div class="mmc-row" id="mmc-tt-tables" style="flex-wrap:wrap;gap:6px;margin-bottom:10px;"></div>
-      <div class="meta" style="font-weight:700;color:var(--ink);margin-bottom:4px;">Type</div>
-      <div class="mmc-row" id="mmc-tt-ops" style="gap:6px;margin-bottom:10px;"></div>
-      <div class="mmc-row" id="mmc-tt-cgo" style="gap:8px;"></div>
-      <div class="meta" id="mmc-tt-chint" style="margin-top:6px;"></div>
-    </div>
-  `);
-  const chip=(label,on,onClick)=>{
-    const b=el(`<button type="button" class="mmc-btn ${on?'gold':'ghost'} sm" style="min-width:52px;">${label}</button>`);
+  const card=el(`<div class="mmc-card" style="margin-top:16px;"><h3>🎯 Pick your own</h3></div>`);
+  const step=(n,total,title)=>el(`<div class="meta" style="margin:2px 0 10px;">Step ${n} of ${total} · <strong style="color:var(--ink);">${esc(title)}</strong></div>`);
+  const chip=(label,on,onClick,wide)=>{
+    const b=el(`<button type="button" class="mmc-btn ${on?'gold':'ghost'} sm" style="${wide?'flex:1;min-width:150px;':'min-width:56px;'}">${label}</button>`);
     b.onclick=onClick; return b;
   };
-  const tablesRow=card.querySelector('#mmc-tt-tables');
-  TT_CUSTOM_TABLES.forEach(n=>{
-    tablesRow.appendChild(chip(`${n}×`, c.tables.indexOf(n)!==-1, ()=>{
-      const i=c.tables.indexOf(n);
-      if(i===-1) c.tables.push(n); else c.tables.splice(i,1);
-      render();
-    }));
-  });
-  const opsRow=card.querySelector('#mmc-tt-ops');
-  opsRow.appendChild(chip('× Times', c.mult, ()=>{ c.mult=!c.mult; render(); }));
-  opsRow.appendChild(chip('÷ Divide', c.div, ()=>{ c.div=!c.div; render(); }));
-
-  const goRow=card.querySelector('#mmc-tt-cgo');
-  const ready=ttCustomValid(c);
-  const mk=(label,cls,fn)=>{
-    const b=el(`<button class="mmc-btn ${cls} sm" ${ready?'':'disabled'}>${label}</button>`);
-    if(ready) b.onclick=fn;
-    return b;
+  const row=()=>el('<div class="mmc-row" style="flex-wrap:wrap;gap:8px;margin-bottom:6px;"></div>');
+  const back=(fn)=>{
+    const b=el('<button type="button" class="mmc-btn ghost sm" style="margin-top:10px;">← Back</button>');
+    b.onclick=fn; return b;
   };
-  // Config is copied, not passed by reference. Otherwise changing a chip mid-session
-  // would silently change the questions being generated.
-  const snapshot=()=>({ tables:c.tables.slice(), mult:!!c.mult, div:!!c.div });
-  goRow.appendChild(mk('🐢 Practice','ghost',()=>startTTPractice('custom', snapshot())));
-  goRow.appendChild(mk('⏱ Challenge','gold',()=>startTTChallenge('custom', snapshot())));
-  card.querySelector('#mmc-tt-chint').textContent = ready
-    ? `Ready: ${ttCustomLabel(c)}`
-    : (c.tables.length===0 ? 'Pick at least one table.' : 'Pick times, divide, or both.');
+
+  // ---- 1. which kind of maths ----
+  if(!c.family){
+    card.appendChild(step(1,4,'What do you want to practise?'));
+    const r=row();
+    r.appendChild(chip('➕ ➖ Adding and taking away', false, ()=>{ c.family='addsub'; c.add=true; c.sub=true; render(); }, true));
+    r.appendChild(chip('✖️ ➗ Times and divide', false, ()=>{ c.family='multdiv'; c.mult=true; c.div=false; render(); }, true));
+    card.appendChild(r);
+    return card;
+  }
+
+  // ---- 2. what exactly ----
+  const isAdd = c.family==='addsub';
+  if(isAdd ? !c.focus : !(c.tables && c.tables.length)){
+    card.appendChild(step(2,4, isAdd ? 'Which one?' : 'Which tables?'));
+    const r=row();
+    if(isAdd){
+      ADDSUB_FOCUS.forEach(f=>r.appendChild(chip(
+        `${f.label}<div style="font-weight:600;opacity:.7;font-size:11px;">${esc(f.hint)}</div>`,
+        false, ()=>{ c.focus=f.key; render(); }, true)));
+    } else {
+      TT_CUSTOM_TABLES.forEach(n=>r.appendChild(chip(`${n}×`, (c.tables||[]).indexOf(n)!==-1, ()=>{
+        c.tables=c.tables||[];
+        const i2=c.tables.indexOf(n);
+        if(i2===-1) c.tables.push(n); else c.tables.splice(i2,1);
+        render();
+      })));
+    }
+    card.appendChild(r);
+    if(!isAdd){
+      const go=el(`<button class="mmc-btn ${(c.tables||[]).length?'gold':'ghost'} sm" style="margin-top:8px;" ${(c.tables||[]).length?'':'disabled'}>Next →</button>`);
+      go.onclick=()=>{ c.step2done=true; render(); };
+      card.appendChild(go);
+    }
+    card.appendChild(back(()=>{ c.family=null; c.focus=null; c.tables=[]; c.step2done=false; render(); }));
+    return card;
+  }
+  if(!isAdd && !c.step2done){
+    // tables chosen but not confirmed
+    c.step2done=true;
+  }
+
+  // ---- 3. which operations ----
+  if(!c.opsDone){
+    card.appendChild(step(3,4,'Which ones?'));
+    const r=row();
+    if(isAdd){
+      r.appendChild(chip('➕ Adding', c.add && !c.sub, ()=>{ c.add=true; c.sub=false; c.opsDone=true; render(); }, true));
+      r.appendChild(chip('➖ Taking away', c.sub && !c.add, ()=>{ c.add=false; c.sub=true; c.opsDone=true; render(); }, true));
+      r.appendChild(chip('Both', c.add && c.sub, ()=>{ c.add=true; c.sub=true; c.opsDone=true; render(); }, true));
+    } else {
+      r.appendChild(chip('✖️ Times', c.mult && !c.div, ()=>{ c.mult=true; c.div=false; c.opsDone=true; render(); }, true));
+      r.appendChild(chip('➗ Divide', c.div && !c.mult, ()=>{ c.mult=false; c.div=true; c.opsDone=true; render(); }, true));
+      r.appendChild(chip('Both', c.mult && c.div, ()=>{ c.mult=true; c.div=true; c.opsDone=true; render(); }, true));
+    }
+    card.appendChild(r);
+    card.appendChild(back(()=>{ if(isAdd) c.focus=null; else { c.tables=[]; c.step2done=false; } render(); }));
+    return card;
+  }
+
+  // ---- 4. how long ----
+  card.appendChild(step(4,4,'How do you want to do it?'));
+  card.appendChild(el(`<div class="meta" style="margin:-4px 0 10px;">${esc(ttCustomLabel(c))}</div>`));
+  const r=row();
+  const nQ=ttPracticeTotal(studentYear(S.profile));
+  const p=el(`<button class="mmc-btn ghost" style="flex:1;min-width:150px;">🐢 ${nQ} questions<div style="font-weight:600;opacity:.7;font-size:11px;">no clock</div></button>`);
+  p.onclick=()=>startTTPractice('custom', {...c});
+  const ch=el(`<button class="mmc-btn gold" style="flex:1;min-width:150px;">⏱ ${Math.round(TT_CHALLENGE_SECONDS/60)} minutes<div style="font-weight:600;opacity:.7;font-size:11px;">highest score</div></button>`);
+  ch.onclick=()=>startTTChallenge('custom', {...c});
+  r.appendChild(p); r.appendChild(ch);
+  card.appendChild(r);
+  card.appendChild(back(()=>{ c.opsDone=false; render(); }));
+  const again=el('<button type="button" class="mmc-btn ghost sm" style="margin-top:10px;margin-left:8px;">Start over</button>');
+  again.onclick=()=>{ S.ttCustom={tables:[],mult:true,div:false}; render(); };
+  card.appendChild(again);
   return card;
 }
 
 function startTTChallenge(level, custom){
-  S.tt = { mode:'challenge', active:true, finished:false, level, custom:custom||null, year:studentYear(S.profile), timeLeft:300,
+  S.tt = { mode:'challenge', active:true, finished:false, level, custom:custom||null, year:studentYear(S.profile), timeLeft:TT_CHALLENGE_SECONDS,
            score:0, attempted:0, qIndex:0, currentQ:null, lastResult:null, typedValue:'',
            facts:{}, questionStartedAt:Date.now() };
   S.tt.currentQ = ttQuestionFor(S.tt, 0);
@@ -10914,7 +11037,7 @@ function submitTTAnswer(given){
 function nextTTPracticeQuestion(){
   if(!S.tt || S.tt.mode!=='practice') return;
   S.tt.reveal=null;
-  if(S.tt.attempted >= TT_PRACTICE_TOTAL){ finishTTChallenge(); return; }
+  if(S.tt.attempted >= ttPracticeTotal(S.tt.year)){ finishTTChallenge(); return; }
   S.tt.qIndex++;
   S.tt.currentQ=ttQuestionFor(S.tt, S.tt.qIndex);
   S.tt.typedValue='';
@@ -11020,6 +11143,7 @@ function renderTTChallenge(){
         <input type="text" id="mmc-tt-input" class="${t.flash?('mmc-flash-'+t.flash):''}" autocomplete="off" inputmode="${KEYPAD_INPUTMODE}" value="${esc(t.typedValue||'')}" style="width:120px;text-align:center;font-size:22px;padding:10px;border-radius:8px;border:1.5px solid var(--paper-line);">
         <button class="mmc-btn gold" id="mmc-tt-submit">Go</button>
       </div>
+      <div class="mmc-row" style="justify-content:center;margin-top:8px;" id="mmc-tt-speak"></div>
     </div>
   `);
   // While a practice answer is revealed, the input and keypad are replaced by the result
