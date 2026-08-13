@@ -268,6 +268,8 @@
   .mmc-q.lo  .mmc-qbtn { color:#9B2C1A; }
   .mmc-qbtn:hover { text-decoration:underline; }
   .mmc-qbtn { cursor:pointer; }
+  .mmc-qbtn.static { cursor:default; display:block; }
+  .mmc-qbtn.static:hover { text-decoration:none; }
   /* The cell you clicked, kept obvious while the panel is open. */
   .mmc-q.picked { outline:3px solid var(--ink); outline-offset:-3px; position:relative; z-index:1; }
   .mmc-qpop {
@@ -5845,7 +5847,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.10';
+const BUILD = '2026-08-12.12';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -8883,8 +8885,49 @@ function renderLedgerByWeek(){
   wrap.appendChild(selectRow);
 
   wrap.appendChild(el('<div class="meta" style="margin-bottom:10px;">Click any ✓ or ✗ to see the question and the student\'s answer.</div>'));
+  // A bubble pinned over the grid rather than a panel below it. position:fixed is what
+  // makes this work: the table wrapper scrolls, so anything inside it gets clipped, and a
+  // fixed element is measured against the viewport instead.
+  // Rendered outside the normal tree so it can float over the grid, which means a plain
+  // re-render never removes it. Cleared explicitly, or they stack up.
+  document.querySelectorAll('.mmc-qpop').forEach(x=>x.remove());
   const detail=renderGradebookDetail();
-  if(detail && S.gradebookDetail && S.gradebookDetail.type==='week') wrap.appendChild(detail);
+  if(detail && S.gradebookDetail && S.gradebookDetail.type==='week'){
+    const a=S.gbAnchor;
+    const bubble=el('<div class="mmc-qpop"></div>');
+    bubble.appendChild(detail);
+    // Inside #mmc, not on document.body. Every colour in this app is a CSS variable
+    // declared on #mmc, so an element outside it has no value for --paper and the
+    // background silently resolved to nothing. position:fixed still escapes the table's
+    // clipping from in here, which was the only reason for using body.
+    (document.getElementById('mmc') || document.body).appendChild(bubble);
+    setTimeout(()=>{
+      if(!a){ bubble.style.cssText='position:fixed;left:50%;top:80px;transform:translateX(-50%);'; return; }
+      const bw=bubble.offsetWidth, bh=bubble.offsetHeight;
+      // Above the cell by default. Below it if there is no room, which happens on the
+      // first few rows.
+      const above = a.y - bh - 14 > 8;
+      const top = above ? a.y - bh - 12 : a.bottom + 12;
+      let left = a.x - bw/2;
+      left = Math.max(10, Math.min(left, window.innerWidth - bw - 10));
+      bubble.style.left = left+'px';
+      bubble.style.top = top+'px';
+      bubble.classList.add(above?'up':'down');
+      bubble.style.setProperty('--tipx', (a.x-left)+'px');
+      bubble.style.opacity='1';
+    },0);
+    // Clicking away closes it. NOT with {once:true} on any click: clicking a second cell
+    // ran the cell's own handler first and this one second, so the new bubble opened and
+    // was cancelled in the same breath. That is why it worked only sometimes. A click on
+    // another cell is now left alone for that cell to handle.
+    const away=(e)=>{
+      if(bubble.contains(e.target)) return;
+      if(e.target.closest && e.target.closest('.mmc-qbtn')) return;
+      document.removeEventListener('click', away, true);
+      S.gradebookDetail=null; S.gbAnchor=null; render();
+    };
+    setTimeout(()=>document.addEventListener('click', away, true), 0);
+  }
 
   const week = pubWeeks.find(w=>w.id===S.gradebookWeekId);
   const qidToSlot={}; (week.questions||[]).forEach(q=>{ qidToSlot[q.id]=q.slot; });
@@ -8920,7 +8963,14 @@ function renderLedgerByWeek(){
         if(!info){ tr.appendChild(el(`<td style="color:var(--ink-soft);${c.hidden?'opacity:.4;':''}" title="${c.hidden?'Hidden from students':'Not attempted'}">-</td>`)); continue; }
         const td=el('<td></td>');
         const btn=el(`<button type="button" style="background:none;border:none;cursor:pointer;font-weight:800;font-size:16px;color:${info.correct?'var(--correct)':'var(--incorrect)'};">${info.correct?'✓':'✗'}</button>`);
-        btn.onclick=()=>{ S.gradebookDetail={type:'week', uid, weekId:week.id, qId:info.qId}; render(); };
+        btn.onclick=()=>{
+          const wrapEl=btn.closest('.mmc-ledger-wrap');
+          S.gbScrollLeft = wrapEl ? wrapEl.scrollLeft : 0;
+          const r=btn.getBoundingClientRect();
+          S.gbAnchor={ x:r.left+r.width/2, y:r.top, bottom:r.bottom };
+          S.gradebookDetail={type:'week', uid, weekId:week.id, qId:info.qId};
+          render();
+        };
         td.appendChild(btn);
         tr.appendChild(td);
       }
@@ -8941,7 +8991,7 @@ function renderLedgerByWeek(){
 function qBand(pct){ return pct>=80 ? 'hi' : (pct>=50 ? 'mid' : 'lo'); }
 function renderLedgerByQuestion(){
   const wrap=el('<div></div>');
-  wrap.appendChild(el('<div class="meta" style="margin-bottom:12px;">Accuracy per question, across every published week each student has completed. Click any cell to see the history for that question.</div>'));
+  wrap.appendChild(el('<div class="meta" style="margin-bottom:12px;">Accuracy per skill, averaged across every published set each student has completed. Hover a column heading to see what the skill is. For a single question and what a student answered, use By Week.</div>'));
 
   const pubWeeks = S.weeks.filter(w=>isWeekLive(w) && weekInCurrentClass(w));
   const qidToSlotByWeek={};
@@ -9051,10 +9101,13 @@ function renderLedgerByQuestion(){
       if(total===0){ tr.appendChild(el('<td style="color:var(--ink-soft);">-</td>')); }
       else {
         const pct=Math.round((correctCount/total)*100);
-        const picked = S.gradebookDetail && S.gradebookDetail.type==='question'
-          && S.gradebookDetail.uid===uid && S.gradebookDetail.skill===code;
-        const td=el(`<td class="mmc-q ${qBand(pct)}${picked?' picked':''}"></td>`);
-        const btn=el(`<button type="button" class="mmc-qbtn" title="${esc(S.profiles[uid].displayName||uid)} · ${esc(skillTitle(code))} · ${correctCount} of ${total} correct">${pct}%</button>`);
+        // NOT clickable. This column is an average across every set the class has ever
+        // done, so there is no single question behind it to show. Opening one was
+        // meaningful with one set and became nonsense with two. The skill name on the
+        // header hover is the useful thing here; the specific question belongs in By Week,
+        // where a cell really is one question.
+        const td=el(`<td class="mmc-q ${qBand(pct)}"></td>`);
+        const btn=el(`<span class="mmc-qbtn static" title="${esc(S.profiles[uid].displayName||uid)} · ${esc(skillTitle(code))} · ${correctCount} of ${total} correct across ${total===1?'1 set':'all sets'}">${pct}%</span>`);
         btn.onclick=()=>{
           // Remember the sideways position AND where on screen the cell is, so the bubble
           // can be pinned to it. Re-rendering used to reset the table to column one, so
@@ -9079,49 +9132,6 @@ function renderLedgerByQuestion(){
   table.appendChild(tbody);
   tableWrap.appendChild(table);
   wrap.appendChild(tableWrap);
-  // A bubble pinned over the grid rather than a panel below it. position:fixed is what
-  // makes this work: the table wrapper scrolls, so anything inside it gets clipped, and a
-  // fixed element is measured against the viewport instead.
-  // Lives on document.body to escape the scroll clipping, which means the normal render
-  // never removes it. Cleared explicitly, or they stack up.
-  document.querySelectorAll('.mmc-qpop').forEach(x=>x.remove());
-  const detail=renderGradebookDetail();
-  if(detail && S.gradebookDetail && S.gradebookDetail.type==='question'){
-    const a=S.gbAnchor;
-    const bubble=el('<div class="mmc-qpop"></div>');
-    bubble.appendChild(detail);
-    // Inside #mmc, not on document.body. Every colour in this app is a CSS variable
-    // declared on #mmc, so an element outside it has no value for --paper and the
-    // background silently resolved to nothing. position:fixed still escapes the table's
-    // clipping from in here, which was the only reason for using body.
-    (document.getElementById('mmc') || document.body).appendChild(bubble);
-    setTimeout(()=>{
-      if(!a){ bubble.style.cssText='position:fixed;left:50%;top:80px;transform:translateX(-50%);'; return; }
-      const bw=bubble.offsetWidth, bh=bubble.offsetHeight;
-      // Above the cell by default. Below it if there is no room, which happens on the
-      // first few rows.
-      const above = a.y - bh - 14 > 8;
-      const top = above ? a.y - bh - 12 : a.bottom + 12;
-      let left = a.x - bw/2;
-      left = Math.max(10, Math.min(left, window.innerWidth - bw - 10));
-      bubble.style.left = left+'px';
-      bubble.style.top = top+'px';
-      bubble.classList.add(above?'up':'down');
-      bubble.style.setProperty('--tipx', (a.x-left)+'px');
-      bubble.style.opacity='1';
-    },0);
-    // Clicking away closes it. NOT with {once:true} on any click: clicking a second cell
-    // ran the cell's own handler first and this one second, so the new bubble opened and
-    // was cancelled in the same breath. That is why it worked only sometimes. A click on
-    // another cell is now left alone for that cell to handle.
-    const away=(e)=>{
-      if(bubble.contains(e.target)) return;
-      if(e.target.closest && e.target.closest('.mmc-qbtn')) return;
-      document.removeEventListener('click', away, true);
-      S.gradebookDetail=null; S.gbAnchor=null; render();
-    };
-    setTimeout(()=>document.addEventListener('click', away, true), 0);
-  }
   return wrap;
 }
 
