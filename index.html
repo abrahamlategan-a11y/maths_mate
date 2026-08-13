@@ -6208,6 +6208,17 @@ function raceCallerTick(){
               T=third?raceCallName(third):null, B=last?raceCallName(last):null;
         // The leader stalling is the most interesting thing that can happen in a race, so
         // it gets said first and outranks the general lines.
+        // Nobody moving at all. Worth calling, because a class watching a still track
+        // wants someone to say what they can see.
+        const fieldMoved=(st.total==null) ? 99 : (board.reduce((a,b)=>a+(b.score||0),0) - st.total);
+        st.total=board.reduce((a,b)=>a+(b.score||0),0);
+        if(fieldMoved<=0 && board.length>1) lines.push(
+          `Nobody is moving! What is going on out there?`,
+          `Has everybody stopped for a think?`,
+          `The whole field has gone quiet.`,
+          `Somebody answer something!`,
+          `${L} appears to have pulled up. Is everything alright?`,
+          `You could hear a pin drop out there.`);
         if(leadMoved<=1 && S2) lines.push(
           `${L} has stalled!`,
           `${L} has hit a wall, and ${S2} is coming!`,
@@ -6493,7 +6504,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.50';
+const BUILD = '2026-08-12.52';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -7045,7 +7056,7 @@ const S = {
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null, ttDetailUid:null,
   stuExpandedUid:null, overviewUid:null, raceLeft:null, newClass:null, setsFilter:'ALL', justCreatedId:null, worthOpen:null,
   joinedRoomId:null, pinOpen:false,
-  externalRoomId:null, externalRoom:null, pinBusy:false, pinDraft:'', hideGetStarted:false, toastTone:null, gbScrollLeft:0, gbAnchor:null, classProgress:[],
+  externalRoomId:null, externalRoom:null, pinBusy:false, pinDraft:'', hideGetStarted:false, toastTone:null, gbScrollLeft:0, gbAnchor:null, classProgress:[], raceSeen:{},
   raceSound:false, raceSaid:{},
   bulkSwapNames:false, bulkGroup:'mainstream', bulkTargetClassId:null, bulkFinalNames:null, bulkResultClassId:null,
   raceMinutes:2,
@@ -7142,7 +7153,8 @@ function currentLiveRoom(){
   // stale leaderboard from some race nobody remembered. Results are worth seeing straight
   // afterwards and worth nothing an hour later, so they expire.
   const now = nowSec;
-  const ended = visible.filter(g=>isRaceOver(g) && raceEndedSecondsAgo(g, now) <= RACE_RESULT_WINDOW_SEC)
+  const ended = visible.filter(g=>isRaceOver(g) && !((S.raceSeen||{})[g.id])
+      && raceEndedSecondsAgo(g, now) <= RACE_RESULT_WINDOW_SEC)
     .slice().sort((a,b)=>(raceEndedAtSeconds(b)||0)-(raceEndedAtSeconds(a)||0));
   return ended[0] || null;
 }
@@ -7264,7 +7276,10 @@ let liveParticipantsGen = 0;
 // room list is momentarily behind, and tearing the listener down there killed the one
 // attached when the race was created. The room resolved a second later and nothing was
 // watching it, which is why a lobby stayed empty until a refresh rebuilt everything.
+// A quiet trace of what this listener is doing. Silent failures here have cost several
+// lessons, and one line in the console is cheaper than another guess.
 function ensureParticipantsSub(gameId, keepIfUnknown){
+  try{ if(window.__mmcTraceRace) console.log('[race] sub ->', gameId, 'was', liveParticipantsRoomId, 'keep', !!keepIfUnknown); }catch(e){}
   if(!gameId){
     if(keepIfUnknown) return;   // transient, not a decision
     if(liveParticipantsUnsub){ liveParticipantsUnsub(); liveParticipantsUnsub=null; }
@@ -7277,7 +7292,11 @@ function ensureParticipantsSub(gameId, keepIfUnknown){
   liveParticipantsRoomId=gameId;
   const myGen = ++liveParticipantsGen;
   liveParticipantsUnsub = onSnapshot(collection(db,'liveGames',gameId,'participants'), snap=>{
-    if(myGen!==liveParticipantsGen) return; // this listener has been superseded. Ignore
+    if(myGen!==liveParticipantsGen){
+      try{ if(window.__mmcTraceRace) console.log('[race] IGNORED a snapshot for', gameId, '- superseded'); }catch(e){}
+      return; // this listener has been superseded
+    }
+    try{ if(window.__mmcTraceRace) console.log('[race] got', snap.docs.length, 'players for', gameId); }catch(e){}
     S.liveParticipants=snap.docs.map(d=>({id:d.id,...d.data()}));
     // In a busy race, other students submit answers constantly. With a full class racing,
     // that can mean several updates per second hitting every screen. A student who is
@@ -12195,6 +12214,7 @@ function renderTeacherLiveGame(){
   // below handled a lobby, so the moment a teacher pressed Start their screen fell through
   // to "Start the Racing Ground" with no track, no horses and nothing driving the sound.
   if(room && room.status==='active'){
+    ensureParticipantsSub(room.id);
     const left=liveTimeLeft(room);
     const mins=Math.floor(left/60), secs=Math.max(0,left%60);
     const head=el(`<div class="mmc-card" style="text-align:center;">
@@ -12250,6 +12270,9 @@ function renderTeacherLiveGame(){
       wrap.appendChild(el(`<div class="mmc-setgroup"><span class="mmc-setgroup-name">Races open now</span>
         <span class="mmc-setgroup-count">${rooms.length}</span></div>`));
     }
+    // Watch the room this card is about. Whatever else has happened to the shared
+    // listener, the card showing the players knows which room it is showing.
+    if(rooms.length) ensureParticipantsSub(rooms[0].id);
     rooms.forEach(r=>{
       const isMine = !r.hostUid;
       const opened = r.createdAt && r.createdAt.seconds ? r.createdAt.seconds : 0;
@@ -12752,7 +12775,14 @@ function renderStudentLiveGame(){
       wrap.appendChild(renderRaceTrack(S.user.uid));
       wrap.appendChild(renderLiveLeaderboardCard('Final leaderboard', room, true));
       const again=el('<button class="mmc-btn gold" style="width:100%;font-size:16px;padding:12px;margin-top:10px;">Race again</button>');
-      again.onclick=()=>{ S.joinedRoomId=null; S.raceLeft=null; render(); };
+      again.onclick=()=>{
+        // Remember that THIS child has seen this result. Clearing the join alone did
+        // nothing, because a finished race stays current for fifteen minutes and the same
+        // screen simply drew itself again.
+        S.raceSeen = Object.assign({}, S.raceSeen, {[room.id]:1});
+        S.joinedRoomId=null; S.raceLeft=null; S.externalRoomId=null; S.externalRoom=null;
+        render();
+      };
       wrap.appendChild(again);
       return wrap;   // nothing else belongs on this screen
     }
