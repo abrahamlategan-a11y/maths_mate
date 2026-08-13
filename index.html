@@ -336,6 +336,36 @@
   /* Apple and Google both put the minimum comfortable touch target at 44px. The old chips
      were about 30px high and packed together, which is fine for a mouse and not for a
      small finger. These are 84px with real space between them. */
+  /* Each operation carries an Arena colour, and the choice follows the child through the
+     rest of the walk, so a screen mid-way still shows what they picked. Faint on purpose:
+     it should tint, not shout. */
+  .mmc-op-add  { --op:var(--slime);   --opd:var(--slime-deep); }
+  .mmc-op-sub  { --op:var(--orange);  --opd:var(--orange-deep); }
+  .mmc-op-mul  { --op:var(--purple);  --opd:var(--purple-deep); }
+  .mmc-op-div  { --op:var(--magenta); --opd:var(--magenta-deep); }
+  .mmc-op-both { --op:var(--yellow);  --opd:var(--yellow-deep); }
+  .mmc-bigbtn.tinted { background:color-mix(in srgb, var(--op) 16%, #fff); }
+  .mmc-bigbtn.tinted:hover { background:color-mix(in srgb, var(--op) 26%, #fff); }
+  .mmc-bigbtn.tinted.on { background:color-mix(in srgb, var(--op) 55%, #fff); }
+  .mmc-pickcard.tinted {
+    border-color:var(--opd) !important;
+    background:linear-gradient(180deg, color-mix(in srgb, var(--op) 12%, #fff), var(--paper)) !important;
+  }
+  /* Each level owns an Arena colour, so a child recognises "the green one" before they can
+     comfortably read "Easy". */
+  .mmc-levelcard { border-width:3px !important; }
+  .mmc-levelcard.mmc-op-add  { --op:var(--slime);   --opd:var(--slime-deep); }
+  .mmc-levelcard.mmc-op-mul  { --op:var(--purple);  --opd:var(--purple-deep); }
+  .mmc-levelcard.mmc-op-div  { --op:var(--magenta); --opd:var(--magenta-deep); }
+  .mmc-levelcard {
+    border-color:var(--opd) !important;
+    background:linear-gradient(180deg, color-mix(in srgb, var(--op) 12%, #fff), var(--paper)) !important;
+  }
+  .mmc-level-name {
+    font-family:'Baloo 2',sans-serif; font-weight:800; text-align:center;
+    font-size:clamp(24px,4vw,34px); line-height:1.05; color:var(--ink);
+    text-transform:uppercase; letter-spacing:.02em;
+  }
   .mmc-pick-title {
     font-family:'Baloo 2',sans-serif; font-weight:800; text-align:center;
     font-size:clamp(22px,4.5vw,32px); line-height:1.1; margin:2px 0 4px; color:var(--ink);
@@ -5923,7 +5953,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.22';
+const BUILD = '2026-08-12.23';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -10941,18 +10971,24 @@ function renderTimetableTab(){
   // "1-10 times tables" when it is actually the 2s, 5s, 10s and 3s.
   const myYear = studentYear(S.profile);
   const blurb = TT_LEVEL_BLURB[myYear] || TT_LEVEL_BLURB[4];
-  const levels=[{k:'easy',label:'Easy',desc:blurb.easy},{k:'medium',label:'Medium',desc:blurb.medium},{k:'hard',label:'Hard',desc:blurb.hard}];
-  const cardsRow=el('<div class="mmc-row"></div>');
+  const levels=[
+    {k:'easy',   label:'Easy',   desc:blurb.easy,   tint:'mmc-op-add'},
+    {k:'medium', label:'Medium', desc:blurb.medium, tint:'mmc-op-mul'},
+    {k:'hard',   label:'Hard',   desc:blurb.hard,   tint:'mmc-op-div'},
+  ];
+  const cardsRow=el('<div class="mmc-row" style="gap:12px;align-items:stretch;flex-wrap:wrap;"></div>');
   levels.forEach(lv=>{
     const best=bestTTScore(lv.k);
     const card=el(`
-      <div class="mmc-card" style="flex:1;min-width:150px;">
-        <h3>${lv.label}</h3>
-        <div class="meta">${lv.desc}</div>
-        <div class="meta" style="font-weight:700;color:var(--ink);">Best: ${best? `${best.score} correct (${best.accuracy}%)` : 'Not attempted yet'}</div>
-        <div class="mmc-row" style="gap:8px;margin-top:6px;">
-          <button class="mmc-btn ghost sm" data-go="practice">🐢 Practice</button>
-          <button class="mmc-btn gold sm" data-go="challenge">⏱ Challenge</button>
+      <div class="mmc-card mmc-levelcard ${lv.tint}" style="flex:1;min-width:220px;">
+        <div class="mmc-level-name">${lv.label}</div>
+        <div class="meta" style="text-align:center;margin:2px 0 4px;">${lv.desc}</div>
+        <div class="meta" style="text-align:center;font-weight:700;color:var(--ink);margin-bottom:10px;">${best? `Best: ${best.score} correct (${best.accuracy}%)` : 'Not attempted yet'}</div>
+        <div class="mmc-pick-grid two" style="gap:10px;">
+          <button type="button" class="mmc-bigbtn tinted" data-go="practice">
+            <span class="em">🐢</span><span>In your own time</span></button>
+          <button type="button" class="mmc-bigbtn tinted" data-go="challenge">
+            <span class="em">⏱</span><span>Speed challenge</span></button>
         </div>
       </div>
     `);
@@ -11056,17 +11092,33 @@ function renderTTFocusCard(){
 // A child now walks: what kind of maths, what to work on, which operations, how long.
 // Built for a six-year-old on an iPad: one question per screen, buttons big enough for a
 // small finger, and a title that looks like the rest of the Arena rather than a form.
+// Which colour a chosen operation carries, so it follows the child through the walk.
+const OP_TINT = { add:'mmc-op-add', sub:'mmc-op-sub', addsub:'mmc-op-both',
+                  mul:'mmc-op-mul', div:'mmc-op-div', muldiv:'mmc-op-both' };
+// Three steps, not four. Picking the operation and picking WHICH operations were two
+// separate questions asking almost the same thing, so they are one screen now: the six
+// buttons a child would actually think in. The colour of whatever they choose follows
+// them through the rest of the walk.
+const PICK_OPS = [
+  { key:'add',    sym:'+',       label:'Adding',        family:'addsub', add:true,  sub:false },
+  { key:'sub',    sym:'−',       label:'Taking away',   family:'addsub', add:false, sub:true  },
+  { key:'mul',    sym:'×',       label:'Times',         family:'multdiv', mult:true, div:false },
+  { key:'div',    sym:'÷',       label:'Divide',        family:'multdiv', mult:false, div:true },
+  { key:'addsub', sym:'+ and −', label:'Both',          family:'addsub', add:true,  sub:true, wide:true },
+  { key:'muldiv', sym:'× and ÷', label:'Both',          family:'multdiv', mult:true, div:true, wide:true },
+];
 function renderTTCustomCard(){
   const c=S.ttCustom;
-  const card=el('<div class="mmc-card" style="margin-top:16px;"></div>');
+  const tint = OP_TINT[c.op] || '';
+  const card=el(`<div class="mmc-card mmc-pickcard ${tint} ${tint?'tinted':''}" style="margin-top:16px;"></div>`);
   const head=(step,total,title)=>{
     card.appendChild(el(`<div class="mmc-pick-step">Step ${step} of ${total}</div>`));
     card.appendChild(el(`<div class="mmc-pick-title">${esc(title)}</div>`));
   };
-  const big=(emoji,label,sub,on,onClick,tall)=>{
-    const b=el(`<button type="button" class="mmc-bigbtn${on?' on':''}${tall?' tall':''}">
-      ${emoji?`<span class="em">${emoji}</span>`:''}
-      <span>${label}</span>
+  const big=(sym,label,sub,on,onClick,cls)=>{
+    const b=el(`<button type="button" class="mmc-bigbtn tinted ${cls||tint} ${on?'on':''}">
+      ${sym?`<span class="em">${sym}</span>`:''}
+      ${label?`<span>${label}</span>`:''}
       ${sub?`<span class="sub">${esc(sub)}</span>`:''}
     </button>`);
     b.onclick=onClick; return b;
@@ -11077,15 +11129,19 @@ function renderTTCustomCard(){
     b.onclick=fn; return b;
   };
 
-  // ---- 1. which kind of maths ----
-  if(!c.family){
-    head(1,4,'What do you want to practise?');
-    const g=grid('two');
-    g.appendChild(big('➕➖','Adding and<br>taking away',null,false,
-      ()=>{ c.family='addsub'; c.add=true; c.sub=true; render(); }, true));
-    g.appendChild(big('✖️➗','Times and<br>divide',null,false,
-      ()=>{ c.family='multdiv'; c.mult=true; c.div=false; render(); }, true));
+  // ---- 1. which operation ----
+  if(!c.op){
+    head(1,3,'What do you want to practise?');
+    const g=grid();
+    PICK_OPS.filter(o=>!o.wide).forEach(o=>g.appendChild(
+      big(o.sym, o.label, null, false, ()=>{ Object.assign(c,o,{op:o.key, focus:null, tables:[], step2done:false}); render(); },
+        OP_TINT[o.key])));
     card.appendChild(g);
+    const g2=grid('two');
+    PICK_OPS.filter(o=>o.wide).forEach(o=>g2.appendChild(
+      big(o.sym, null, null, false, ()=>{ Object.assign(c,o,{op:o.key, focus:null, tables:[], step2done:false}); render(); },
+        OP_TINT[o.key])));
+    card.appendChild(g2);
     return card;
   }
 
@@ -11093,13 +11149,13 @@ function renderTTCustomCard(){
 
   // ---- 2. what exactly ----
   if(isAdd ? !c.focus : !c.step2done){
-    head(2,4, isAdd ? 'Which one?' : 'Which tables?');
+    head(2,3, isAdd ? 'Which one?' : 'Which tables?');
     const g=grid(isAdd?'':'tables');
     if(isAdd){
       ADDSUB_FOCUS.forEach(f=>g.appendChild(big(null, esc(f.label), f.hint, false,
         ()=>{ c.focus=f.key; render(); })));
     } else {
-      TT_CUSTOM_TABLES.forEach(n=>g.appendChild(big(null, `${n}×`, null,
+      TT_CUSTOM_TABLES.forEach(n=>g.appendChild(big(`${n}×`, null, null,
         (c.tables||[]).indexOf(n)!==-1, ()=>{
           c.tables=c.tables||[];
           const i2=c.tables.indexOf(n);
@@ -11110,43 +11166,23 @@ function renderTTCustomCard(){
     card.appendChild(g);
     if(!isAdd){
       const n=(c.tables||[]).length;
-      const go=el(`<button type="button" class="mmc-bigbtn" style="width:100%;margin-top:14px;${n?'background:var(--gold);':'opacity:.45;'}" ${n?'':'disabled'}>${n?`Next →`:'Pick at least one'}</button>`);
+      const go=el(`<button type="button" class="mmc-bigbtn tinted ${tint}" style="width:100%;margin-top:14px;${n?'':'opacity:.45;'}" ${n?'':'disabled'}>${n?'Next →':'Pick at least one'}</button>`);
       go.onclick=()=>{ if((c.tables||[]).length){ c.step2done=true; render(); } };
       card.appendChild(go);
     }
-    card.appendChild(back(()=>{ c.family=null; c.focus=null; c.tables=[]; c.step2done=false; render(); }));
+    card.appendChild(back(()=>{ S.ttCustom={tables:[],mult:true,div:false}; render(); }));
     return card;
   }
 
-  // ---- 3. which operations ----
-  if(!c.opsDone){
-    head(3,4,'Which ones?');
-    const g=grid();
-    if(isAdd){
-      g.appendChild(big('➕','Adding',null,false,()=>{ c.add=true; c.sub=false; c.opsDone=true; render(); }));
-      g.appendChild(big('➖','Taking away',null,false,()=>{ c.add=false; c.sub=true; c.opsDone=true; render(); }));
-      g.appendChild(big('➕➖','Both',null,false,()=>{ c.add=true; c.sub=true; c.opsDone=true; render(); }));
-    } else {
-      g.appendChild(big('✖️','Times',null,false,()=>{ c.mult=true; c.div=false; c.opsDone=true; render(); }));
-      g.appendChild(big('➗','Divide',null,false,()=>{ c.mult=false; c.div=true; c.opsDone=true; render(); }));
-      g.appendChild(big('✖️➗','Both',null,false,()=>{ c.mult=true; c.div=true; c.opsDone=true; render(); }));
-    }
-    card.appendChild(g);
-    card.appendChild(back(()=>{ if(isAdd) c.focus=null; else { c.tables=[]; c.step2done=false; } render(); }));
-    return card;
-  }
-
-  // ---- 4. how long ----
-  head(4,4,'Ready?');
+  // ---- 3. how ----
+  head(3,3,'Ready?');
   card.appendChild(el(`<div class="meta" style="text-align:center;margin:-8px 0 14px;font-weight:700;color:var(--ink);">${esc(ttCustomLabel(c))}</div>`));
   const nQ=ttPracticeTotal(studentYear(S.profile));
   const g=grid('two');
-  g.appendChild(big('🐢', `${nQ} questions`, 'no clock', false, ()=>startTTPractice('custom', {...c}), true));
-  const go=big('⏱', `${Math.round(TT_CHALLENGE_SECONDS/60)} minutes`, 'highest score', true,
-    ()=>startTTChallenge('custom', {...c}), true);
-  g.appendChild(go);
+  g.appendChild(big('🐢', 'In your own time', `${nQ} questions`, false, ()=>startTTPractice('custom', {...c})));
+  g.appendChild(big('⏱', 'Speed challenge', `${Math.round(TT_CHALLENGE_SECONDS/60)} minutes`, true, ()=>startTTChallenge('custom', {...c})));
   card.appendChild(g);
-  card.appendChild(back(()=>{ c.opsDone=false; render(); }));
+  card.appendChild(back(()=>{ if(isAdd) c.focus=null; else { c.tables=[]; c.step2done=false; } render(); }));
   const again=el('<button type="button" class="mmc-pick-back" style="margin-top:2px;">Start again</button>');
   again.onclick=()=>{ S.ttCustom={tables:[],mult:true,div:false}; render(); };
   card.appendChild(again);
