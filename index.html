@@ -268,6 +268,12 @@
   .mmc-q.lo  .mmc-qbtn { color:#9B2C1A; }
   .mmc-qbtn:hover { text-decoration:underline; }
   .mmc-qbtn { cursor:pointer; }
+  /* Started but not finished. Deliberately not red: it is not a failure, it is a child
+     partway through, and it wants to look different from both a score and a blank. */
+  .mmc-inprog {
+    color:#8A5B02; font-weight:700; background:#FFF8E8;
+    font-variant-numeric:tabular-nums;
+  }
   .mmc-qbtn.static { cursor:default; display:block; }
   .mmc-qbtn.static:hover { text-decoration:none; }
   /* The cell you clicked, kept obvious while the panel is open. */
@@ -5847,7 +5853,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.15';
+const BUILD = '2026-08-12.16';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -6399,7 +6405,7 @@ const S = {
   gradebookView:'summary', gradebookWeekId:null, gradebookDetail:null, ttDetailUid:null,
   stuExpandedUid:null, overviewUid:null, raceLeft:null, newClass:null, setsFilter:'ALL', justCreatedId:null, worthOpen:null,
   joinedRoomId:null, pinOpen:false,
-  externalRoomId:null, externalRoom:null, pinBusy:false, pinDraft:'', hideGetStarted:false, toastTone:null, gbScrollLeft:0, gbAnchor:null,
+  externalRoomId:null, externalRoom:null, pinBusy:false, pinDraft:'', hideGetStarted:false, toastTone:null, gbScrollLeft:0, gbAnchor:null, classProgress:[],
   bulkSwapNames:false, bulkGroup:'mainstream', bulkTargetClassId:null, bulkFinalNames:null, bulkResultClassId:null,
   raceMinutes:2,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
@@ -6794,6 +6800,11 @@ if(!configured){
 function subscribeData(){
   if(S.isTeacher){
     unsubs.push(onSnapshot(query(collection(db,'weeks'), where('teacherUid','==',S.user.uid)), snap=>{ S.weeks=snap.docs.map(d=>({id:d.id,...d.data()})); render(); }, (err)=>{ S.toast='Weeks error: '+err.message; render(); }));
+    unsubs.push(onSnapshot(query(collection(db,'weekProgress'), where('teacherUid','==',S.user.uid)), snap=>{
+      // Half-finished attempts. The difference between a child who was away and one who
+      // is slow, which a blank cell cannot show.
+      S.classProgress=snap.docs.map(d=>({id:d.id,...d.data()})); render();
+    }, ()=>{}));
     unsubs.push(onSnapshot(query(collection(db,'results'), where('teacherUid','==',S.user.uid)), snap=>{ S.results=scopeToPreview(snap.docs.map(d=>({id:d.id,...d.data()}))); render(); }, (err)=>{ S.toast='Results error: '+err.message; render(); }));
     unsubs.push(onSnapshot(query(collection(db,'profiles'), where('teacherUid','==',S.user.uid)), snap=>{ S.profiles={}; snap.docs.forEach(d=>S.profiles[d.id]=d.data()); render(); }, (err)=>{ S.toast='Profiles error: '+err.message; render(); }));
     unsubs.push(onSnapshot(query(collection(db,'ttAttempts'), where('teacherUid','==',S.user.uid)), snap=>{ S.ttAttempts=scopeToPreview(snap.docs.map(d=>({id:d.id,...d.data()}))); render(); }, (err)=>{ S.toast='Timetable data error: '+err.message; render(); }));
@@ -8378,12 +8389,20 @@ function buildWeekControlPanel(week, isEditing, suffix){
   btnRow.appendChild(priBtn);
   const archiveBtn=el(`<button class="mmc-btn ${allDone?'gold':'ghost'} sm">Archive</button>`);
   archiveBtn.onclick=()=>{
-    const missing = aimed.filter(u=>!doneSet.has(u))
-      .map(u=>(S.profiles[u]&&S.profiles[u].displayName)||'').filter(Boolean);
+    const missing = aimed.filter(u=>!doneSet.has(u));
     if(missing.length){
-      const who = missing.length<=4 ? missing.join(', ')
-        : `${missing.slice(0,4).join(', ')} and ${missing.length-4} more`;
-      if(!confirm(`${missing.length} student${missing.length===1?" hasn't":"s haven't"} finished this yet:\n\n${who}\n\nArchive it anyway?`)) return;
+      // Two different situations, named separately. A child partway through will finish
+      // if given the time; a child who never opened it needs chasing.
+      const nameOf=u=>(S.profiles[u]&&S.profiles[u].displayName)||'';
+      const started=[], never=[];
+      missing.forEach(u=>{
+        const p=partialProgress(u, week.id);
+        (p ? started : never).push(p ? `${nameOf(u)} (${p.done}/${visibleQuestions(week).length})` : nameOf(u));
+      });
+      const lines=[];
+      if(started.length) lines.push(`Partway through: ${started.filter(Boolean).join(', ')}`);
+      if(never.length) lines.push(`Not started: ${never.filter(Boolean).join(', ')}`);
+      if(!confirm(`${missing.length} student${missing.length===1?" hasn't":"s haven't"} finished this yet.\n\n${lines.join('\n\n')}\n\nArchive it anyway?`)) return;
     }
     archiveWeekAction(week);
   };
@@ -8846,7 +8865,15 @@ function renderLedgerSummary(){
       const rec = S.results.find(r=>r.uid===uid && r.weekId===w.id);
       if(rec){ const pct = rec.total? rec.score/rec.total : 0; const cls = pct>=0.7?'good':(pct>=0.5?'mid':'low');
         sum+=pct; cnt++; tr.appendChild(el(`<td class="mmc-cellscore ${cls}">${rec.score}/${rec.total}</td>`)); }
-      else tr.appendChild(el(`<td style="color:var(--ink-soft);">-</td>`));
+      else {
+        // A dash meant two very different things: away all week, or started and slow. The
+        // second is the one a teacher can act on, and it was invisible.
+        const p=partialProgress(uid, w.id);
+        const total=visibleQuestions(w).length;
+        tr.appendChild(p
+          ? el(`<td class="mmc-inprog" title="Started, ${total-p.done} question${total-p.done===1?'':'s'} to go">${p.done}/${total}</td>`)
+          : el(`<td style="color:var(--ink-soft);" title="Not started">-</td>`));
+      }
     });
     const avg = cnt? Math.round((sum/cnt)*100) : null;
     tr.appendChild(el(`<td class="mmc-cellscore">${avg==null?'-':avg+'%'}</td>`));
@@ -8994,6 +9021,15 @@ function renderLedgerByWeek(){
 // One place that decides which band a percentage falls in, so the colours can never
 // disagree between the class average row and a student's own cell.
 function qBand(pct){ return pct>=80 ? 'hi' : (pct>=50 ? 'mid' : 'lo'); }
+// How far a student has got on a set they have not finished. Answers a question a blank
+// cell cannot: away, or started and slow?
+function partialProgress(uid, weekId){
+  const rec=(S.classProgress||[]).find(p=>p.uid===uid && p.weekId===weekId);
+  if(!rec || !rec.quiz) return null;
+  const done=Object.values(rec.quiz).filter(q=>q && q.checked).length;
+  if(!done) return null;
+  return { done, at: rec.updatedAt && rec.updatedAt.seconds ? rec.updatedAt.seconds*1000 : null };
+}
 // Move the pointer near either edge and the grid rolls that way. Written once so every
 // wide table gets it: it only existed on By Question, and By Week is just as wide.
 function attachEdgeScroll(tableWrap, key){
