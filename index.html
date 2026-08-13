@@ -6504,7 +6504,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.53';
+const BUILD = '2026-08-12.54';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -12273,9 +12273,11 @@ function renderTeacherLiveGame(){
       wrap.appendChild(el(`<div class="mmc-setgroup"><span class="mmc-setgroup-name">Races open now</span>
         <span class="mmc-setgroup-count">${rooms.length}</span></div>`));
     }
-    // Watch the room this card is about. Whatever else has happened to the shared
-    // listener, the card showing the players knows which room it is showing.
-    if(rooms.length) ensureParticipantsSub(rooms[0].id);
+    // Watch the room the PLAYERS are drawn from, which is currentLiveRoom, not whichever
+    // room happens to sort first. With two races open these were different rooms, so every
+    // render flipped the listener between them and each flip cleared the player list. That
+    // is why the lobby said "nobody yet" while children were visibly joining.
+    if(room) ensureParticipantsSub(room.id);
     rooms.forEach(r=>{
       const isMine = !r.hostUid;
       const opened = r.createdAt && r.createdAt.seconds ? r.createdAt.seconds : 0;
