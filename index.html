@@ -5887,7 +5887,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.18';
+const BUILD = '2026-08-12.19';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -9030,8 +9030,12 @@ function renderLedgerByWeek(){
         const s=c.slot;
         const info=bySlot[s];
         if(!info){
+          // A finished set cannot have an unanswered question: Finish is disabled until
+          // every one is checked. So a gap here means the question was hidden from
+          // students, and saying "not attempted" would blame a child for the teacher's
+          // own setting.
           tr.appendChild(el(work.finished
-            ? `<td style="color:var(--ink-soft);${c.hidden?'opacity:.4;':''}" title="${c.hidden?'Hidden from students':'Not attempted'}">-</td>`
+            ? `<td style="color:var(--ink-soft);${c.hidden?'opacity:.4;':''}" title="${c.hidden?'Hidden from students':'Not shown to this student'}">-</td>`
             : `<td class="mmc-inc" title="Not reached yet">INC</td>`));
           continue;
         }
