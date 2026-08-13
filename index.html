@@ -6504,7 +6504,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.52';
+const BUILD = '2026-08-12.53';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -7279,7 +7279,9 @@ let liveParticipantsGen = 0;
 // A quiet trace of what this listener is doing. Silent failures here have cost several
 // lessons, and one line in the console is cheaper than another guess.
 function ensureParticipantsSub(gameId, keepIfUnknown){
-  try{ if(window.__mmcTraceRace) console.log('[race] sub ->', gameId, 'was', liveParticipantsRoomId, 'keep', !!keepIfUnknown); }catch(e){}
+  // On by default while this is being chased. Cheap, and it turns a silent failure into
+  // a line anyone can read back to me.
+  try{ console.log('[race] sub ->', gameId, '| was', liveParticipantsRoomId, '| keep', !!keepIfUnknown); }catch(e){}
   if(!gameId){
     if(keepIfUnknown) return;   // transient, not a decision
     if(liveParticipantsUnsub){ liveParticipantsUnsub(); liveParticipantsUnsub=null; }
@@ -7293,10 +7295,10 @@ function ensureParticipantsSub(gameId, keepIfUnknown){
   const myGen = ++liveParticipantsGen;
   liveParticipantsUnsub = onSnapshot(collection(db,'liveGames',gameId,'participants'), snap=>{
     if(myGen!==liveParticipantsGen){
-      try{ if(window.__mmcTraceRace) console.log('[race] IGNORED a snapshot for', gameId, '- superseded'); }catch(e){}
+      try{ console.log('[race] IGNORED a snapshot for', gameId, '- superseded'); }catch(e){}
       return; // this listener has been superseded
     }
-    try{ if(window.__mmcTraceRace) console.log('[race] got', snap.docs.length, 'players for', gameId); }catch(e){}
+    try{ console.log('[race] got', snap.docs.length, 'players for', gameId); }catch(e){}
     S.liveParticipants=snap.docs.map(d=>({id:d.id,...d.data()}));
     // In a busy race, other students submit answers constantly. With a full class racing,
     // that can mean several updates per second hitting every screen. A student who is
@@ -12221,6 +12223,7 @@ function renderTeacherLiveGame(){
       <div class="mmc-pick-step">Race in progress</div>
       <div class="mmc-ff-title" style="font-size:clamp(34px,8vw,64px);">${mins}:${String(secs).padStart(2,'0')}</div>
       <div class="meta" style="margin:2px 0 0;">${S.liveParticipants.length} racing</div>
+      ${room.pin?`<div class="meta" style="margin:6px 0 0;">Race PIN <code class="mmc-code">${esc(room.pin)}</code></div>`:''}
     </div>`);
     const controls=el('<div class="mmc-row" style="gap:8px;justify-content:center;margin-bottom:12px;"></div>');
     const sound=el(`<button class="mmc-pill ${S.raceSound?'on':''}" title="Plays on THIS screen only, never on student devices">
@@ -12884,6 +12887,7 @@ function renderStudentLiveGame(){
   return wrap;
 }
 async function joinLiveGame(gameId){
+  try{ console.log('[race] joining', gameId); }catch(e){}
   // A started race is closed. Enforced here as well as in the interface, because a stale
   // screen is exactly how somebody ends up halfway through someone else's race.
   const target=(S.liveGames||[]).find(g=>g.id===gameId) ||
