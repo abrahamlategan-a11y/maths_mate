@@ -5887,7 +5887,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.20';
+const BUILD = '2026-08-12.21';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -12188,7 +12188,27 @@ function renderQuestionBody(q, st, onCheck, headerHTML){
     const qt=qbox.querySelector('.qtext');
     if(qt) qt.insertAdjacentElement('afterend', speak); else qbox.appendChild(speak);
   }
-  function doCheck(){ if(st.checked) return; stopSpeaking(); st.checked=true; st.correct=gradeQuestion(q, st.given);
+  // A blank answer must never be graded. It used to be accepted, marked wrong, and stored
+  // as "no response", which is worse than a wrong answer: the gradebook then says a child
+  // got something wrong when they never actually attempted it, and that follows them into
+  // every average. A child who does not know should still have to put something down.
+  function hasAnswer(){
+    const g=st.given;
+    if(g===null || g===undefined) return false;
+    if(Array.isArray(g)) return g.length>0 && g.some(x=>String(x==null?'':x).trim()!=='');
+    if(typeof g==='object'){
+      const vals=Object.values(g);
+      return vals.length>0 && vals.some(x=>String(x==null?'':x).trim()!=='');
+    }
+    return String(g).trim()!=='';
+  }
+  function doCheck(){
+    if(st.checked) return;
+    if(!hasAnswer()){
+      S.toast='Put an answer in first. Have a go, even if you are not sure.';
+      S.toastTone='warn'; render(); return;
+    }
+    stopSpeaking(); st.checked=true; st.correct=gradeQuestion(q, st.given);
     st.flags=answerFlags(q, st.given); render(); onCheck(); }
 
   if(q.inputType==='choice'){
