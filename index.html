@@ -3,7 +3,49 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mathmentum</title>
+<title>Mathmentum · Maths practice for Australian primary schools</title>
+<!-- Written for a web-filter crawler as much as for a person. A school filter categorises
+     a new domain from whatever it can read on the page, and until now that was a login
+     box and the word "Mathmentum", which lands a site in "Uncategorised" and gets it
+     blocked by default at most schools. Saying plainly what this is, who it is for, and
+     that it is educational is what gets it classified as Education instead. -->
+<meta name="description" content="Mathmentum is a maths practice platform for Australian primary school students and teachers. Weekly practice sets, number fact fluency training and live class maths races, mapped to the Australian Curriculum for Pre-Primary to Year 6.">
+<meta name="keywords" content="maths practice, primary school maths, Australian Curriculum, times tables, number facts, mathematics education, classroom, teachers, students, school">
+<meta name="author" content="Mathmentum">
+<meta name="rating" content="general">
+<meta name="robots" content="index, follow">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Mathmentum">
+<meta property="og:title" content="Mathmentum · Maths practice for Australian primary schools">
+<meta property="og:description" content="Maths practice for Australian primary school classrooms. Weekly practice sets, number fact fluency and live class races, Pre-Primary to Year 6.">
+<meta property="og:url" content="https://mathmentum.com.au">
+<meta property="og:locale" content="en_AU">
+<!-- Structured data. Categorisation crawlers and search engines both read this, and it
+     states the type of organisation explicitly rather than leaving it to be inferred. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "EducationalOrganization",
+  "name": "Mathmentum",
+  "url": "https://mathmentum.com.au",
+  "description": "Maths practice platform for Australian primary school students and teachers, covering Pre-Primary to Year 6 of the Australian Curriculum.",
+  "educationalLevel": "Primary education",
+  "audience": { "@type": "EducationalAudience", "educationalRole": ["student", "teacher"] },
+  "address": { "@type": "PostalAddress", "addressCountry": "AU", "addressRegion": "WA" },
+  "email": "hello@mathmentum.com.au"
+}
+</script>
+<noscript>
+  <h1>Mathmentum &mdash; maths practice for Australian primary schools</h1>
+  <p>Mathmentum is an educational website for Australian primary school students and their
+     teachers. It provides weekly maths practice sets, number fact fluency training and
+     live classroom maths races, mapped to the Australian Curriculum from Pre-Primary
+     through to Year 6.</p>
+  <p>Teachers create classes, set practice for their students, and see how each child is
+     progressing. Students practise number facts, complete weekly sets and race their
+     classmates at their own level.</p>
+  <p>Contact: hello@mathmentum.com.au</p>
+</noscript>
 <!-- Favicon embedded as an SVG data URI rather than a separate .ico file, so the deploy
      stays a single paste: no second file to forget, no path to get wrong, and nothing
      extra for the school network to block. Single quotes inside the SVG and %23 for the
@@ -406,6 +448,14 @@
   .mmc-winner.me .mmc-winner-name { color:var(--orange); }
   .mmc-winner-sub { font-size:13.5px; font-weight:700; color:var(--ink-soft); margin-top:2px; }
   @keyframes mmc-pop { 0%{transform:scale(.3);opacity:0;} 60%{transform:scale(1.18);} 100%{transform:scale(1);opacity:1;} }
+  .mmc-about { max-width:640px; margin:0 auto 22px; text-align:center; }
+  .mmc-about h1 {
+    font-family:'Baloo 2',sans-serif; font-weight:800; color:var(--ink);
+    font-size:clamp(21px,3.4vw,30px); line-height:1.15; margin:0 0 10px;
+  }
+  .mmc-about p { font-size:14.5px; line-height:1.55; color:var(--ink-soft); margin:0 0 8px; }
+  .mmc-about-contact { font-size:13px !important; opacity:.85; }
+  .mmc-about-contact a { color:var(--ink-soft); }
   .mmc-levelcard { border-width:3px !important; }
   .mmc-levelcard.mmc-op-add  { --op:var(--slime);   --opd:var(--slime-deep); }
   .mmc-levelcard.mmc-op-mul  { --op:var(--purple);  --opd:var(--purple-deep); }
@@ -6557,7 +6607,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.65';
+const BUILD = '2026-08-12.67';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -7774,6 +7824,25 @@ function renderHead(){
 function renderAuth(){
   const wrap=el('<div></div>');
   const isSignup = S.showSignup;
+
+  // A short, plain description above the sign-in box. It is here for two reasons: a
+  // teacher arriving from a colleague's recommendation should know what this is before
+  // being asked for a password, and a school web filter categorises a domain from what it
+  // can read. A login box alone reads as "uncategorised", which most school filters block
+  // by default.
+  if(!isSignup){
+    wrap.appendChild(el(`<div class="mmc-about">
+      <h1>Maths practice for Australian primary schools</h1>
+      <p>Mathmentum gives primary teachers weekly maths practice sets, number fact fluency
+         training and live classroom maths races, mapped to the Australian Curriculum from
+         Pre-Primary to Year 6.</p>
+      <p>Teachers set work for their classes and see exactly how each child is going.
+         Students practise at their own level, and every question is generated fresh, so
+         no two children get the same paper.</p>
+      <p class="mmc-about-contact">An Australian education website ·
+         <a href="mailto:hello@mathmentum.com.au">hello@mathmentum.com.au</a></p>
+    </div>`));
+  }
 
   if(isSignup){
     if(S.teacherRequestSubmitted){
