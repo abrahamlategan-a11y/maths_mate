@@ -277,6 +277,10 @@
   }
   /* The card inside brought no background of its own, so the grid showed straight
      through the bubble. The bubble owns the surface now and the card just fills it. */
+  .mmc-qbox {
+    display:inline-block; min-width:44px; border-bottom:2px solid var(--ink);
+    text-align:center; color:var(--ink-soft); font-weight:700;
+  }
   .mmc-qpop .mmc-card {
     margin:0; border:0; box-shadow:none; background:transparent; border-radius:14px;
   }
@@ -5776,7 +5780,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.5';
+const BUILD = '2026-08-12.6';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -8652,6 +8656,29 @@ function renderGradebookDetail(){
     `);
     if(q.svg) card.querySelector('h3').insertAdjacentHTML('afterend', `<div class="mmc-qsvg">${q.svg}</div>`);
     card.appendChild(el(`<div class="qtext" style="margin:8px 0 12px;">${esc(q.prompt)}</div>`));
+    // The prompt is only ever PART of a question. Comparing fractions keeps its two
+    // fractions in separate fields, so this card showed "Choose the correct sign:" and
+    // nothing to choose between. fracPromptHTML already draws every fraction shape the
+    // app uses, so the card shows exactly what the child saw.
+    const extra = fracPromptHTML(q);
+    if(extra) card.appendChild(el(`<div>${extra}</div>`));
+    if(q.partsLead!=null || q.partsTail!=null){
+      const boxes=(q.parts||[{}]).map(()=>'<span class="mmc-qbox">?</span>')
+        .join(` <b>${esc(q.partsJoin||'')}</b> `);
+      card.appendChild(el(`<div class="qtext" style="margin:0 0 10px;">${esc(q.partsLead||'')} ${boxes} ${esc(q.partsTail||'')}</div>`));
+    }
+    if(Array.isArray(q.items) && q.items.length){
+      card.appendChild(el(`<div class="mmc-worth-names" style="margin:0 0 10px;">${
+        q.items.map(x=>`<span>${esc(typeof x==='object' ? (x.deg!=null? x.deg+'°' : JSON.stringify(x)) : x)}</span>`).join('')}</div>`));
+    }
+    if(Array.isArray(q.choices) && q.choices.length){
+      card.appendChild(el(`<div class="mmc-worth-names" style="margin:0 0 10px;">${
+        q.choices.map(c=>`<span>${esc(c)}</span>`).join('')}</div>`));
+    }
+    if(Array.isArray(q.coins) && q.coins.length){
+      card.appendChild(el(`<div class="mmc-worth-names" style="margin:0 0 10px;">${
+        q.coins.map(c=>`<span>${esc(c.l||c.label||'')}</span>`).join('')}</div>`));
+    }
     const answerRow=el(`
       <div class="mmc-row" style="gap:24px;">
         <div><div class="label2">Student's answer</div><div style="font-weight:700;color:${ans&&ans.correct?'var(--correct)':'var(--incorrect)'};">${esc(formatGivenAnswer(ans,q))}</div></div>
