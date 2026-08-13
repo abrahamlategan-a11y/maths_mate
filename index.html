@@ -6557,7 +6557,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.59';
+const BUILD = '2026-08-12.60';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -12299,13 +12299,25 @@ function renderTeacherLiveGame(){
       else raceCallerStop();
       render();
     };
+    const reload=el('<button class="mmc-btn ghost sm" title="Reconnect to the players in this race">Refresh players</button>');
+    reload.onclick=()=>{
+      // Tear the listener down and rebuild it against this room. Whatever has gone wrong,
+      // this is the state a page reload would produce, without losing the page.
+      ensureParticipantsSub(null);
+      ensureParticipantsSub(room.id);
+      ensureTeacherLiveTimer();
+      S.toast='Reconnecting to the race…'; S.toastTone='good';
+      render();
+      setTimeout(render, 600);
+      setTimeout(render, 1600);
+    };
     const endBtn=el('<button class="mmc-btn ghost sm">End now</button>');
     endBtn.onclick=async ()=>{
       try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended', endedAt:serverTimestamp()}); await retireRacePin(room); }
       catch(e){ S.toast='Could not end the race. Check your connection.'; }
       render();
     };
-    controls.appendChild(sound); controls.appendChild(endBtn);
+    controls.appendChild(sound); controls.appendChild(reload); controls.appendChild(endBtn);
     wrap.appendChild(head);
     wrap.appendChild(controls);
     wrap.appendChild(renderRaceTrack(null));
@@ -12386,9 +12398,15 @@ function renderTeacherLiveGame(){
           const local=(S.liveGames||[]).find(g=>g.id===r.id);
           if(local){ local.status='active'; local.startedAt={seconds:Math.floor(Date.now()/1000)}; }
           S.joinedRoomId=null;
+          ensureParticipantsSub(null);        // force a clean re-subscribe
           ensureParticipantsSub(r.id);
-          render();
           ensureTeacherLiveTimer();
+          // Redrawn several times over the next two seconds. A single render straight
+          // after the write has not been enough: something arriving a moment later has
+          // been putting the old state back, and this rides over it rather than trying to
+          // out-think it.
+          render();
+          [200,600,1200,2000].forEach(ms=>setTimeout(()=>{ try{ render(); }catch(e){} }, ms));
         }
         catch(e){ S.toast='Could not start. Check your connection.'; render(); }
       };
