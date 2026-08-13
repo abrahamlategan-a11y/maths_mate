@@ -353,6 +353,18 @@
   }
   /* Each level owns an Arena colour, so a child recognises "the green one" before they can
      comfortably read "Easy". */
+  .mmc-ff-head { position:relative; text-align:center; margin:6px 0 16px; }
+  .mmc-ff-head .mmc-coinbar { position:absolute; right:0; top:0; }
+  .mmc-ff-title {
+    font-family:'Baloo 2',sans-serif; font-weight:800; line-height:.95;
+    font-size:clamp(30px,7vw,54px); letter-spacing:.01em;
+    text-transform:uppercase; color:var(--ink);
+  }
+  .mmc-ff-title span {
+    display:block; color:var(--orange);
+    text-shadow:2px 2px 0 rgba(0,0,0,.08);
+  }
+  @media (max-width:520px){ .mmc-ff-head .mmc-coinbar { position:static; display:inline-block; margin-top:8px; } }
   .mmc-levelcard { border-width:3px !important; }
   .mmc-levelcard.mmc-op-add  { --op:var(--slime);   --opd:var(--slime-deep); }
   .mmc-levelcard.mmc-op-mul  { --op:var(--purple);  --opd:var(--purple-deep); }
@@ -5953,7 +5965,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.23';
+const BUILD = '2026-08-12.25';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -10996,13 +11008,12 @@ function renderTimetableTab(){
     card.querySelector('[data-go="challenge"]').onclick=()=>startTTChallenge(lv.k);
     cardsRow.appendChild(card);
   });
-  wrap.appendChild(el(`<div class="mmc-row" style="justify-content:space-between;align-items:center;margin:4px 0 12px;">
-    <h3 style="font-family:Fredoka,sans-serif;margin:0;">Fast Facts Training Ground</h3>
+  // The year in the title, big, so a child can see at a glance that this is THEIR maths.
+  // The two paragraphs explaining Practice and Challenge are gone: the buttons now say
+  // "In your own time" and "Speed challenge", which is the whole explanation.
+  wrap.appendChild(el(`<div class="mmc-ff-head">
+    <div class="mmc-ff-title">${esc(yearLabel(myYear))}<br><span>Fast Facts</span></div>
     <div class="mmc-coinbar" title="Gold coins found on golden questions. Spend them in the Racing Ground.">🪙 ${myCoins()}</div>
-  </div>`));
-  wrap.appendChild(el(`<div class="meta" style="margin-bottom:10px;">
-    <strong>🐢 Practice</strong>${ttPracticeTotal(myYear)} questions, no clock, take your time. It shows you the answer when you get one wrong.<br>
-    <strong>⏱ Challenge</strong>${Math.round(TT_CHALLENGE_SECONDS/60)} minutes, answer as many as you can. Both build your race status, but only the Challenge counts towards your accuracy.
   </div>`));
   wrap.appendChild(cardsRow);
   wrap.appendChild(renderTTFocusCard());
@@ -11051,7 +11062,8 @@ const TT_CHALLENGE_SECONDS = 180;
 // not to present a report.
 function renderTTFocusCard(){
   const ins=computeTTInsights(S.ttAttempts||[]);
-  const card=el('<div class="mmc-card" style="margin-top:16px;"><h3>What to work on</h3></div>');
+  const card=el('<div class="mmc-card" style="margin-top:16px;"></div>');
+  card.appendChild(el('<div class="mmc-pick-title" style="font-size:clamp(20px,3.6vw,26px);margin-bottom:2px;">Suggested areas to improve</div>'));
   if(!ins.items.length){
     card.appendChild(el(`<div class="meta">${ins.hasData
       ? "Nothing standing out right now. Keep practising and this will tell you where to focus."
@@ -11063,10 +11075,7 @@ function renderTTFocusCard(){
     if(it.kind==='turnaround'){
       row.appendChild(el(`<div style="font-weight:800;margin-bottom:3px;">Turnarounds: ${esc(it.weak)}</div>
         <div class="meta">You know ${esc(it.strong)} but ${esc(it.weak)} is catching you out. They have the same answer.</div>`));
-      const b=el('<button class="mmc-btn ghost sm" style="margin-top:6px;">🐢 Practise these</button>');
-      b.onclick=()=>{ S.ttCustom={tables:[it.a,it.b],mult:true,div:false};
-        startTTPractice('custom',{tables:[it.a,it.b],mult:true,div:false}); };
-      row.appendChild(b);
+      row.appendChild(suggestionGoRow({tables:[it.a,it.b],mult:true,div:false,family:'multdiv'}, 'mmc-op-mul'));
     } else {
       const isDiv = it.op==='div';
       const why = it.kind==='wrong'
@@ -11075,10 +11084,8 @@ function renderTTFocusCard(){
       const head = it.kind==='wrong' ? 'Needs work' : 'Nearly there';
       row.appendChild(el(`<div style="font-weight:800;margin-bottom:3px;">${head}: ${esc(ttGroupLabel(it.op,it.table))}</div>
         <div class="meta">${esc(why)}</div>`));
-      const cfg={tables:[it.table],mult:!isDiv,div:isDiv};
-      const b=el('<button class="mmc-btn ghost sm" style="margin-top:6px;">🐢 Practise this</button>');
-      b.onclick=()=>{ S.ttCustom={tables:cfg.tables.slice(),mult:cfg.mult,div:cfg.div}; startTTPractice('custom',cfg); };
-      row.appendChild(b);
+      const cfg={tables:[it.table],mult:!isDiv,div:isDiv,family:'multdiv'};
+      row.appendChild(suggestionGoRow(cfg, isDiv?'mmc-op-div':'mmc-op-mul'));
     }
     card.appendChild(row);
   });
@@ -11107,6 +11114,23 @@ const PICK_OPS = [
   { key:'addsub', sym:'+ and −', label:'Both',          family:'addsub', add:true,  sub:true, wide:true },
   { key:'muldiv', sym:'× and ÷', label:'Both',          family:'multdiv', mult:true, div:true, wide:true },
 ];
+// Both ways of practising a suggestion, side by side. A child who is told "the 7 times
+// table is catching you out" should be one tap from doing something about it, and should
+// get the same choice they get everywhere else.
+function suggestionGoRow(cfg, tint){
+  const row=el('<div class="mmc-pick-grid two" style="gap:10px;margin-top:10px;"></div>');
+  const mk=(sym,label,sub,fn)=>{
+    const b=el(`<button type="button" class="mmc-bigbtn tinted ${tint||'mmc-op-mul'}" style="min-height:64px;font-size:15px;">
+      <span class="em" style="font-size:22px;">${sym}</span><span>${esc(label)}</span>
+      ${sub?`<span class="sub">${esc(sub)}</span>`:''}</button>`);
+    b.onclick=fn; return b;
+  };
+  row.appendChild(mk('🐢','In your own time', `${ttPracticeTotal(studentYear(S.profile))} questions`,
+    ()=>{ S.ttCustom=Object.assign({},cfg); startTTPractice('custom', Object.assign({},cfg)); }));
+  row.appendChild(mk('⏱','Speed challenge', `${Math.round(TT_CHALLENGE_SECONDS/60)} minutes`,
+    ()=>{ S.ttCustom=Object.assign({},cfg); startTTChallenge('custom', Object.assign({},cfg)); }));
+  return row;
+}
 function renderTTCustomCard(){
   const c=S.ttCustom;
   const tint = OP_TINT[c.op] || '';
