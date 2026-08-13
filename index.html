@@ -6284,7 +6284,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.37';
+const BUILD = '2026-08-12.38';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -11976,6 +11976,42 @@ function renderTeacherLiveGame(){
     `);
     form.querySelector('#mmc-live-create').onclick=()=>createLiveRoom();
     wrap.appendChild(form);
+    return wrap;
+  }
+
+  // ---- a race is RUNNING ----
+  // There was no branch for this at all. isRaceOver handled a finished race and the block
+  // below handled a lobby, so the moment a teacher pressed Start their screen fell through
+  // to "Start the Racing Ground" with no track, no horses and nothing driving the sound.
+  if(room && room.status==='active'){
+    const left=liveTimeLeft(room);
+    const mins=Math.floor(left/60), secs=Math.max(0,left%60);
+    const head=el(`<div class="mmc-card" style="text-align:center;">
+      <div class="mmc-pick-step">Race in progress</div>
+      <div class="mmc-ff-title" style="font-size:clamp(34px,8vw,64px);">${mins}:${String(secs).padStart(2,'0')}</div>
+      <div class="meta" style="margin:2px 0 0;">${S.liveParticipants.length} racing</div>
+    </div>`);
+    const controls=el('<div class="mmc-row" style="gap:8px;justify-content:center;margin-bottom:12px;"></div>');
+    const sound=el(`<button class="mmc-pill ${S.raceSound?'on':''}" title="Plays on THIS screen only, never on student devices">
+      <span class="mmc-pill-knob"></span>
+      <span class="mmc-pill-label">${S.raceSound?'🔊 Sound on':'🔈 Sound off'}</span></button>`);
+    sound.onclick=()=>{
+      S.raceSound=!S.raceSound;
+      if(S.raceSound){ raceAudio(); raceTone(880,0,.12,'triangle',.18); raceCallerStart(); }
+      else raceCallerStop();
+      render();
+    };
+    const endBtn=el('<button class="mmc-btn ghost sm">End now</button>');
+    endBtn.onclick=async ()=>{
+      try{ await updateDoc(doc(db,'liveGames',room.id), {status:'ended', endedAt:serverTimestamp()}); await retireRacePin(room); }
+      catch(e){ S.toast='Could not end the race. Check your connection.'; }
+      render();
+    };
+    controls.appendChild(sound); controls.appendChild(endBtn);
+    wrap.appendChild(head);
+    wrap.appendChild(controls);
+    wrap.appendChild(renderRaceTrack(null));
+    wrap.appendChild(renderLiveLeaderboardCard('Live leaderboard', room, false));
     return wrap;
   }
 
