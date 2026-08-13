@@ -6028,6 +6028,14 @@ function raceFinishPct(pct, rank, secondsLeft){
 // slightly different moments is not atmosphere, it is a fire alarm. One speaker at the
 // front is a race meeting; a whole class is chaos.
 let raceAudioCtx=null;
+// Remembered between page loads. A teacher who refreshes mid-lesson should not have to
+// find the switch again, and turning it back on used to replay the starting beeps.
+function loadRaceSound(){
+  try{ return localStorage.getItem('mmc-race-sound')==='1'; }catch(e){ return false; }
+}
+function saveRaceSound(on){
+  try{ localStorage.setItem('mmc-race-sound', on?'1':'0'); }catch(e){}
+}
 function raceAudio(){
   if(!S.raceSound) return null;
   try{
@@ -6156,7 +6164,16 @@ function raceCallerTick(){
     // No galloping loop. A repeating hoofbeat under a classroom for three minutes is
     // wearing rather than atmospheric, and there is nothing to fix about that: the answer
     // is silence between the calls.
-    setTimeout(()=>{ raceCommentary('And they are away!'); }, 2200);
+    setTimeout(()=>{ raceCommentary(pick([
+      'And they are away!',
+      'They are off and racing!',
+      'Here we go!',
+      'The gates are open!',
+      'And we are underway!',
+      'They have gone!',
+      'Off they go, and it is on!',
+      'The race is on!',
+    ])); }, 2200);
     st.lastCall=Date.now();
   }
   if(!running) raceGallopStop();
@@ -6170,8 +6187,9 @@ function raceCallerTick(){
     st.lastCall=Date.now();
     st.used=st.used||{};
     const generic=[`They are racing hard out there!`,`The questions are flying!`,
-      `Everyone is heads down!`,`This is a proper contest!`,`Not a pencil is still!`,
-      `The pace is relentless!`];
+      `Everyone is heads down!`,`This is a proper contest!`,
+      `The pace is relentless!`,`Fingers are a blur out there!`,
+      `Nobody is taking a breath!`,`The numbers are falling fast!`];
     const fresh=generic.filter(x=>!st.used[x]);
     if(fresh.length){ const l=pick(fresh); st.used[l]=1; raceCommentary(l); }
   }
@@ -6210,15 +6228,25 @@ function raceCallerTick(){
         // it gets said first and outranks the general lines.
         // Nobody moving at all. Worth calling, because a class watching a still track
         // wants someone to say what they can see.
-        const fieldMoved=(st.total==null) ? 99 : (board.reduce((a,b)=>a+(b.score||0),0) - st.total);
-        st.total=board.reduce((a,b)=>a+(b.score||0),0);
-        if(fieldMoved<=0 && board.length>1) lines.push(
-          `Nobody is moving! What is going on out there?`,
-          `Has everybody stopped for a think?`,
-          `The whole field has gone quiet.`,
-          `Somebody answer something!`,
-          `${L} appears to have pulled up. Is everything alright?`,
-          `You could hear a pin drop out there.`);
+        const nowTotal=board.reduce((a,b)=>a+(b.score||0),0);
+        const fieldMoved=(st.total==null) ? 99 : (nowTotal - st.total);
+        st.total=nowTotal;
+        // A still field is the ONLY thing said when it happens. It was one option among
+        // twenty, so it almost never came up at the moment it was actually true.
+        if(fieldMoved<=0 && board.length>1){
+          const stillLines=[
+            `Nobody is moving! What is going on out there?`,
+            `Has everybody stopped for a think?`,
+            `The whole field has gone quiet.`,
+            `Somebody answer something!`,
+            `${L} appears to have pulled up. Is everything alright?`,
+            `You could hear a pin drop out there.`,
+            `Not a horse has moved!`,
+            `Is anybody still awake?`];
+          st.used=st.used||{};
+          const f2=stillLines.filter(x=>!st.used[x]);
+          if(f2.length){ const l2=pick(f2); st.used[l2]=1; raceCommentary(l2); return; }
+        }
         if(leadMoved<=1 && S2) lines.push(
           `${L} has stalled!`,
           `${L} has hit a wall, and ${S2} is coming!`,
@@ -6262,6 +6290,8 @@ function raceCallerTick(){
                                       `The maths is flying now!`,
                                       `Brains are doing overtime out there.`,
                                       `Somebody is going to run out of fingers.`,
+                                      `Not a single wrong answer in sight!`,
+                                      `They are answering faster than I can talk!`,
                                       `The calculators are jealous.`,
                                       `No one told them this was meant to be hard.`);
       }
@@ -6285,6 +6315,10 @@ function raceCallerTick(){
 }
 function raceCallerStart(){
   raceCallerStop();
+  // A race already running does not get the starting beeps again. Only a race that has
+  // not begun on this screen announces itself.
+  const r0=currentLiveRoom();
+  if(r0 && r0.status==='active') raceCallState={ id:r0.id, started:true, lastCall:Date.now(), lead:null, done:false };
   raceCallTimer=setInterval(raceCallerTick, 1000);
   raceCallerTick();
 }
@@ -6320,8 +6354,10 @@ function raceCommentary(text){
     // A caller does not read every line identically. Small variations in pace and pitch
     // are most of what separates "excited" from "announcement at a train station".
     const excited=/!$/.test(text);
-    u.rate  = (excited ? 1.42 : 1.24) + (Math.random()*0.1 - 0.05);
-    u.pitch = (excited ? 1.30 : 1.12) + (Math.random()*0.12 - 0.06);
+    // Slower. Excitement in a browser voice comes from pitch, not speed: past about 1.2
+    // the words run together and a class stops catching the names.
+    u.rate  = (excited ? 1.12 : 1.02) + (Math.random()*0.08 - 0.04);
+    u.pitch = (excited ? 1.32 : 1.14) + (Math.random()*0.12 - 0.06);
     window.speechSynthesis.speak(u);
   }catch(e){}
 }
@@ -6521,7 +6557,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.56';
+const BUILD = '2026-08-12.59';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -7074,7 +7110,7 @@ const S = {
   stuExpandedUid:null, overviewUid:null, raceLeft:null, newClass:null, setsFilter:'ALL', justCreatedId:null, worthOpen:null,
   joinedRoomId:null, pinOpen:false,
   externalRoomId:null, externalRoom:null, pinBusy:false, pinDraft:'', hideGetStarted:false, toastTone:null, gbScrollLeft:0, gbAnchor:null, classProgress:[], raceSeen:{},
-  raceSound:false, raceSaid:{},
+  raceSound:false, raceSaid:{},   // restored from storage once the app starts
   bulkSwapNames:false, bulkGroup:'mainstream', bulkTargetClassId:null, bulkFinalNames:null, bulkResultClassId:null,
   raceMinutes:2,
   weekProgress:[], lobbyReadyForRoom:null, showStatusUpgrade:false, weeksPublished:[], weeksScheduled:[],
@@ -7656,6 +7692,8 @@ function render(){
     if(S.raceSound && S.isTeacher && currentLiveRoom()){ if(!raceCallTimer) raceCallerStart(); }
     else if(!S.raceSound && raceCallTimer) raceCallerStop();
   }catch(e){}
+  // Restore the sound preference once, when the app first draws.
+  if(!S.__soundLoaded){ S.__soundLoaded=true; S.raceSound=loadRaceSound(); }
   const ttInput=document.getElementById('mmc-tt-input');
   if(ttInput){
     // Focus WITH the caret put back at the end. A bare focus() drops the caret at position
@@ -12254,6 +12292,9 @@ function renderTeacherLiveGame(){
       <span class="mmc-pill-label">${S.raceSound?'🔊 Sound on':'🔈 Sound off'}</span></button>`);
     sound.onclick=()=>{
       S.raceSound=!S.raceSound;
+      saveRaceSound(S.raceSound);
+      // A short blip to confirm the switch, never the starting beeps: a race already
+      // under way should not sound like it is starting again.
       if(S.raceSound){ raceAudio(); raceTone(880,0,.12,'triangle',.18); raceCallerStart(); }
       else raceCallerStop();
       render();
@@ -12328,8 +12369,8 @@ function renderTeacherLiveGame(){
       </button>`);
       sound.onclick=()=>{
         S.raceSound=!S.raceSound;
-        // The first tap has to happen inside a click, or the browser refuses to start audio.
-        // The first tap must start the audio, or the browser blocks it for the whole session.
+        saveRaceSound(S.raceSound);
+        // The first tap must start the audio, or the browser blocks it for the session.
         if(S.raceSound){ raceAudio(); raceTone(880,0,.12,'triangle',.18); raceCallerStart(); }
         else raceCallerStop();
         render();
@@ -12337,7 +12378,18 @@ function renderTeacherLiveGame(){
       card.querySelector('.mmc-row').appendChild(sound);
       const startBtn=card.querySelector('[data-act="start"]');
       if(startBtn) startBtn.onclick=async ()=>{
-        try{ await updateDoc(doc(db,'liveGames',r.id), {status:'active', startedAt:serverTimestamp()}); }
+        try{
+          await updateDoc(doc(db,'liveGames',r.id), {status:'active', startedAt:serverTimestamp()});
+          // Draw the race NOW rather than waiting for the write to come back as a
+          // snapshot. Relying on that round trip meant the teacher pressed Start and got
+          // the lobby back, and only a full page refresh produced the track.
+          const local=(S.liveGames||[]).find(g=>g.id===r.id);
+          if(local){ local.status='active'; local.startedAt={seconds:Math.floor(Date.now()/1000)}; }
+          S.joinedRoomId=null;
+          ensureParticipantsSub(r.id);
+          render();
+          ensureTeacherLiveTimer();
+        }
         catch(e){ S.toast='Could not start. Check your connection.'; render(); }
       };
       card.querySelector('[data-act="end"]').onclick=async ()=>{
