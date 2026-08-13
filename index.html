@@ -5847,7 +5847,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.14';
+const BUILD = '2026-08-12.15';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -8996,7 +8996,25 @@ function renderLedgerByWeek(){
 function qBand(pct){ return pct>=80 ? 'hi' : (pct>=50 ? 'mid' : 'lo'); }
 // Move the pointer near either edge and the grid rolls that way. Written once so every
 // wide table gets it: it only existed on By Question, and By Week is just as wide.
-function attachEdgeScroll(tableWrap){
+function attachEdgeScroll(tableWrap, key){
+  // Remember and restore the sideways position. Every re-render builds a fresh table, so
+  // without this a teacher who scrolled to Q23 was thrown back to Q1 by anything that
+  // redrew the page, including opening a bubble.
+  const k = key || 'default';
+  if(!S.gbScroll) S.gbScroll={};
+  const restore=()=>{
+    const at=S.gbScroll[k];
+    // Only once the table is actually wide enough to scroll. Restoring before the rows
+    // are laid out silently does nothing, and the attempt is then never repeated.
+    if(at && tableWrap.scrollWidth > tableWrap.clientWidth) tableWrap.scrollLeft=at;
+  };
+  requestAnimationFrame(()=>{ restore(); requestAnimationFrame(restore); });
+  tableWrap.addEventListener('scroll', ()=>{
+    // Never record a zero from a table that cannot scroll yet, or the first render wipes
+    // the position we are trying to put back.
+    if(tableWrap.scrollWidth <= tableWrap.clientWidth) return;
+    S.gbScroll[k]=tableWrap.scrollLeft;
+  }, {passive:true});
   let edgeTimer=null;
   const stopEdge=()=>{ if(edgeTimer){ cancelAnimationFrame(edgeTimer); edgeTimer=null; } };
   tableWrap.addEventListener('mousemove', (e)=>{
