@@ -390,6 +390,10 @@
   .mmc-pill.on { border-color:#2E7D4F; color:var(--ink); background:#E7F6EC; }
   .mmc-pill.on .mmc-pill-knob { background:#2E7D4F; }
   .mmc-pill.on .mmc-pill-knob::after { transform:translateX(14px); }
+  .mmc-race-who {
+    display:block; font-size:10.5px; font-weight:700; opacity:.62;
+    letter-spacing:.02em; margin-top:-1px;
+  }
   .mmc-winner {
     text-align:center; padding:14px 10px 16px; margin-bottom:10px;
     border-bottom:2px solid var(--paper-line);
@@ -6069,12 +6073,30 @@ function raceSoundCheer(){
 function raceSoundTick(){ raceTone(880,0,.06,'square',.07); }
 // Hooves. Four uneven thuds, the way a gallop actually falls, kept low so a commentary
 // voice sits on top of it rather than under.
+// A hoof. Short filtered noise, not a tone: I used 70Hz sine waves first and a laptop
+// speaker cannot reproduce anything below about 150Hz, so the gallop was playing perfectly
+// and inaudibly. Noise carries through small speakers the way a thud actually does.
+function raceHoof(when, vol){
+  const ctx=raceAudio(); if(!ctx) return;
+  const len=0.09, buf=ctx.createBuffer(1, Math.floor(ctx.sampleRate*len), ctx.sampleRate);
+  const d=buf.getChannelData(0);
+  for(let i=0;i<d.length;i++){
+    const t=i/d.length;
+    d[i]=(Math.random()*2-1)*Math.pow(1-t, 5);
+  }
+  const src=ctx.createBufferSource(); src.buffer=buf;
+  const f=ctx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=190; f.Q.value=1.1;
+  const g=ctx.createGain(); g.gain.value=vol||0.5;
+  src.connect(f); f.connect(g); g.connect(ctx.destination);
+  src.start(ctx.currentTime+when);
+}
 let raceGallopTimer=null;
 function raceGallopStart(){
   if(raceGallopTimer || !S.raceSound) return;
+  // Four beats, unevenly spaced, which is what a canter actually sounds like.
   const beat=()=>{
-    [0,0.09,0.21,0.30].forEach((t,i)=>raceTone(70+i*6, t, .07, 'sine', .05));
-    raceGallopTimer=setTimeout(beat, 520);
+    [[0,.55],[0.10,.4],[0.23,.6],[0.32,.35]].forEach(([t,v])=>raceHoof(t,v));
+    raceGallopTimer=setTimeout(beat, 500);
   };
   beat();
 }
@@ -6085,6 +6107,25 @@ function raceGallopStop(){ if(raceGallopTimer){ clearTimeout(raceGallopTimer); r
 // track drawing, and the teacher's screen does not always draw the track during a race,
 // so nothing ever played however loudly the switch said it was on.
 let raceCallTimer=null, raceCallState=null;
+// Every racer gets a stable racing name, the way a real field does. Derived from their
+// uid so it never changes mid-race and everyone sees the same one, and it means the caller
+// can shout for a horse rather than reading out a child's name over a speaker.
+const RACE_NAME_A = ['Thunder','Silver','Midnight','Lightning','Storm','Sunny','Rapid','Golden',
+                     'Shadow','Comet','Blaze','Frosty','Rocket','Whirlwind','Nimble','Jetstream',
+                     'Copper','Turbo','Echo','Dusty'];
+const RACE_NAME_B = ['Dancer','Runner','Star','Arrow','Spirit','Chaser','Flash','Hooves',
+                     'Bolt','Dream','Charger','Wings','Trail','Streak','Prince','Rebel'];
+function raceHorseName(p){
+  const id=String((p && (p.id||p.uid)) || '');
+  // Two independent hashes. Using one and shifting it gave a NEGATIVE index once the
+  // value passed 2^31, so half a class was called "Silver undefined".
+  let h=0, k=7;
+  for(let i=0;i<id.length;i++){
+    h=(h*31 + id.charCodeAt(i)) >>> 0;
+    k=(k*131 + id.charCodeAt(i)*17) >>> 0;
+  }
+  return RACE_NAME_A[h % RACE_NAME_A.length] + ' ' + RACE_NAME_B[k % RACE_NAME_B.length];
+}
 function raceCallerStop(){
   if(raceCallTimer){ clearInterval(raceCallTimer); raceCallTimer=null; }
   raceGallopStop(); raceCallState=null;
@@ -6113,20 +6154,20 @@ function raceCallerTick(){
     // The lead changing hands is always worth calling.
     if(st.lead && st.lead!==lead.id){
       st.lead=lead.id; st.lastCall=Date.now();
-      raceCommentary(`${lead.name} hits the front!`);
+      raceCommentary(`${raceHorseName(lead)} hits the front!`);
     } else if(!st.lead){ st.lead=lead.id; }
     // Otherwise a line every ten seconds or so, chosen to fit what is happening.
     else if(Date.now()-st.lastCall > 10000){
       st.lastCall=Date.now();
       const gap=(lead.score||0)-((second&&second.score)||0);
       const lines = left<=15
-        ? [`Into the final strides, ${lead.name} in front!`, `${lead.name} is holding on!`]
-        : gap>=8 ? [`${lead.name} is miles ahead. How will anyone catch them?`,
-                    `${lead.name} has broken clear!`]
-        : gap<=2 && second ? [`${lead.name} and ${second.name}, nothing between them!`,
+        ? [`Into the final strides, ${raceHorseName(lead)} in front!`, `${raceHorseName(lead)} is holding on!`]
+        : gap>=8 ? [`${raceHorseName(lead)} is miles ahead. How will anyone catch them?`,
+                    `${raceHorseName(lead)} has broken clear!`]
+        : gap<=2 && second ? [`${raceHorseName(lead)} and ${raceHorseName(second)}, nothing between them!`,
                               `It is neck and neck at the front!`]
-        : [`${lead.name} leads them along.`, `${lead.name} sets the pace.`,
-           second?`${second.name} is closing on ${lead.name}!`:`${lead.name} presses on.`];
+        : [`${raceHorseName(lead)} leads them along.`, `${raceHorseName(lead)} sets the pace.`,
+           second?`${raceHorseName(second)} is closing on ${raceHorseName(lead)}!`:`${raceHorseName(lead)} presses on.`];
       raceCommentary(pick(lines));
     }
   }
@@ -6134,7 +6175,7 @@ function raceCallerTick(){
     st.done=true; raceGallopStop(); raceSoundFinish();
     setTimeout(raceSoundCheer, 400);
     if(board.length){
-      const names=board.slice(0,3).map((p,i)=>`${['First','Second','Third'][i]}, ${p.name}`);
+      const names=board.slice(0,3).map((p,i)=>`${['First','Second','Third'][i]}, ${raceHorseName(p)}`);
       setTimeout(()=>raceCommentary(names.join('. ')+'.'), 1600);
     }
   }
@@ -6284,7 +6325,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.38';
+const BUILD = '2026-08-12.41';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -11857,7 +11898,11 @@ function renderRaceTrack(myUid, capNearFinish){
     let pos=closing ? raceFinishPct(rawPcts[i], rankOf[i], left) : rawPcts[i];
     if(capNearFinish) pos=Math.min(pos,96); // the line is only actually crossed once time runs out
     const isMe = myUid && p.id===myUid;
+    // The horse's racing name, with the child's own name under it. The caller shouts for
+    // the horse, so a child has to be able to see which one is theirs or the commentary
+    // is about strangers.
     const label = p.nickname || p.username || p.name;
+    const horseName = raceHorseName(p);
     const colorFilter = HORSE_COLOR_FILTERS[p.horseColor] || 'none';
     const meGlow = isMe ? ' drop-shadow(0 0 5px var(--purple))' : '';
     const combinedFilter = ((colorFilter==='none'?'':colorFilter) + meGlow).trim() || 'none';
@@ -11869,7 +11914,7 @@ function renderRaceTrack(myUid, capNearFinish){
           ${hatEmoji? `<span class="mmc-race-hat">${hatEmoji}</span>` : ''}
           <span class="mmc-race-emoji" style="filter:${p.animal? (meGlow||'none') : combinedFilter};">${animalEmoji(p.animal)}</span>
         </span>
-        <span class="mmc-race-name">${esc(label)}${isMe?' (you)':''}</span>
+        <span class="mmc-race-name">${esc(horseName)}${isMe?' (you)':''}<span class="mmc-race-who">${esc(label)}</span></span>
       </div>
     `);
     lane.appendChild(horse);
