@@ -273,8 +273,13 @@
   .mmc-qpop {
     position:fixed; z-index:60; max-width:min(440px, calc(100vw - 20px)); opacity:0;
     transition:opacity .1s; filter:drop-shadow(0 6px 20px rgba(0,0,0,.22));
+    background:var(--paper); border:2.5px solid var(--ink); border-radius:14px;
   }
-  .mmc-qpop .mmc-card { margin:0; }
+  /* The card inside brought no background of its own, so the grid showed straight
+     through the bubble. The bubble owns the surface now and the card just fills it. */
+  .mmc-qpop .mmc-card {
+    margin:0; border:0; box-shadow:none; background:transparent; border-radius:14px;
+  }
   /* A soft shadow at whichever edge is about to pull, so it is clear the grid will move
      before it does. */
   .mmc-ledger-wrap { position:relative; }
@@ -5771,7 +5776,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.3';
+const BUILD = '2026-08-12.5';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -8663,7 +8668,7 @@ function renderGradebookDetail(){
     const card=el(`
       <div class="mmc-card" style="border-color:var(--purple);">
         <div class="mmc-row" style="justify-content:space-between;">
-          <h3>Q${esc(String(d.slot||''))} · ${esc(d.skill ? skillTitle(d.skill) : 'Question')} · ${esc(studentName)}</h3>
+          <h3>${(d.col||d.slot)?`Q${esc(String(d.col||d.slot))} · `:''}${esc(d.skill ? skillTitle(d.skill) : 'Question')} · ${esc(studentName)}</h3>
           <button class="mmc-btn ghost sm" id="mmc-gb-close">✕ Close</button>
         </div>
       </div>
@@ -8867,6 +8872,9 @@ function renderLedgerByQuestion(){
   let edgeTimer=null;
   const stopEdge=()=>{ if(edgeTimer){ cancelAnimationFrame(edgeTimer); edgeTimer=null; } };
   tableWrap.addEventListener('mousemove', (e)=>{
+    // Frozen while a bubble is open. Otherwise the grid slides out from under it and the
+    // tail ends up pointing at the wrong cell.
+    if(S.gradebookDetail && S.gradebookDetail.type==='question'){ stopEdge(); return; }
     const r=tableWrap.getBoundingClientRect();
     const ZONE=70;
     const dl=e.clientX-r.left, dr=r.right-e.clientX;
@@ -8884,18 +8892,10 @@ function renderLedgerByQuestion(){
     step();
   });
   tableWrap.addEventListener('mouseleave', ()=>{ stopEdge(); tableWrap.classList.remove('edge-l','edge-r'); });
-  tableWrap.addEventListener('wheel', (e)=>{
-    if(e.shiftKey || Math.abs(e.deltaX)>Math.abs(e.deltaY)) return;
-    if(e.deltaY===0) return;
-    // Only take the wheel when there IS somewhere sideways to go, and not at either end,
-    // or the page stops scrolling over the table and that is worse than the original.
-    const room=tableWrap.scrollWidth-tableWrap.clientWidth;
-    if(room<=0) return;
-    if(tableWrap.scrollLeft<=0 && e.deltaY<0) return;
-    if(tableWrap.scrollLeft>=room-1 && e.deltaY>0) return;
-    e.preventDefault();
-    tableWrap.scrollLeft += e.deltaY;
-  }, {passive:false});
+  // The wheel is deliberately NOT hijacked. Taking over vertical scrolling over a table
+  // is disorienting, and between the edge-hover and the arrow buttons there are already
+  // two ways to move sideways.
+
   const table=el('<table class="mmc-ledger"></table>');
   const thead=el('<thead><tr></tr></thead>');
   const trh=thead.querySelector('tr');
@@ -8938,7 +8938,7 @@ function renderLedgerByQuestion(){
     const tr=el('<tr></tr>');
     tr.appendChild(el(`<td>${esc(S.profiles[uid].displayName||uid)}</td>`));
     const myResults = S.results.filter(r=>r.uid===uid);
-    COLS.forEach((code)=>{
+    COLS.forEach((code,qi)=>{
       let correctCount=0, total=0;
       myResults.forEach(rec=>{
         const map=qidToSlotByWeek[rec.weekId]; if(!map) return;
@@ -8960,7 +8960,10 @@ function renderLedgerByQuestion(){
           S.gbScrollLeft = wrapEl ? wrapEl.scrollLeft : 0;
           const r=btn.getBoundingClientRect();
           S.gbAnchor={ x:r.left+r.width/2, y:r.top, bottom:r.bottom };
-          S.gradebookDetail={type:'question', uid, skill:code};
+          // The column number, so the bubble can name what was clicked. This panel is
+          // keyed by SKILL rather than slot, so there was no Q number to show and the
+          // heading read "Q · Ordering whole numbers".
+          S.gradebookDetail={type:'question', uid, skill:code, col:qi+1};
           render();
         };
         td.appendChild(btn);
@@ -8983,7 +8986,11 @@ function renderLedgerByQuestion(){
     const a=S.gbAnchor;
     const bubble=el('<div class="mmc-qpop"></div>');
     bubble.appendChild(detail);
-    document.body.appendChild(bubble);
+    // Inside #mmc, not on document.body. Every colour in this app is a CSS variable
+    // declared on #mmc, so an element outside it has no value for --paper and the
+    // background silently resolved to nothing. position:fixed still escapes the table's
+    // clipping from in here, which was the only reason for using body.
+    (document.getElementById('mmc') || document.body).appendChild(bubble);
     setTimeout(()=>{
       if(!a){ bubble.style.cssText='position:fixed;left:50%;top:80px;transform:translateX(-50%);'; return; }
       const bw=bubble.offsetWidth, bh=bubble.offsetHeight;
@@ -8999,9 +9006,17 @@ function renderLedgerByQuestion(){
       bubble.style.setProperty('--tipx', (a.x-left)+'px');
       bubble.style.opacity='1';
     },0);
-    // Clicking anywhere else closes it, which is what a bubble should do.
-    const away=(e)=>{ if(!bubble.contains(e.target)){ S.gradebookDetail=null; render(); } };
-    setTimeout(()=>document.addEventListener('click', away, {once:true}), 0);
+    // Clicking away closes it. NOT with {once:true} on any click: clicking a second cell
+    // ran the cell's own handler first and this one second, so the new bubble opened and
+    // was cancelled in the same breath. That is why it worked only sometimes. A click on
+    // another cell is now left alone for that cell to handle.
+    const away=(e)=>{
+      if(bubble.contains(e.target)) return;
+      if(e.target.closest && e.target.closest('.mmc-qbtn')) return;
+      document.removeEventListener('click', away, true);
+      S.gradebookDetail=null; S.gbAnchor=null; render();
+    };
+    setTimeout(()=>document.addEventListener('click', away, true), 0);
   }
   return wrap;
 }
