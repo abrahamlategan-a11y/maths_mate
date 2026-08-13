@@ -6181,20 +6181,42 @@ function raceCallerTick(){
       if(left<=15){
         lines.push(`Into the final strides, ${raceCallName(lead)} in front!`,
                    `${raceCallName(lead)} is holding on!`,
-                   second?`${raceCallName(second)} is throwing everything at it!`:null);
+                   second?`${raceCallName(second)} is throwing everything at it!`:null,
+                   `Seconds left! Every answer counts!`,
+                   second?`${raceCallName(second)} is eating into it!`:null,
+                   `Hold your nerve!`);
       } else {
-        if(gap>=8) lines.push(`${raceCallName(lead)} is miles ahead. How will anyone catch them?`,
-                              `${raceCallName(lead)} has broken clear!`);
-        else if(gap<=2 && second) lines.push(`${raceCallName(lead)} and ${raceCallName(second)}, nothing between them!`,
-                                             `It is neck and neck at the front!`);
-        else lines.push(`${raceCallName(lead)} sets the pace.`,
-                        second?`${raceCallName(second)} is closing on ${raceCallName(lead)}!`:null);
-        if(third) lines.push(`${raceCallName(third)} is right there in third.`,
-                             `${raceCallName(third)} is making ground!`);
-        if(last && last!==lead) lines.push(`${raceCallName(last)} is digging in at the back.`,
-                                           `${raceCallName(last)} has not given up!`);
+        const L=raceCallName(lead), S2=second?raceCallName(second):null,
+              T=third?raceCallName(third):null, B=last?raceCallName(last):null;
+        if(gap>=8) lines.push(
+          `${L} is miles ahead. How will anyone catch them?`,
+          `${L} has broken clear!`,
+          `Somebody check ${L} is not on a motorbike.`,
+          `${L} is out on their own, and enjoying it.`,
+          `They will need a telescope to see ${L} from back there.`);
+        else if(gap<=2 && S2) lines.push(
+          `${L} and ${S2}, nothing between them!`,
+          `It is neck and neck at the front!`,
+          `You could throw a blanket over these two.`,
+          `${S2} will not let ${L} go!`);
+        else lines.push(
+          `${L} sets the pace.`,
+          S2?`${S2} is closing on ${L}!`:null,
+          `${L} leads, but it is not over.`,
+          S2?`${S2} has the leader in their sights.`:null);
+        if(T) lines.push(`${T} is right there in third.`,
+                         `${T} is making ground!`,
+                         `${T} is not out of this yet.`,
+                         `Watch ${T} come through the middle!`);
+        if(B && B!==L) lines.push(`${B} is digging in at the back.`,
+                                  `${B} has not given up!`,
+                                  `Every question counts, and ${B} knows it.`,
+                                  `${B} is grinding away back there.`);
         if(board.length>3) lines.push(`The whole field is still in this!`,
-                                      `They are strung out down the back straight.`);
+                                      `They are strung out down the back straight.`,
+                                      `Pencils are smoking all over this classroom.`,
+                                      `This is anyone's race.`,
+                                      `The maths is flying now!`);
       }
       // Nothing is ever said twice in a race. A repeated line is the fastest way to make
       // a caller sound like a machine.
@@ -6249,12 +6271,41 @@ function raceCommentary(text){
 // It is a handicap, not a punishment: a child who is winning is being asked to stretch,
 // and a child who is behind gets questions they can actually land.
 const RACE_LEVELS = ['gentle','easy','medium','hard','stretch'];
-function raceAdaptiveLevel(baseLevel, myScore, allScores, isClassRace){
+// A child's OWN pace, which needs nothing from anyone else. The field-based handicap kept
+// failing because it depends on every other racer's score having arrived on this child's
+// device, and that has been the least reliable thing in the app. A streak is local: it
+// cannot be wrong, and it reacts within a few questions.
+//
+// It also gives exactly the behaviour asked for. The questions get harder while she is
+// flying, one wrong answer resets the streak, and they go back to normal until she gets
+// away again.
+function racePaceShift(live){
+  if(!live) return 0;
+  const streak=live.streak||0;
+  const recentMs=live.recentMs||[];
+  const median=(()=>{ if(recentMs.length<3) return 9999;
+    const a=recentMs.slice(-6).sort((x,y)=>x-y); return a[Math.floor(a.length/2)]; })();
+  // Flying: a long run of correct answers, quickly.
+  if(streak>=8 && median<3500) return 3;
+  if(streak>=6 && median<4500) return 2;
+  if(streak>=4) return 1;
+  // Struggling: several wrong in a row, or very slow.
+  if(streak<=-3) return -2;
+  if(streak<=-2) return -1;
+  return 0;
+}
+function raceAdaptiveLevel(baseLevel, myScore, allScores, isClassRace, live){
   // Class races only. A student's own quick race between friends should be the questions
   // they chose, not a handicap system quietly rewriting them.
   if(!isClassRace) return baseLevel;
+  const idx0=Math.max(1, RACE_LEVELS.indexOf(baseLevel));
+  // Pace first, because it always has data. The field can only add to it.
+  const paceShift=racePaceShift(live);
   const scores=(allScores||[]).map(x=>Number(x)||0);
-  if(scores.length<2) return baseLevel;
+  if(scores.length<2){
+    const w=Math.max(0, Math.min(RACE_LEVELS.length-1, idx0+paceShift));
+    return RACE_LEVELS[w];
+  }
   const best=Math.max(...scores), worst=Math.min(...scores);
   const spread=best-worst;
   // Nothing happens while the field is together. Handicapping a close race would just
@@ -6270,6 +6321,10 @@ function raceAdaptiveLevel(baseLevel, myScore, allScores, isClassRace){
   else if(share>=0.55) shift = 1;
   else if(share<=0.15) shift = spread>=8 ? -2 : -1;
   else if(share<=0.35) shift = -1;
+  // Whichever says "stretch this child" more strongly wins, so a runaway is caught by
+  // either measure rather than needing both.
+  if(paceShift>shift) shift=paceShift;
+  if(paceShift<0 && paceShift<shift) shift=paceShift;
   let want=Math.max(0, Math.min(RACE_LEVELS.length-1, idx+shift));
   // The hidden level is a last resort, not one rung up. An EXTENSION child is based at
   // hard, so a single bump handed them champion questions on a four-point lead. It now
@@ -6280,7 +6335,10 @@ function raceAdaptiveLevel(baseLevel, myScore, allScores, isClassRace){
     const overSecond=(sorted[0]||0)-(sorted[1]||0);
     // Loosened. The first gate never fired in a real race: five clear of second is already
     // a child who is winning comfortably, and waiting for eight meant the race was over.
-    if(!(overSecond>=5 && spread>=7)) want=Math.min(want, RACE_LEVELS.indexOf('hard'));
+    // Pace alone can reach the hidden level: a child on an eight-answer streak at under
+    // three and a half seconds each is running away, whatever the scoreboard says.
+    const flying = paceShift>=3;
+    if(!flying && !(overSecond>=4 && spread>=6)) want=Math.min(want, RACE_LEVELS.indexOf('hard'));
   }
   return RACE_LEVELS[want];
 }
@@ -6379,7 +6437,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.43';
+const BUILD = '2026-08-12.45';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -12257,6 +12315,10 @@ async function submitMyLiveAnswer(given){
   const elapsedSec = (Date.now()-S.myLive.questionStartedAt)/1000;
   const allPositions = S.liveParticipants.map(p=>p.position||0);
   const rubberBand = raceRubberBandMultiplier(S.myLive.position, allPositions.length? allPositions : [S.myLive.position]);
+  // Streak and pace, kept on the racer themselves so the handicap never depends on
+  // anyone else's data arriving.
+  S.myLive.streak = correct ? Math.max(0,(S.myLive.streak||0))+1 : Math.min(0,(S.myLive.streak||0))-1;
+  S.myLive.recentMs = (S.myLive.recentMs||[]).concat(elapsedSec*1000).slice(-8);
   if(correct){
     const room0 = currentLiveRoom();
     const boost = raceBoostAmount(S.myLive.currentQ.level, S.myLive.currentQ.isDivision, elapsedSec,
@@ -12271,7 +12333,7 @@ async function submitMyLiveAnswer(given){
   const room1=currentLiveRoom();
   const lvl=raceAdaptiveLevel(S.myLive.level, S.myLive.score,
     S.liveParticipants.map(x=>Number(x.score)||0).concat(S.myLive.score),
-    !!(room1 && !room1.hostUid));
+    !!(room1 && !room1.hostUid), S.myLive);
   S.myLive.currentQ=genRaceQuestion(lvl, S.myLive.qIndex, studentYear(S.profile)); S.myLive.questionStartedAt=Date.now();
   render();
   try{ await updateDoc(doc(db,'liveGames',S.myLive.gameId,'participants',S.user.uid), {score:S.myLive.score, attempted:S.myLive.attempted, position:S.myLive.position}); }
