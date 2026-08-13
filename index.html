@@ -5847,7 +5847,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.12';
+const BUILD = '2026-08-12.13';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -8829,6 +8829,7 @@ function renderLedgerSummary(){
     return wrap;
   }
   const tableWrap=el('<div class="mmc-ledger-wrap"></div>');
+  attachEdgeScroll(tableWrap);
   const table=el('<table class="mmc-ledger"></table>');
   const thead=el('<thead><tr></tr></thead>');
   const trh=thead.querySelector('tr');
@@ -8922,7 +8923,10 @@ function renderLedgerByWeek(){
     // another cell is now left alone for that cell to handle.
     const away=(e)=>{
       if(bubble.contains(e.target)) return;
-      if(e.target.closest && e.target.closest('.mmc-qbtn')) return;
+      // Any clickable cell, not just the By Question one. Without this, clicking a second
+      // cell ran this handler first, cleared the anchor, and the bubble reopened pinned to
+      // nothing, which is why it jumped to the top of the screen after the first click.
+      if(e.target.closest && e.target.closest('.mmc-cellbtn, .mmc-qbtn')) return;
       document.removeEventListener('click', away, true);
       S.gradebookDetail=null; S.gbAnchor=null; render();
     };
@@ -8935,6 +8939,7 @@ function renderLedgerByWeek(){
   if(studentUids.length===0){ wrap.appendChild(el('<div class="mmc-empty">No students yet.</div>')); return wrap; }
 
   const tableWrap=el('<div class="mmc-ledger-wrap"></div>');
+  attachEdgeScroll(tableWrap);
   const table=el('<table class="mmc-ledger"></table>');
   const thead=el('<thead><tr></tr></thead>');
   const trh=thead.querySelector('tr');
@@ -8962,7 +8967,7 @@ function renderLedgerByWeek(){
         const info=bySlot[s];
         if(!info){ tr.appendChild(el(`<td style="color:var(--ink-soft);${c.hidden?'opacity:.4;':''}" title="${c.hidden?'Hidden from students':'Not attempted'}">-</td>`)); continue; }
         const td=el('<td></td>');
-        const btn=el(`<button type="button" style="background:none;border:none;cursor:pointer;font-weight:800;font-size:16px;color:${info.correct?'var(--correct)':'var(--incorrect)'};">${info.correct?'✓':'✗'}</button>`);
+        const btn=el(`<button type="button" class="mmc-cellbtn" style="background:none;border:none;cursor:pointer;font-weight:800;font-size:16px;color:${info.correct?'var(--correct)':'var(--incorrect)'};">${info.correct?'✓':'✗'}</button>`);
         btn.onclick=()=>{
           const wrapEl=btn.closest('.mmc-ledger-wrap');
           S.gbScrollLeft = wrapEl ? wrapEl.scrollLeft : 0;
@@ -8989,6 +8994,34 @@ function renderLedgerByWeek(){
 // One place that decides which band a percentage falls in, so the colours can never
 // disagree between the class average row and a student's own cell.
 function qBand(pct){ return pct>=80 ? 'hi' : (pct>=50 ? 'mid' : 'lo'); }
+// Move the pointer near either edge and the grid rolls that way. Written once so every
+// wide table gets it: it only existed on By Question, and By Week is just as wide.
+function attachEdgeScroll(tableWrap){
+  let edgeTimer=null;
+  const stopEdge=()=>{ if(edgeTimer){ cancelAnimationFrame(edgeTimer); edgeTimer=null; } };
+  tableWrap.addEventListener('mousemove', (e)=>{
+    // Frozen while a bubble is open, or the grid slides out from under it.
+    if(S.gradebookDetail){ stopEdge(); return; }
+    const r=tableWrap.getBoundingClientRect();
+    const ZONE=56;
+    const dl=e.clientX-r.left, dr=r.right-e.clientX;
+    let dir=0, strength=0;
+    if(dl<ZONE){ dir=-1; strength=(ZONE-dl)/ZONE; }
+    else if(dr<ZONE){ dir=1; strength=(ZONE-dr)/ZONE; }
+    stopEdge();
+    if(!dir){ tableWrap.classList.remove('edge-l','edge-r'); return; }
+    tableWrap.classList.toggle('edge-l', dir<0);
+    tableWrap.classList.toggle('edge-r', dir>0);
+    const step=()=>{
+      // Gentler than before, and it eases in rather than starting at full speed: the
+      // first version lurched the moment the pointer crossed the line.
+      tableWrap.scrollLeft += dir * (0.4 + strength*strength*4.5);
+      edgeTimer=requestAnimationFrame(step);
+    };
+    step();
+  });
+  tableWrap.addEventListener('mouseleave', ()=>{ stopEdge(); tableWrap.classList.remove('edge-l','edge-r'); });
+}
 function renderLedgerByQuestion(){
   const wrap=el('<div></div>');
   wrap.appendChild(el('<div class="meta" style="margin-bottom:12px;">Accuracy per skill, averaged across every published set each student has completed. Hover a column heading to see what the skill is. For a single question and what a student answered, use By Week.</div>'));
@@ -9020,32 +9053,7 @@ function renderLedgerByQuestion(){
     b.onclick=()=>{ tableWrap.scrollBy({left:(+b.dataset.s)*320, behavior:'smooth'}); };
   });
   wrap.appendChild(nav);
-  // Move the pointer near either edge and the grid rolls that way, faster the closer you
-  // get. Nothing to grab, and it cannot be confused with clicking a cell, which dragging
-  // would have been.
-  let edgeTimer=null;
-  const stopEdge=()=>{ if(edgeTimer){ cancelAnimationFrame(edgeTimer); edgeTimer=null; } };
-  tableWrap.addEventListener('mousemove', (e)=>{
-    // Frozen while a bubble is open. Otherwise the grid slides out from under it and the
-    // tail ends up pointing at the wrong cell.
-    if(S.gradebookDetail && S.gradebookDetail.type==='question'){ stopEdge(); return; }
-    const r=tableWrap.getBoundingClientRect();
-    const ZONE=70;
-    const dl=e.clientX-r.left, dr=r.right-e.clientX;
-    let dir=0, strength=0;
-    if(dl<ZONE){ dir=-1; strength=(ZONE-dl)/ZONE; }
-    else if(dr<ZONE){ dir=1; strength=(ZONE-dr)/ZONE; }
-    stopEdge();
-    if(!dir) { tableWrap.classList.remove('edge-l','edge-r'); return; }
-    tableWrap.classList.toggle('edge-l', dir<0);
-    tableWrap.classList.toggle('edge-r', dir>0);
-    const step=()=>{
-      tableWrap.scrollLeft += dir * (1 + strength*11);
-      edgeTimer=requestAnimationFrame(step);
-    };
-    step();
-  });
-  tableWrap.addEventListener('mouseleave', ()=>{ stopEdge(); tableWrap.classList.remove('edge-l','edge-r'); });
+  attachEdgeScroll(tableWrap);
   // The wheel is deliberately NOT hijacked. Taking over vertical scrolling over a table
   // is disorienting, and between the edge-hover and the arrow buttons there are already
   // two ways to move sideways.
