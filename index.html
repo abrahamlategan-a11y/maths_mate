@@ -6164,6 +6164,17 @@ function raceCallerTick(){
   const board=S.liveParticipants.slice().sort((a,b)=>(b.score||0)-(a.score||0));
   const lead=board[0], second=board[1];
 
+  // Something to say even when the participant list has not arrived. It used to fall
+  // silent entirely, which is why a race produced one line and then nothing.
+  if(running && !lead && Date.now()-st.lastCall > 9000){
+    st.lastCall=Date.now();
+    st.used=st.used||{};
+    const generic=[`They are racing hard out there!`,`The questions are flying!`,
+      `Everyone is heads down!`,`This is a proper contest!`,`Not a pencil is still!`,
+      `The pace is relentless!`];
+    const fresh=generic.filter(x=>!st.used[x]);
+    if(fresh.length){ const l=pick(fresh); st.used[l]=1; raceCommentary(l); }
+  }
   if(running && lead){
     // The lead changing hands is always worth calling.
     if(st.lead && st.lead!==lead.id){
@@ -6482,7 +6493,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.49';
+const BUILD = '2026-08-12.50';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -12732,9 +12743,18 @@ function renderStudentLiveGame(){
   if(room && room.status==='ended' && raceEndedSecondsAgo(room) <= RACE_RESULT_WINDOW_SEC){
     const mine = S.liveParticipants.find(p=>p.id===S.user.uid);
     if(mine){
-      wrap.appendChild(el(`<div class="mmc-card"><h3>Game over!</h3><div class="meta">You scored ${mine.score} correct.</div></div>`));
+      // One result, not two. The finish used to be drawn here AND again at the bottom of
+      // the page, with the start-a-race card in between, so a child scrolled past the same
+      // leaderboard twice and the screen after a race was a mess.
+      //
+      // The raw count is gone too. It was the last place a child could see the numbers,
+      // which gives away both the handicap and the finish.
       wrap.appendChild(renderRaceTrack(S.user.uid));
       wrap.appendChild(renderLiveLeaderboardCard('Final leaderboard', room, true));
+      const again=el('<button class="mmc-btn gold" style="width:100%;font-size:16px;padding:12px;margin-top:10px;">Race again</button>');
+      again.onclick=()=>{ S.joinedRoomId=null; S.raceLeft=null; render(); };
+      wrap.appendChild(again);
+      return wrap;   // nothing else belongs on this screen
     }
   }
   // ---- walked away mid-race ----
