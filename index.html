@@ -5314,7 +5314,7 @@ function ttRangesFor(year){ return (+year===3) ? TT_RANGES_Y3 : TT_RANGES; }
 const TT_LEVEL_BLURB = {
   0: { easy:'within 5, one more and one less', medium:'bonds to 5 and doubles', hard:'bonds to 10 and within 10' },
   1: { easy:'bonds to 10 and doubles', medium:'within 20, and skip counting', hard:'within 20, with missing numbers' },
-  2: { easy:'facts to 20 and the 2 times table', medium:'two-digit, bridging ten', hard:'crossing tens both ways' },
+  2: { easy:'facts to 20, doubles, 2s 5s and 10s', medium:'bridging ten, sharing, near doubles', hard:'crossing tens, sharing' },
   3: { easy:'2, 3, 4, 5, 10 tables and division', medium:'tables, and adding tens', hard:'tables, and clever shortcuts' },
   4: { easy:'1–10 times tables', medium:'1–12, multiply & divide', hard:'4–15, multiply & divide' },
 };
@@ -5634,6 +5634,10 @@ const FACT_SKILLS = {
   MENTAL_SUB:    { label:'mental subtraction',       recall:false },
   COMPENSATION:  { label:'compensating (near 100)',  recall:false },
   X2:            { label:'the 2 times table',        recall:true  },
+  X_TABLE:       { label:'the 2, 5 and 10 times tables', recall:true },
+  DIV_SHARE:     { label:'sharing and grouping',      recall:true  },
+  SKIP_COUNT:    { label:'skip counting',             recall:false },
+  NEAR_DOUBLES:  { label:'near doubles',              recall:false },
   X3:            { label:'the 3 times table',        recall:true  },
   X4:            { label:'the 4 times table',        recall:true  },
   X5:            { label:'the 5 times table',        recall:true  },
@@ -5716,15 +5720,40 @@ function genFastFactQuestion(level, idx, year){
     return ffPick([[3,()=>addTo(20,'ADD_20')],[3,()=>subTo(20,'SUB_20')],[3,()=>missing(20)],
                    [1,()=>skip(2,'SKIP_2')],[1,()=>skip(5,'SKIP_5')],[1,()=>skip(10,'SKIP_10')]]);
   }
-  if(y===2){   // ---- YEAR 2: automatic recall within 20, and the 2x table ----
+  if(y===2){   // ---- YEAR 2 ----
+    // Sharing and grouping, which Year 2 meets and Fast Facts had none of. Always exact,
+    // and phrased as sharing at Easy because that is how a Year 2 first meets it.
+    const share=(t)=>{ const q2=randInt(2,10);
+      return Math.random()<0.5
+        ? Q(`Share ${t*q2} between ${t}`, q2, 'DIV_SHARE')
+        : Q(`${t*q2} ÷ ${t}`, q2, 'DIV_SHARE'); };
+    // Skip counting is the bridge into multiplication, and Year 1 had it while Year 2
+    // did not, which is backwards.
+    // Capped at 100, which is where Year 2 counting stops. Counting by tens ran to 120
+    // without this, which is Year 3 territory and looks like a mistake to a teacher.
+    const skip2=(step,code)=>{
+      const maxStart=Math.max(step, 100-3*step);
+      const start=step*randInt(1, Math.max(1, Math.floor(maxStart/step)));
+      const terms=[start,start+step,start+2*step];
+      return Q(`${terms.join(', ')}, ?`, start+3*step, code); };
+    const nearDouble=()=>{ const n=randInt(3,10);
+      return Math.random()<0.5 ? Q(`${n} + ${n+1}`, n+n+1, 'NEAR_DOUBLES')
+                               : Q(`${n} + ${n-1}`, n+n-1, 'NEAR_DOUBLES'); };
     if(level==='easy')   return ffPick([[4,()=>addTo(20,'ADD_FACT_20')],[4,()=>subTo(20,'SUB_FACT_20')],
-                                        [3,()=>times(2,'X2')]]);
+                                        [3,()=>times(pick([2,5,10]),'X_TABLE')],
+                                        [2,()=>dbl(10,'DOUBLES')],
+                                        [2,()=>skip2(pick([2,5,10]),'SKIP_COUNT')]]);
     if(level==='medium') return ffPick([[4,()=>bridgeAdd('TD_PLUS_ONES')],[4,()=>bridgeSub('TD_MINUS_ONES')],
-                                        [2,()=>times(2,'X2')],[2,()=>addTo(20,'ADD_FACT_20')]]);
+                                        [3,()=>times(pick([2,5,10]),'X_TABLE')],
+                                        [2,()=>share(pick([2,5,10]))],
+                                        [2,()=>nearDouble()],
+                                        [1,()=>skip2(pick([2,3,5,10]),'SKIP_COUNT')]]);
     // Hard: still two-digit, but now crossing tens both ways · 29 + 17, 54 - 18.
     return ffPick([
       [3,()=>bridgeAdd('BRIDGE_10')],
       [3,()=>bridgeSub('BRIDGE_10')],
+      [2,()=>share(pick([2,5,10]))],
+      [2,()=>nearDouble()],
       [2,()=>{ const a=randInt(21,49), b=randInt(11,29); return Q(`${a} + ${b}`, a+b, 'MENTAL_ADD'); }],
       [2,()=>{ const b=randInt(11,29), ans=randInt(11,49); return Q(`${ans+b} − ${b}`, ans, 'MENTAL_SUB'); }],
     ]);
@@ -5853,7 +5882,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.16';
+const BUILD = '2026-08-12.17';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
