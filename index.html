@@ -6557,7 +6557,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.60';
+const BUILD = '2026-08-12.62';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -12240,7 +12240,39 @@ async function createLiveRoom(){
       catch(e){ S.toast='Could not create the room. Check your connection.'; render(); }
     }
 
+// While a teacher is on the Racing Ground, the screen redraws every second, full stop.
+//
+// I have spent two days fixing individual reasons the view went stale: a missing branch, a
+// timer with nothing to update, a listener pointed at the wrong room, a Start that never
+// repainted. Each was real, and something still put old state back afterwards that I could
+// not find from here.
+//
+// A teacher cannot be asked to refresh, so the screen no longer depends on being told when
+// to update. It looks, once a second, at whatever is true. One redraw per second of a page
+// this size costs nothing next to a lesson that does not work.
+let teacherRacePoll=null;
+function ensureTeacherRacePoll(){
+  if(teacherRacePoll) return;
+  teacherRacePoll=setInterval(()=>{
+    // Only while a teacher is actually looking at the Racing Ground. That view is the
+    // FALLBACK branch of the tab router rather than a named value, so it is identified by
+    // ruling the others out: checking for 'live' stopped the poll on its first tick.
+    const OTHER_TABS=['home','weeks','ledger','activity','students','teachers','timetable'];
+    if(!S.user || !S.isTeacher || OTHER_TABS.indexOf(S.teacherTab)!==-1){
+      clearInterval(teacherRacePoll); teacherRacePoll=null; return;
+    }
+    // Never mid-answer, and never over an open prompt.
+    if(S.myLive && S.myLive.answering) return;
+    try{
+      const r=currentLiveRoom();
+      if(r) ensureParticipantsSub(r.id);
+      render();
+    }catch(e){}
+  }, 1000);
+}
+
 function renderTeacherLiveGame(){
+  ensureTeacherRacePoll();
   const wrap=el('<div></div>');
   const rgHead=el('<div class="mmc-row" style="justify-content:flex-end;margin-bottom:12px;"></div>');
   rgHead.appendChild(renderClassPicker());
