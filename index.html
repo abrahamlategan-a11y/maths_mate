@@ -4768,14 +4768,15 @@ function animalEmoji(key){
   return a ? a.emoji : '🐎';
 }
 function myCoins(){ return (S.profile && Number(S.profile.coins)) || 0; }
-async function awardGoldCoin(){
-  if(!S.user || !S.profile) return;
+async function awardGoldCoin(n){
+  const count = Math.max(0, Number(n)||0);
+  if(!S.user || !S.profile || !count) return;
   try{
-    await updateDoc(doc(db,'profiles',S.user.uid), { coins: increment(1) });
+    await updateDoc(doc(db,'profiles',S.user.uid), { coins: increment(count) });
     // Reflect it immediately. The snapshot will confirm a moment later, and a child
-    // who just found treasure should not watch an unchanged counter.
-    S.profile.coins = myCoins()+1;
-  }catch(e){ /* a lost coin is not worth an error message mid-practice */ }
+    // who just finished should not watch an unchanged counter.
+    S.profile.coins = myCoins()+count;
+  }catch(e){ /* a lost coin is not worth an error message */ }
 }
 // Spending writes the animal onto the entry in THIS race. Participant documents are
 // created fresh per race, so the perk expires by construction rather than by a timer
@@ -5965,7 +5966,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.26';
+const BUILD = '2026-08-12.27';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -11272,7 +11273,10 @@ function submitTTAnswer(given){
     // A golden question only pays out if they get it right. That is what makes it worth
     // slowing down for. Miss it and the coin is gone.
     const wonCoin = !!(S.tt.golden && correct);
-    if(wonCoin){ S.tt.coinsFound=(S.tt.coinsFound||0)+1; awardGoldCoin(); }
+    // Held, not paid. Coins are credited only when the whole set is finished, so a child
+    // cannot start a session, take the golden question and abandon the rest. Found is
+    // still shown immediately, because the moment of finding it is the point.
+    if(wonCoin){ S.tt.coinsFound=(S.tt.coinsFound||0)+1; }
     // Hold on this question. The child reads the result, then moves on when ready. // no clock, so there is nothing to be lost by looking at it properly.
     S.tt.reveal = { correct, prompt:q.prompt, answer:String(q.answer), given:String(given||''),
                     golden:!!S.tt.golden, wonCoin };
@@ -11353,7 +11357,10 @@ async function finishTTChallenge(){
   const mode = S.tt.mode==='practice' ? 'practice' : 'challenge';
   const accuracy = attempted? Math.round((score/attempted)*100) : 0;
   if(S.tt.timerHandle) clearInterval(S.tt.timerHandle);
-  S.tt.active=false; S.tt.finished=true; S.tt.reveal=null; S.tt.lastResult={level,score,attempted,accuracy,mode};
+  // Paid out here, and only here. Finishing is the condition.
+  const earned = S.tt.coinsFound||0;
+  if(earned) awardGoldCoin(earned);
+  S.tt.active=false; S.tt.finished=true; S.tt.reveal=null; S.tt.lastResult={level,score,attempted,accuracy,mode,coins:earned};
   try{
     // `mode` is what computeBadgeInfo reads to keep practice out of the accuracy gates.
     // Older records have no mode field and are treated as timed. That is deliberate.
@@ -11368,7 +11375,9 @@ async function finishTTChallenge(){
 }
 function abortTTChallenge(){
   if(!S.tt) return;
-  if(!confirm(S.tt.mode==='practice' ? "Stop practising? This session won't be saved." : "Quit this challenge? Your progress won't be saved.")) return;
+  const held=S.tt.coinsFound||0;
+  const coinWarning = held ? ` You will lose ${held} gold coin${held===1?'':'s'} you found.` : '';
+  if(!confirm(S.tt.mode==='practice' ? "Stop practising? This session won't be saved."+coinWarning : "Quit this challenge? Your progress won't be saved.")) return;
   if(S.tt.timerHandle) clearInterval(S.tt.timerHandle);
   S.tt=null;
   render();
