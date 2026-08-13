@@ -6294,17 +6294,34 @@ function raceSoundFinish(){
 // Commentary, using the voice already built for reading questions aloud.
 function raceCommentary(text){
   if(!S.raceSound || !('speechSynthesis' in window)) return;
+  // Commas and full stops are the only pacing control a browser voice gives you, so a
+  // line written with them lands better than one written as a single breath.
+  text=String(text||'').replace(/\s+/g,' ').trim();
   try{
     const u=new SpeechSynthesisUtterance(text);
-    // A race caller talks fast and high. Australian first, then any English voice, because
-    // an American reading "Aya takes the lead" over a Perth classroom is jarring.
-    u.rate=1.35; u.pitch=1.25; u.volume=1; u.lang='en-AU';
+    u.volume=1; u.lang='en-AU';
+    // Edge and Chrome ship "Natural" and "Online" neural voices that sound very different
+    // from the old robotic ones, and they are never picked by default. Preferring them by
+    // name is the single biggest thing available without paying for a cloud service.
     const voices=window.speechSynthesis.getVoices()||[];
-    const v = voices.find(x=>x.lang==='en-AU' && /female|karen|catherine/i.test(x.name))
-           || voices.find(x=>x.lang==='en-AU')
-           || voices.find(x=>x.lang==='en-GB')
-           || voices.find(x=>/^en/.test(x.lang));
-    if(v) u.voice=v;
+    const score=(x)=>{
+      let n=0;
+      if(/natural|neural/i.test(x.name)) n+=100;
+      if(/online/i.test(x.name)) n+=40;
+      if(/google/i.test(x.name)) n+=25;
+      if(x.lang==='en-AU') n+=30;
+      else if(x.lang==='en-GB') n+=12;
+      else if(/^en-/.test(x.lang)) n+=4;
+      if(x.localService) n+=2;
+      return n;
+    };
+    const v = voices.slice().sort((a,b)=>score(b)-score(a))[0];
+    if(v && score(v)>0) u.voice=v;
+    // A caller does not read every line identically. Small variations in pace and pitch
+    // are most of what separates "excited" from "announcement at a train station".
+    const excited=/!$/.test(text);
+    u.rate  = (excited ? 1.42 : 1.24) + (Math.random()*0.1 - 0.05);
+    u.pitch = (excited ? 1.30 : 1.12) + (Math.random()*0.12 - 0.06);
     window.speechSynthesis.speak(u);
   }catch(e){}
 }
@@ -6504,7 +6521,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.54';
+const BUILD = '2026-08-12.55';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
