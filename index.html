@@ -6557,7 +6557,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.62';
+const BUILD = '2026-08-12.63';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -7370,6 +7370,9 @@ function ensureParticipantsSub(gameId, keepIfUnknown){
     // act on, and "Missing or insufficient permissions" in red is alarming and useless.
     // Clear the list, let the next render re-point it, and stay quiet.
     if(/permission|insufficient/i.test(err.message||'')){
+      // Logged, not swallowed. Hiding this cost days: a host's listener was being refused
+      // the moment a student joined, and the screen simply showed nobody.
+      try{ console.warn('[race] participants listener refused:', err.message); }catch(e){}
       S.liveParticipants=[]; render(); return;
     }
     S.toast='Leaderboard error: '+err.message; render();
@@ -12407,6 +12410,13 @@ function renderTeacherLiveGame(){
         </div>
         ${stale?`<div class="meta" style="margin-top:8px;color:var(--incorrect);font-weight:700;">Open ${mins} minutes. Close it if you are finished with it.</div>`:''}
       </div>`);
+      const reload2=el('<button class="mmc-btn ghost sm" title="Reconnect to the players in this race">Refresh players</button>');
+      reload2.onclick=()=>{
+        ensureParticipantsSub(null); ensureParticipantsSub(r.id);
+        S.toast='Reconnecting…'; S.toastTone='good'; render();
+        setTimeout(render,600); setTimeout(render,1600);
+      };
+      card.querySelector('.mmc-row').appendChild(reload2);
       const sound=el(`<button class="mmc-pill ${S.raceSound?'on':''}" title="Plays on THIS screen only, never on student devices">
         <span class="mmc-pill-knob"></span>
         <span class="mmc-pill-label">${S.raceSound?'🔊 Sound on':'🔈 Sound off'}</span>
