@@ -5887,7 +5887,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.19';
+const BUILD = '2026-08-12.20';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -9052,9 +9052,19 @@ function renderLedgerByWeek(){
         td.appendChild(btn);
         tr.appendChild(td);
       }
-      const pct = rec.total? Math.round((rec.score/rec.total)*100) : 0;
-      const cls = pct>=70?'good':(pct>=50?'mid':'low');
-      tr.appendChild(el(`<td class="mmc-cellscore ${cls}">${pct}%</td>`));
+      // The total column. `rec` only exists for a FINISHED set, and reading it for a
+      // partway-through student threw and took the whole page down. A student still
+      // working gets their score so far, marked as such rather than presented as a final
+      // percentage that will change.
+      if(work.finished && work.rec){
+        const pct = work.rec.total ? Math.round((work.rec.score/work.rec.total)*100) : 0;
+        const cls = pct>=70?'good':(pct>=50?'mid':'low');
+        tr.appendChild(el(`<td class="mmc-cellscore ${cls}">${pct}%</td>`));
+      } else {
+        const right=(work.answers||[]).filter(a=>a.correct).length;
+        const done=(work.answers||[]).length;
+        tr.appendChild(el(`<td class="mmc-inprog" title="Still working. ${right} right out of ${done} so far">${right}/${done}</td>`));
+      }
     }
     tbody.appendChild(tr);
   });
