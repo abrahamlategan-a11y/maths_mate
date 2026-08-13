@@ -6284,7 +6284,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.36';
+const BUILD = '2026-08-12.37';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -7029,7 +7029,7 @@ function subscribeExternalRoom(gameId){
       S.externalRoomId=null; S.externalRoom=null;
       if(externalRoomUnsub){ externalRoomUnsub(); externalRoomUnsub=null; }
     }
-    ensureParticipantsSub(currentLiveRoom()?.id||null);
+    ensureParticipantsSub(currentLiveRoom()?.id||null, true);
     if(S.myLive && S.myLive.answering) return;
     render();
   }, ()=>{ S.externalRoom=null; render(); });
@@ -7050,8 +7050,14 @@ function raceEndedSecondsAgo(g, nowSec){
   return (nowSec || Date.now()/1000) - at;
 }
 let liveParticipantsGen = 0;
-function ensureParticipantsSub(gameId){
+// `keepIfUnknown` is the difference between "there is definitely no race" and "I cannot
+// see one at this instant". The three callers that pass it fire from snapshots, where the
+// room list is momentarily behind, and tearing the listener down there killed the one
+// attached when the race was created. The room resolved a second later and nothing was
+// watching it, which is why a lobby stayed empty until a refresh rebuilt everything.
+function ensureParticipantsSub(gameId, keepIfUnknown){
   if(!gameId){
+    if(keepIfUnknown) return;   // transient, not a decision
     if(liveParticipantsUnsub){ liveParticipantsUnsub(); liveParticipantsUnsub=null; }
     liveParticipantsRoomId=null; S.liveParticipants=[]; liveParticipantsGen++; return;
   }
@@ -7265,7 +7271,7 @@ function subscribeData(){
       render();
     }, (err)=>{ /* not admin. Silent */ }));
     unsubs.push(onSnapshot(query(collection(db,'liveGames'), where('teacherUid','==',S.user.uid)), snap=>{
-      S.liveGames=snap.docs.map(d=>({id:d.id,...d.data()})); ensureParticipantsSub(currentLiveRoom()?.id||null); ensureTeacherLiveTimer(); render();
+      S.liveGames=snap.docs.map(d=>({id:d.id,...d.data()})); ensureParticipantsSub(currentLiveRoom()?.id||null, true); ensureTeacherLiveTimer(); render();
     }, (err)=>{ S.toast='Racing Ground error: '+err.message; render(); }));
   } else {
     unsubs.push(onSnapshot(query(collection(db,'weeks'), where('status','==','published'), where('teacherUid','==',(S.profile&&S.profile.teacherUid)||'__none__')), snap=>{
@@ -7294,7 +7300,7 @@ function subscribeData(){
     if(healTimer) clearTimeout(healTimer);
     healTimer = setTimeout(()=>{ repairOrphanedRecords(); }, 4000);
     unsubs.push(onSnapshot(query(collection(db,'liveGames'), where('teacherUid','==',(S.profile&&S.profile.teacherUid)||'__none__')), snap=>{
-      S.liveGames=snap.docs.map(d=>({id:d.id,...d.data()})); ensureParticipantsSub(currentLiveRoom()?.id||null);
+      S.liveGames=snap.docs.map(d=>({id:d.id,...d.data()})); ensureParticipantsSub(currentLiveRoom()?.id||null, true);
       if(S.myLive && S.myLive.answering) return; // same reasoning as the participants listener. Don't interrupt active typing
       render();
     }, (err)=>{ S.toast='Racing Ground error: '+err.message; render(); }));
@@ -7396,6 +7402,13 @@ function render(){
       else window.scrollTo({top:0, behavior:'smooth'});
     }catch(e){ window.scrollTo(0,0); }
   }
+  // Keep the race caller alive whenever sound is on and a race exists. It used to start
+  // only when the pill was tapped, so switching it on before the race began left it
+  // pointing at nothing and the beeps never came.
+  try{
+    if(S.raceSound && S.isTeacher && currentLiveRoom()){ if(!raceCallTimer) raceCallerStart(); }
+    else if(!S.raceSound && raceCallTimer) raceCallerStop();
+  }catch(e){}
   const ttInput=document.getElementById('mmc-tt-input');
   if(ttInput){
     // Focus WITH the caret put back at the end. A bare focus() drops the caret at position
