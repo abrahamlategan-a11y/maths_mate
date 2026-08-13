@@ -6557,7 +6557,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.63';
+const BUILD = '2026-08-12.64';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -10725,7 +10725,8 @@ function renderStudentsTab(mode){
         document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
       };
       const myEmail=(S.user&&S.user.email||'').toLowerCase();
-      S.teacherDirectory.forEach(t=>{
+      // Anyone removed from the list stays out of it, revoked or not.
+      S.teacherDirectory.filter(t=>!t.hidden).forEach(t=>{
         const isSelf = (t.email||'').toLowerCase()===myEmail;
         const row=el(`<div class="mmc-row" style="justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--paper-line);flex-wrap:wrap;gap:8px;">
           <div><b>${esc(t.name||t.email)}</b> <span class="meta">${esc(t.email)}${t.status==='revoked'? ' · revoked' : ''}</span></div>
@@ -10733,6 +10734,7 @@ function renderStudentsTab(mode){
             ${(t.status==='active') ? `<button class="mmc-btn ghost sm" data-act="setuplink">Setup link</button>` : ''}
             ${(t.status==='active') ? `<button class="mmc-btn ghost sm" data-act="setpw">Set password</button>` : ''}
             ${(!isSelf && t.status==='active') ? `<button class="mmc-btn danger sm" data-act="revoke">Revoke access</button>` : ''}
+            ${(!isSelf && t.status==='revoked') ? `<button class="mmc-btn ghost sm" data-act="forget" title="Remove from this list. Their sign-in stays revoked.">Remove from list</button>` : ''}
           </div>
         </div>`);
         const linkBtn=row.querySelector('[data-act="setuplink"]');
@@ -10741,6 +10743,28 @@ function renderStudentsTab(mode){
         if(pwBtn) pwBtn.onclick=()=>setTeacherPasswordFlow(t.email, t.name, pwBtn);
         const revokeBtn=row.querySelector('[data-act="revoke"]');
         if(revokeBtn) revokeBtn.onclick=()=>revokeTeacherAccess(t.email, revokeBtn);
+        const forgetBtn=row.querySelector('[data-act="forget"]');
+        if(forgetBtn) forgetBtn.onclick=async ()=>{
+          // Tidies the LIST only. Their access was already removed when they were revoked,
+          // and this does not give it back: it takes the row off a directory that a school
+          // will otherwise fill with people who left years ago.
+          //
+          // It deliberately does NOT delete their Firebase sign-in. Re-approving a revoked
+          // teacher already leaves that account disabled, and quietly deleting accounts
+          // from a list-tidying button is how someone loses a colleague's history.
+          if(!confirm(`Remove ${t.name||t.email} from this list?\n\nTheir access stays revoked. Any sets or results they created are untouched.`)) return;
+          forgetBtn.disabled=true; forgetBtn.textContent='Removing…';
+          try{
+            await updateDoc(doc(db,'teacherDirectory',t.email.toLowerCase()), {hidden:true});
+            S.toast='Removed from the list.'; S.toastTone='good';
+          }catch(e){
+            // No fallback create: the rules allow updating this one field on an existing
+            // revoked teacher and nothing else, which is the point.
+            S.toast='Could not remove that. Check your connection.';
+            forgetBtn.disabled=false; forgetBtn.textContent='Remove from list';
+          }
+          render();
+        };
         directoryCard.appendChild(row);
       });
       wrap.appendChild(directoryCard);
