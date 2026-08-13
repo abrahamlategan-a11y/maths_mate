@@ -274,6 +274,11 @@
     color:#8A5B02; font-weight:700; background:#FFF8E8;
     font-variant-numeric:tabular-nums;
   }
+  /* Not reached yet. Quiet on purpose: it is not a wrong answer and should not read as one. */
+  .mmc-inc {
+    color:var(--ink-soft); font-size:11px; font-weight:800; letter-spacing:.06em;
+    background:#FAF7EE; text-align:center;
+  }
   .mmc-qbtn.static { cursor:default; display:block; }
   .mmc-qbtn.static:hover { text-decoration:none; }
   /* The cell you clicked, kept obvious while the panel is open. */
@@ -5882,7 +5887,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.17';
+const BUILD = '2026-08-12.18';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -9013,15 +9018,23 @@ function renderLedgerByWeek(){
     const rec=S.results.find(r=>r.uid===uid && r.weekId===week.id);
     const tr=el('<tr></tr>');
     tr.appendChild(el(`<td>${esc(S.profiles[uid].displayName||uid)}</td>`));
-    if(!rec){
-      cols.forEach(c=>tr.appendChild(el(`<td style="color:var(--ink-soft);${c.hidden?'opacity:.4;':''}">-</td>`)));
-      tr.appendChild(el('<td style="color:var(--ink-soft);">-</td>'));
+    const work = answersForWeek(uid, week.id);
+    if(!work){
+      cols.forEach(c=>tr.appendChild(el(`<td style="color:var(--ink-soft);${c.hidden?'opacity:.4;':''}" title="Not started">-</td>`)));
+      tr.appendChild(el('<td style="color:var(--ink-soft);" title="Not started">-</td>'));
     } else {
-      const bySlot={}; (rec.answers||[]).forEach(a=>{ const slot=qidToSlot[a.qId]; if(slot) bySlot[slot]={correct:a.correct, qId:a.qId}; });
+      // A dash now means one thing only: not started. A question a partway-through child
+      // has not reached yet says INC, so a teacher can tell "wrong" from "not there yet".
+      const bySlot={}; (work.answers||[]).forEach(a=>{ const slot=qidToSlot[a.qId]; if(slot) bySlot[slot]={correct:a.correct, qId:a.qId}; });
       for(const c of cols){
         const s=c.slot;
         const info=bySlot[s];
-        if(!info){ tr.appendChild(el(`<td style="color:var(--ink-soft);${c.hidden?'opacity:.4;':''}" title="${c.hidden?'Hidden from students':'Not attempted'}">-</td>`)); continue; }
+        if(!info){
+          tr.appendChild(el(work.finished
+            ? `<td style="color:var(--ink-soft);${c.hidden?'opacity:.4;':''}" title="${c.hidden?'Hidden from students':'Not attempted'}">-</td>`
+            : `<td class="mmc-inc" title="Not reached yet">INC</td>`));
+          continue;
+        }
         const td=el('<td></td>');
         const btn=el(`<button type="button" class="mmc-cellbtn" style="background:none;border:none;cursor:pointer;font-weight:800;font-size:16px;color:${info.correct?'var(--correct)':'var(--incorrect)'};">${info.correct?'✓':'✗'}</button>`);
         btn.onclick=()=>{
@@ -9052,6 +9065,18 @@ function renderLedgerByWeek(){
 function qBand(pct){ return pct>=80 ? 'hi' : (pct>=50 ? 'mid' : 'lo'); }
 // How far a student has got on a set they have not finished. Answers a question a blank
 // cell cannot: away, or started and slow?
+// Answers so far, finished or not. A half-done set used to contribute nothing at all, so
+// ten questions a child had genuinely answered were invisible to their teacher.
+function answersForWeek(uid, weekId){
+  const rec=(S.results||[]).find(r=>r.uid===uid && r.weekId===weekId);
+  if(rec) return { answers:(rec.answers||[]), finished:true, rec };
+  const prog=(S.classProgress||[]).find(p=>p.uid===uid && p.weekId===weekId);
+  if(!prog || !prog.quiz) return null;
+  const answers=Object.keys(prog.quiz)
+    .filter(qId=>prog.quiz[qId] && prog.quiz[qId].checked)
+    .map(qId=>({ qId, correct:!!prog.quiz[qId].correct, given:prog.quiz[qId].given }));
+  return answers.length ? { answers, finished:false, rec:null } : null;
+}
 function partialProgress(uid, weekId){
   const rec=(S.classProgress||[]).find(p=>p.uid===uid && p.weekId===weekId);
   if(!rec || !rec.quiz) return null;
@@ -9175,10 +9200,13 @@ function renderLedgerByQuestion(){
   studentUids.forEach(uid=>{
     const tr=el('<tr></tr>');
     tr.appendChild(el(`<td>${esc(S.profiles[uid].displayName||uid)}</td>`));
-    const myResults = S.results.filter(r=>r.uid===uid);
+    // Finished sets AND the answered part of unfinished ones. A child ten questions into
+    // this week's set has genuinely answered those ten, and they counted for nothing.
+    const myWork = pubWeeks.map(w=>answersForWeek(uid, w.id) &&
+      Object.assign({weekId:w.id}, answersForWeek(uid, w.id))).filter(Boolean);
     COLS.forEach((code,qi)=>{
       let correctCount=0, total=0;
-      myResults.forEach(rec=>{
+      myWork.forEach(rec=>{
         const map=qidToSlotByWeek[rec.weekId]; if(!map) return;
         (rec.answers||[]).forEach(a=>{ if(map[a.qId]===code){ total++; if(a.correct) correctCount++; } });
       });
