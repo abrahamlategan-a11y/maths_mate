@@ -6175,6 +6175,13 @@ function raceCallerTick(){
       st.lastCall=Date.now();
       const gap=(lead.score||0)-((second&&second.score)||0);
       const third=board[2], last=board[board.length-1];
+      // Is the leader stalling? Tracked between calls, so the caller notices the same
+      // thing a crowd would: the horse in front has stopped going forward.
+      const prevLead=st.leadScore;
+      st.leadScore=lead.score||0;
+      const leadMoved=(prevLead==null) ? 99 : (st.leadScore-prevLead);
+      const prevGap=st.gap; st.gap=gap;
+      const gapClosing=(prevGap!=null) && gap<prevGap;
       // Everyone gets a mention, not just the leader. A child hearing their own name once
       // in three minutes is the difference between watching a race and being in one.
       const lines=[];
@@ -6188,6 +6195,17 @@ function raceCallerTick(){
       } else {
         const L=raceCallName(lead), S2=second?raceCallName(second):null,
               T=third?raceCallName(third):null, B=last?raceCallName(last):null;
+        // The leader stalling is the most interesting thing that can happen in a race, so
+        // it gets said first and outranks the general lines.
+        if(leadMoved<=1 && S2) lines.push(
+          `${L} has stalled!`,
+          `${L} has hit a wall, and ${S2} is coming!`,
+          `The leader has stopped moving. This race is back on!`,
+          `${L} is stuck on one, and the pack can smell it.`);
+        if(gapClosing && S2) lines.push(
+          `${S2} is reeling ${L} in!`,
+          `The gap is closing!`,
+          `${L} will not like what is happening behind them.`);
         if(gap>=8) lines.push(
           `${L} is miles ahead. How will anyone catch them?`,
           `${L} has broken clear!`,
@@ -6464,7 +6482,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.48';
+const BUILD = '2026-08-12.49';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
