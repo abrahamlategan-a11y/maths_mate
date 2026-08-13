@@ -6557,7 +6557,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.64';
+const BUILD = '2026-08-12.65';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -10755,7 +10755,9 @@ function renderStudentsTab(mode){
           if(!confirm(`Remove ${t.name||t.email} from this list?\n\nTheir access stays revoked. Any sets or results they created are untouched.`)) return;
           forgetBtn.disabled=true; forgetBtn.textContent='Removing…';
           try{
-            await updateDoc(doc(db,'teacherDirectory',t.email.toLowerCase()), {hidden:true});
+            // Keyed by UID, not email. Writing to the email address addressed a document
+            // that does not exist, so the rules refused it and the row never went away.
+            await updateDoc(doc(db,'teacherDirectory', t.uid), {hidden:true});
             S.toast='Removed from the list.'; S.toastTone='good';
           }catch(e){
             // No fallback create: the rules allow updating this one field on an existing
