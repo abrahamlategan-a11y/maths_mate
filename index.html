@@ -5780,7 +5780,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.6';
+const BUILD = '2026-08-12.7';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -8636,6 +8636,35 @@ function formatCorrectAnswer(q){
   if(q.inputType==='order') return (q.answer||'').split(',').join(' → ');
   return q.answer;
 }
+// Everything a child actually SAW, not just the prompt. Written once because there are two
+// places that show a past question, and only one of them had been taught about pictures,
+// fractions, answer boxes and choices.
+function questionFaceHTML(q){
+  if(!q) return '';
+  const bits=[];
+  if(q.svg) bits.push(`<div class="mmc-qsvg">${q.svg}</div>`);
+  bits.push(`<div style="margin:4px 0;">${esc(String(q.prompt||'').replace(/\n/g,' '))}</div>`);
+  const frac = fracPromptHTML(q);
+  if(frac) bits.push(frac);
+  if(q.partsLead!=null || q.partsTail!=null){
+    const boxes=(q.parts||[{}]).map(()=>'<span class="mmc-qbox">?</span>')
+      .join(` <b>${esc(q.partsJoin||'')}</b> `);
+    bits.push(`<div style="margin:4px 0;">${esc(q.partsLead||'')} ${boxes} ${esc(q.partsTail||'')}</div>`);
+  }
+  if(Array.isArray(q.items) && q.items.length){
+    bits.push(`<div class="mmc-worth-names" style="margin:4px 0;">${
+      q.items.map(x=>`<span>${esc(typeof x==='object' ? (x.deg!=null? x.deg+'°' : '') : x)}</span>`).join('')}</div>`);
+  }
+  if(Array.isArray(q.choices) && q.choices.length){
+    bits.push(`<div class="mmc-worth-names" style="margin:4px 0;">${
+      q.choices.map(c=>`<span>${esc(c)}</span>`).join('')}</div>`);
+  }
+  if(Array.isArray(q.coins) && q.coins.length){
+    bits.push(`<div class="mmc-worth-names" style="margin:4px 0;">${
+      q.coins.map(c=>`<span>${esc(c.l||c.label||'')}</span>`).join('')}</div>`);
+  }
+  return bits.join('');
+}
 function renderGradebookDetail(){
   const d=S.gradebookDetail;
   if(!d) return null;
@@ -8654,31 +8683,7 @@ function renderGradebookDetail(){
         </div>
       </div>
     `);
-    if(q.svg) card.querySelector('h3').insertAdjacentHTML('afterend', `<div class="mmc-qsvg">${q.svg}</div>`);
-    card.appendChild(el(`<div class="qtext" style="margin:8px 0 12px;">${esc(q.prompt)}</div>`));
-    // The prompt is only ever PART of a question. Comparing fractions keeps its two
-    // fractions in separate fields, so this card showed "Choose the correct sign:" and
-    // nothing to choose between. fracPromptHTML already draws every fraction shape the
-    // app uses, so the card shows exactly what the child saw.
-    const extra = fracPromptHTML(q);
-    if(extra) card.appendChild(el(`<div>${extra}</div>`));
-    if(q.partsLead!=null || q.partsTail!=null){
-      const boxes=(q.parts||[{}]).map(()=>'<span class="mmc-qbox">?</span>')
-        .join(` <b>${esc(q.partsJoin||'')}</b> `);
-      card.appendChild(el(`<div class="qtext" style="margin:0 0 10px;">${esc(q.partsLead||'')} ${boxes} ${esc(q.partsTail||'')}</div>`));
-    }
-    if(Array.isArray(q.items) && q.items.length){
-      card.appendChild(el(`<div class="mmc-worth-names" style="margin:0 0 10px;">${
-        q.items.map(x=>`<span>${esc(typeof x==='object' ? (x.deg!=null? x.deg+'°' : JSON.stringify(x)) : x)}</span>`).join('')}</div>`));
-    }
-    if(Array.isArray(q.choices) && q.choices.length){
-      card.appendChild(el(`<div class="mmc-worth-names" style="margin:0 0 10px;">${
-        q.choices.map(c=>`<span>${esc(c)}</span>`).join('')}</div>`));
-    }
-    if(Array.isArray(q.coins) && q.coins.length){
-      card.appendChild(el(`<div class="mmc-worth-names" style="margin:0 0 10px;">${
-        q.coins.map(c=>`<span>${esc(c.l||c.label||'')}</span>`).join('')}</div>`));
-    }
+    card.appendChild(el(`<div>${questionFaceHTML(q)}</div>`));
     const answerRow=el(`
       <div class="mmc-row" style="gap:24px;">
         <div><div class="label2">Student's answer</div><div style="font-weight:700;color:${ans&&ans.correct?'var(--correct)':'var(--incorrect)'};">${esc(formatGivenAnswer(ans,q))}</div></div>
@@ -8718,7 +8723,7 @@ function renderGradebookDetail(){
       card.appendChild(el(`
         <div style="border-top:1px solid var(--paper-line);padding:10px 0;">
           <div class="meta" style="font-weight:700;">${esc(w.label)}</div>
-          <div style="margin:4px 0;">${esc(q.prompt)}</div>
+          ${questionFaceHTML(q)}
           <div class="mmc-row" style="gap:16px;">
             <div style="color:${ans.correct?'var(--correct)':'var(--incorrect)'};font-weight:700;">Answered: ${esc(formatGivenAnswer(ans,q))}</div>
             <div class="meta">Correct: ${esc(formatCorrectAnswer(q))}</div>
