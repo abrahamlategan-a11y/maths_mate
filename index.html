@@ -6245,11 +6245,27 @@ function raceCallerTick(){
   }
   if(running && lead){
     // The lead changing hands is always worth calling.
-    if(st.lead && st.lead!==lead.id){
-      st.lead=lead.id; st.lastCall=Date.now();
-      st.said=st.said||{}; st.said[lead.id]=1;
-      raceCommentary(`${raceCallName(lead)} hits the front!`);
-    } else if(!st.lead){ st.lead=lead.id; }
+    // A lead change is only worth calling once someone has actually done something. At
+    // the start everyone is on zero, the top of the board flips on every tick, and the
+    // caller shouted "hits the front" over and over.
+    const leadWorthCalling = (lead.score||0) >= 3 && Date.now()-(st.lastLeadCall||0) > 12000;
+    if(st.lead && st.lead!==lead.id && leadWorthCalling){
+      const from=st.lead;
+      const prev=board.find(p=>p.id===from);
+      st.lead=lead.id; st.lastCall=Date.now(); st.lastLeadCall=Date.now();
+      st.said=st.said||{}; st.said[lead.id]=1; if(prev) st.said[prev.id]=1;
+      const L2=raceCallName(lead), P2=prev?raceCallName(prev):null;
+      raceCommentary(pick(P2 ? [
+        `${L2} has snatched the lead from ${P2}!`,
+        `${L2} goes past ${P2}!`,
+        `And it is ${L2} in front now, ${P2} loses the lead!`,
+        `${L2} takes over at the top!`,
+        `${P2} has been reeled in by ${L2}!`,
+        `A change at the front, ${L2} leads!`,
+      ] : [
+        `${L2} hits the front!`, `${L2} takes the lead!`, `${L2} is out in front!`,
+      ]));
+    } else if(!st.lead || !leadWorthCalling){ st.lead=lead.id; }
     // Otherwise a line every ten seconds or so, chosen to fit what is happening.
     else if(Date.now()-st.lastCall > 9000){
       st.lastCall=Date.now();
@@ -6474,7 +6490,15 @@ function raceElapsedFrac(room){
   const dur=(Number(room.durationSec)||300);
   return Math.max(0, Math.min(1, (dur-liveTimeLeft(room))/dur));
 }
-function raceAdaptiveLevel(baseLevel, myScore, allScores, isClassRace, live, elapsedFrac, elapsedSec){
+// Who may ever see the hidden level. Deliberately narrow: it is a stretch for a child who
+// already finds Year 6 hard tables easy, and it had been reaching children who simply
+// happened to be a few answers up.
+function mayReachChampion(profile, myRank){
+  const y = studentYear(profile);
+  const group = (profile && profile.group) || 'mainstream';
+  return y>=4 && group==='extension' && myRank!=null && myRank<3;
+}
+function raceAdaptiveLevel(baseLevel, myScore, allScores, isClassRace, live, elapsedFrac, elapsedSec, myRank, profile){
   // Class races only. A student's own quick race between friends should be the questions
   // they chose, not a handicap system quietly rewriting them.
   if(!isClassRace) return baseLevel;
@@ -6502,18 +6526,44 @@ function raceAdaptiveLevel(baseLevel, myScore, allScores, isClassRace, live, ela
   if(spread<3) return baseLevel;
   const mine=Number(myScore)||0;
   const idx=Math.max(1, RACE_LEVELS.indexOf(baseLevel));
-  const share=(mine-worst)/Math.max(1,spread);   // 0 at the back, 1 at the front
+  // Measured against the LEADER, not against the spread. Being second in a race where the
+  // leader is miles clear is not the same as being second in a tight one, and the old
+  // measure treated them identically: a child sitting second while being beaten soundly
+  // was handed the hardest questions in the app.
+  //
+  // The shape wanted is the one every racing game uses. Catching up is achievable; staying
+  // in front is the hard part. So the penalty falls almost entirely on whoever is actually
+  // leading, and it grows with how far clear they are.
+  const sortedSc=scores.slice().sort((a,b)=>b-a);
+  const leaderScore=sortedSc[0]||0;
+  const secondScore=sortedSc.length>1 ? sortedSc[1] : 0;
+  const deficit=leaderScore-mine;          // 0 if you are the leader
+  const margin=leaderScore-secondScore;    // how clear the leader is
+  const share=(mine-worst)/Math.max(1,spread);   // kept for the gentler end of the scale
   // Reaches further at both ends than it did. A child with a big lead was still being
   // asked ordinary questions, and a child at the back was still getting division.
   let shift=0;
-  if(share>=0.75)     shift = spread>=10 ? 3 : (spread>=6 ? 2 : 1);
-  else if(share>=0.55) shift = 1;
-  else if(share<=0.15) shift = spread>=8 ? -2 : -1;
-  else if(share<=0.35) shift = -1;
+  if(deficit===0){
+    // THE LEADER. The further clear they are, the harder it gets. This is the whole
+    // mechanism: holding the front should cost something.
+    shift = margin>=8 ? 3 : margin>=5 ? 2 : margin>=2 ? 1 : 0;
+  } else if(deficit<=2){
+    // Right on the leader's shoulder. Racing properly, left alone.
+    shift = 0;
+  } else if(deficit<=5){
+    // Losing touch. A small hand up, so the gap is closeable.
+    shift = -1;
+  } else {
+    // Well behind. Easier questions, so they can genuinely make ground rather than
+    // watching the leader disappear.
+    shift = deficit>=10 ? -2 : -1;
+  }
+  // The pace measure can still lift a child who is flying, but never lift someone who is
+  // being beaten: if you are behind the leader, the field decides, not your own streak.
+  if(paceShift>0 && deficit===0 && paceShift>shift) shift=paceShift;
+  if(paceShift<0 && paceShift<shift) shift=paceShift;
   // Whichever says "stretch this child" more strongly wins, so a runaway is caught by
   // either measure rather than needing both.
-  if(paceShift>shift) shift=paceShift;
-  if(paceShift<0 && paceShift<shift) shift=paceShift;
   // Second half: one more level either way, so the field genuinely closes up.
   if(late && shift>0) shift+=1;
   if(late && shift<0) shift-=1;
@@ -6523,14 +6573,15 @@ function raceAdaptiveLevel(baseLevel, myScore, allScores, isClassRace, live, ela
   // needs a genuine runaway, measured against SECOND place rather than last, which is
   // what "running away with it" actually means.
   if(RACE_LEVELS[want]==='stretch'){
-    const sorted=scores.slice().sort((a,b)=>b-a);
-    const overSecond=(sorted[0]||0)-(sorted[1]||0);
-    // Loosened. The first gate never fired in a real race: five clear of second is already
-    // a child who is winning comfortably, and waiting for eight meant the race was over.
-    // Pace alone can reach the hidden level: a child on an eight-answer streak at under
-    // three and a half seconds each is running away, whatever the scoreboard says.
-    const flying = paceShift>=3;
-    if(!flying && !(overSecond>=4 && spread>=6)) want=Math.min(want, RACE_LEVELS.indexOf('hard'));
+    // Only a Year 4 to 6 EXTENSION student, and only while they are in the top three.
+    // The moment they drop back they get their ordinary questions again, which is the
+    // point: it is a handicap on whoever is leading, not a label that follows a child.
+    // The hidden level is for the LEADER only, and only once they are properly clear.
+    // Second and third were getting it while being beaten soundly, which is the opposite
+    // of what it is for.
+    if(!mayReachChampion(profile, myRank) || deficit!==0 || margin<4){
+      want=Math.min(want, RACE_LEVELS.indexOf('hard'));
+    }
   }
   return RACE_LEVELS[want];
 }
@@ -6540,7 +6591,10 @@ function raceAdaptiveLevel(baseLevel, myScore, allScores, isClassRace, live, ela
 // facts, still reachable with a method, but each one costs a few seconds of real thought.
 // It is never offered as a choice. A child only meets it by getting far enough ahead.
 function genRaceChampion(idx){
-  const kind = pick(['square','teens','double','near100','decimal','decimal']);
+  // Decimals removed. Placing a decimal point under time pressure is a different and
+  // harder skill than a hard times fact, and it was landing on children who were only
+  // just in front.
+  const kind = pick(['square','teens','double','near100']);
   if(kind==='square'){
     const n=randInt(11,19);
     return { prompt:`${n} × ${n}`, answer:n*n, isDivision:false, level:'champion' };
@@ -6629,7 +6683,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.69';
+const BUILD = '2026-08-12.72';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -12293,8 +12347,12 @@ function renderChaseCallout(myUid){
     return el(`<div class="mmc-card" style="text-align:center;background:var(--slime);"><h3 style="margin:0;">🏆 You're in the lead. Don't let up!</h3></div>`);
   }
   const ahead=sorted[myIdx-1];
-  const gap=Math.max(0.1, (ahead.position||0)-(sorted[myIdx].position||0));
-  return el(`<div class="mmc-card" style="text-align:center;"><h3 style="margin:0;">🎯 Chasing ${esc(ahead.name)}</h3><div class="meta" style="margin:2px 0 0;">${gap.toFixed(1)} points ahead of you. Answer fast to catch up!</div></div>`);
+  // A place, not a gap. "0.1 points ahead of you" is meaningless to a child and exposes
+  // the internal numbers; "2nd" is what they actually want to know.
+  const ord=(n)=>{ const t2=n%10, h=n%100;
+    if(t2===1&&h!==11) return n+'st'; if(t2===2&&h!==12) return n+'nd';
+    if(t2===3&&h!==13) return n+'rd'; return n+'th'; };
+  return el(`<div class="mmc-card" style="text-align:center;"><h3 style="margin:0;">${ord(myIdx+1)} · chasing ${esc(ahead.name)}</h3></div>`);
 }
 
 // ---------- Live Game (teacher) ----------
@@ -12705,9 +12763,13 @@ async function submitMyLiveAnswer(given){
   const room1=currentLiveRoom();
   const dur1=(room1 && Number(room1.durationSec))||300;
   const elapsedRaceSec = room1 ? (dur1 - liveTimeLeft(room1)) : 0;
+  // My place in the field right now, which decides whether the hidden level is available.
+  const boardNow=S.liveParticipants.slice().sort((a,b)=>(b.score||0)-(a.score||0));
+  const myRank=Math.max(0, boardNow.findIndex(p=>p.id===S.user.uid));
   const lvl=raceAdaptiveLevel(S.myLive.level, S.myLive.score,
     S.liveParticipants.map(x=>Number(x.score)||0).concat(S.myLive.score),
-    !!(room1 && !room1.hostUid), S.myLive, raceElapsedFrac(room1), elapsedRaceSec);
+    !!(room1 && !room1.hostUid), S.myLive, raceElapsedFrac(room1), elapsedRaceSec,
+    myRank, S.profile);
   S.myLive.currentQ=genRaceQuestion(lvl, S.myLive.qIndex, studentYear(S.profile)); S.myLive.questionStartedAt=Date.now();
   render();
   try{ await updateDoc(doc(db,'liveGames',S.myLive.gameId,'participants',S.user.uid), {score:S.myLive.score, attempted:S.myLive.attempted, position:S.myLive.position}); }
