@@ -6579,7 +6579,15 @@ function raceAdaptiveLevel(baseLevel, myScore, allScores, isClassRace, live, ela
     // The hidden level is for the LEADER only, and only once they are properly clear.
     // Second and third were getting it while being beaten soundly, which is the opposite
     // of what it is for.
-    if(!mayReachChampion(profile, myRank) || deficit!==0 || margin<4){
+    // The two mechanisms were working against each other. Making the field's questions
+    // easier closes the gap, which is exactly what we want — but the hidden level was
+    // gated on the leader being FOUR CLEAR, and a compressed field means she never is.
+    // She won by less and was never stretched, which is only half the job.
+    //
+    // Her own pace does not depend on the margin: a long run of fast correct answers means
+    // she is finding it easy whether or not the scoreboard shows it. Either route opens it.
+    const flyingNow = racePaceShift(live) >= 2;
+    if(!mayReachChampion(profile, myRank) || deficit!==0 || !(margin>=3 || flyingNow)){
       want=Math.min(want, RACE_LEVELS.indexOf('hard'));
     }
   }
@@ -6683,7 +6691,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.72';
+const BUILD = '2026-08-12.73';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
