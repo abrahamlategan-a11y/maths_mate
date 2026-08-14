@@ -4442,6 +4442,643 @@ function genStatisticsY4(diff){
 }
 
 // ============================================================
+// YEAR 2 — Maths Trek 2, 18 questions.
+// ------------------------------------------------------------
+// THE DRAWING LAYER. Shared with Pre-Primary and every year after. A year level
+// never writes its own SVG: y2gen.js used to carry private copies of the clock,
+// the number line and the fraction shape, which is how two clocks end up drifting
+// apart. These are the single copy.
+//
+// Every function returns a plain SVG string carrying an aria-label, so the picture
+// has something to say to the read-aloud. Everything a Year 2 question shows goes
+// through q.svg, which the student view, the printable sheet, the teacher editor and
+// the read-aloud already handle. No renderer needed changing to add this year.
+// ============================================================
+const Y2_INK='#2B2620', Y2_PAPER='#FFFDF8', Y2_HI='#FF7A1A';
+
+// ---- MAB blocks: hundreds flats, tens longs, ones cubes ----
+function y2mabSVG(h,t,o){
+  const U=9, SKEW=0.42;
+  const C={face:'#E8734A', top:'#F2A183', side:'#C2542F', line:'#8E3A1E'};
+  const piece=(x,y,wU,hU)=>{
+    const w=wU*U, hgt=hU*U, dx=U*SKEW, dy=U*SKEW*0.5; let rules='';
+    for(let i=1;i<wU;i++) rules+=`<line x1="${x+i*U}" y1="${y}" x2="${x+i*U}" y2="${y+hgt}" stroke="${C.line}" stroke-width="0.5" opacity="0.65"/>`;
+    for(let i=1;i<hU;i++) rules+=`<line x1="${x}" y1="${y+i*U}" x2="${x+w}" y2="${y+i*U}" stroke="${C.line}" stroke-width="0.5" opacity="0.65"/>`;
+    return `<g><polygon points="${x},${y} ${x+w},${y} ${x+w},${y+hgt} ${x},${y+hgt}" fill="${C.face}" stroke="${C.line}" stroke-width="1"/>${rules}`
+      + `<polygon points="${x},${y} ${x+dx},${y-dy} ${x+w+dx},${y-dy} ${x+w},${y}" fill="${C.top}" stroke="${C.line}" stroke-width="1"/>`
+      + `<polygon points="${x+w},${y} ${x+w+dx},${y-dy} ${x+w+dx},${y+hgt-dy} ${x+w},${y+hgt}" fill="${C.side}" stroke="${C.line}" stroke-width="1"/></g>`;
+  };
+  const parts=[]; let x=6; const top=14; let maxH=0;
+  for(let i=0;i<h;i++){ parts.push(piece(x,top,10,10)); x+=10*U+11; maxH=Math.max(maxH,10*U); }
+  for(let i=0;i<t;i++){ parts.push(piece(x,top,1,10));  x+=U+5;      maxH=Math.max(maxH,10*U); }
+  if(t) x+=8;
+  for(let i=0;i<o;i++){ parts.push(piece(x,top,1,1));   x+=U+5;      maxH=Math.max(maxH,U); }
+  const w=Math.max(60,x+10);
+  return `<svg viewBox="0 0 ${w} ${top+maxH+10}" width="100%" style="max-width:${Math.min(w,470)}px" role="img" `
+    + `aria-label="${h} hundreds, ${t} tens and ${o} ones">${parts.join('')}</svg>`;
+}
+
+// ---- number line ----
+function y2numberLineSVG(max, target, min){
+  min = min||0;
+  const w=520, y=52, x0=24, x1=w-24;
+  const pos = x0 + ((target-min)/(max-min))*(x1-x0);
+  let ticks='';
+  for(let i=0;i<=10;i++){
+    const x=x0+(i/10)*(x1-x0), v=min+i*((max-min)/10);
+    const show=(i===0||i===10);
+    ticks+=`<line x1="${x}" y1="${y-8}" x2="${x}" y2="${y+8}" stroke="${Y2_INK}" stroke-width="${show?2.5:1.5}"/>`;
+    if(show) ticks+=`<text x="${x}" y="${y+26}" text-anchor="middle" font-family="'IBM Plex Mono',monospace" font-size="13" fill="${Y2_INK}">${v}</text>`;
+  }
+  return `<svg viewBox="0 0 ${w} 82" width="100%" style="max-width:${w}px" role="img" aria-label="number line from ${min} to ${max}">`
+    + `<line x1="${x0}" y1="${y}" x2="${x1}" y2="${y}" stroke="${Y2_INK}" stroke-width="2.5"/>${ticks}`
+    + `<polygon points="${pos},${y-12} ${pos-7},${y-26} ${pos+7},${y-26}" fill="${Y2_HI}" stroke="${Y2_INK}" stroke-width="2"/></svg>`;
+}
+
+// ---- clock ----
+function y2clockSVG(h,m){
+  const cx=62, cy=62, r=54; let marks='';
+  for(let i=1;i<=12;i++){ const a=(i*30-90)*Math.PI/180;
+    marks+=`<text x="${(cx+(r-13)*Math.cos(a)).toFixed(1)}" y="${(cy+(r-13)*Math.sin(a)).toFixed(1)}" text-anchor="middle" dominant-baseline="central" font-family="'Baloo 2',sans-serif" font-weight="700" font-size="13" fill="${Y2_INK}">${i}</text>`; }
+  const ma=(m*6-90)*Math.PI/180, ha=((h%12)*30+m*0.5-90)*Math.PI/180;
+  return `<svg viewBox="0 0 124 124" width="150" height="150" role="img" aria-label="clock face">`
+    + `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${Y2_PAPER}" stroke="${Y2_INK}" stroke-width="3"/>${marks}`
+    + `<line x1="${cx}" y1="${cy}" x2="${(cx+(r-26)*Math.cos(ha)).toFixed(1)}" y2="${(cy+(r-26)*Math.sin(ha)).toFixed(1)}" stroke="${Y2_INK}" stroke-width="5" stroke-linecap="round"/>`
+    + `<line x1="${cx}" y1="${cy}" x2="${(cx+(r-14)*Math.cos(ma)).toFixed(1)}" y2="${(cy+(r-14)*Math.sin(ma)).toFixed(1)}" stroke="${Y2_HI}" stroke-width="3.5" stroke-linecap="round"/>`
+    + `<circle cx="${cx}" cy="${cy}" r="4" fill="${Y2_INK}"/></svg>`;
+}
+
+// ---- fraction shape: bar or circle ----
+function y2fracShapeSVG(parts, shaded, shape){
+  if(shape==='circle'){
+    const r=46, cx=52, cy=52; let g='';
+    for(let i=0;i<parts;i++){
+      const a0=(i/parts)*2*Math.PI-Math.PI/2, a1=((i+1)/parts)*2*Math.PI-Math.PI/2;
+      const x0=cx+r*Math.cos(a0), y0=cy+r*Math.sin(a0), x1=cx+r*Math.cos(a1), y1=cy+r*Math.sin(a1);
+      g+=`<path d="M${cx},${cy} L${x0.toFixed(1)},${y0.toFixed(1)} A${r},${r} 0 ${(a1-a0)>Math.PI?1:0} 1 ${x1.toFixed(1)},${y1.toFixed(1)} Z" fill="${i<shaded?Y2_HI:Y2_PAPER}" stroke="${Y2_INK}" stroke-width="2"/>`;
+    }
+    return `<svg viewBox="0 0 104 104" width="130" height="130" role="img" aria-label="${shaded} of ${parts} equal parts shaded">${g}</svg>`;
+  }
+  const w=260, h=64, seg=w/parts; let g='';
+  for(let i=0;i<parts;i++)
+    g+=`<rect x="${i*seg+2}" y="2" width="${seg-4}" height="${h-4}" rx="3" fill="${i<shaded?Y2_HI:Y2_PAPER}" stroke="${Y2_INK}" stroke-width="2"/>`;
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px" role="img" aria-label="${shaded} of ${parts} equal parts shaded">${g}</svg>`;
+}
+
+// ---- Australian notes: DRAWN, never photographed and never AI-generated. ----
+// The Reserve Bank restricts reproductions of banknotes and licenses its education
+// images for non-commercial use only, which a paid schools product is not. A child
+// identifies a note here by its colour and its number, which is what they do in a shop.
+const Y2_NOTES=[
+  {v:500,   l:'$5',   bg:'#B99BC9', ink:'#3B2A47', name:'five dollars'},
+  {v:1000,  l:'$10',  bg:'#7FA9D8', ink:'#1E3652', name:'ten dollars'},
+  {v:2000,  l:'$20',  bg:'#E08A6B', ink:'#5A2A15', name:'twenty dollars'},
+  {v:5000,  l:'$50',  bg:'#E2C46A', ink:'#4E3D0E', name:'fifty dollars'},
+  {v:10000, l:'$100', bg:'#8FC49B', ink:'#20402A', name:'one hundred dollars'},
+];
+function y2noteSVG(cents){
+  const n=Y2_NOTES.find(x=>x.v===cents)||Y2_NOTES[0], w=104, h=52;
+  return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${n.name}">`
+    + `<rect x="1" y="1" width="${w-2}" height="${h-2}" rx="5" fill="${n.bg}" stroke="${n.ink}" stroke-width="1.6"/>`
+    + `<rect x="6" y="6" width="${w-12}" height="${h-12}" rx="3" fill="none" stroke="${n.ink}" stroke-width="0.7" opacity="0.45"/>`
+    + `<circle cx="${w-20}" cy="${h/2}" r="12" fill="#fff" opacity="0.28"/>`
+    + `<text x="26" y="${h/2}" text-anchor="middle" dominant-baseline="central" font-family="'Baloo 2',sans-serif" font-weight="800" font-size="19" fill="${n.ink}">${n.l}</text></svg>`;
+}
+// A row of notes laid side by side, for "have I got enough?".
+function y2noteRowSVG(centsList){
+  const w=110, h=58;
+  const g=centsList.map((c,i)=>`<g transform="translate(${i*w},3)">${y2noteSVG(c)}</g>`).join('');
+  const names=centsList.map(c=>(Y2_NOTES.find(x=>x.v===c)||{}).name).join(', ');
+  return `<svg viewBox="0 0 ${Math.max(w,centsList.length*w)} ${h}" width="100%" style="max-width:${Math.min(centsList.length*w,470)}px" role="img" aria-label="${names}">${g}</svg>`;
+}
+
+// ---- a row of coins, using the Year 4 coin graphics ----
+// Correct relative sizes, the gold and silver split and the 50c dodecagon already
+// exist in this file from the Year 4 work. Year 2 reuses them rather than drawing
+// a second, slightly different set of Australian coins.
+function y2coinRowSVG(centsList){
+  const step=64;
+  const g=centsList.map((c,i)=>`<g transform="translate(${i*step+32},34)"><g transform="translate(-30,-30)">${coinSVG(c)}</g></g>`).join('');
+  const names=centsList.map(c=>coinByValue(c).l).join(', ');
+  return `<svg viewBox="0 0 ${Math.max(step,centsList.length*step)} 68" width="100%" style="max-width:${Math.min(centsList.length*step,440)}px" role="img" aria-label="coins: ${names}">${g}</svg>`;
+}
+
+// ---- emoji rows and grids, as SVG ----
+// The picture for patterns, arrays, fractions of a group and direction. It goes into
+// q.svg like every other picture rather than into a new field, because a new field
+// would have to be whitelisted in buildQuestion and then taught to four separate
+// renderers, and anything missed there fails silently with a blank question.
+function y2emojiSVG(rows, label, size){
+  size = size||30;
+  const pad=8, cell=size*1.35;
+  const cols=Math.max(...rows.map(r=>r.length));
+  const w=cols*cell+pad*2, h=rows.length*cell+pad*2;
+  let g='';
+  rows.forEach((row,ri)=> row.forEach((ch,ci)=>{
+    g+=`<text x="${pad+ci*cell+cell/2}" y="${pad+ri*cell+cell/2}" text-anchor="middle" dominant-baseline="central" font-size="${size}">${ch}</text>`;
+  }));
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${Math.min(w,440)}px" role="img" aria-label="${label}">${g}</svg>`;
+}
+
+// ============================================================
+// THE 18 GENERATORS.
+// ------------------------------------------------------------
+// Every generator declares a `form`. The form is the shape of the question, and it
+// becomes the subskill the gradebook records. It exists because RULE 1 is checked
+// against it: no form may live in only one difficulty band. Turns used to appear at
+// hard only, so an easy or a medium child never met the idea at all — a gap in the
+// curriculum wearing the costume of a difficulty setting.
+//
+// Difficulty is the MIX, never the menu. Each generator lists every form at every
+// level and changes only how often each is drawn, and how big the numbers are.
+// ============================================================
+const Y2_WORDS={0:'zero',1:'one',2:'two',3:'three',4:'four',5:'five',6:'six',7:'seven',8:'eight',9:'nine',
+ 10:'ten',11:'eleven',12:'twelve',13:'thirteen',14:'fourteen',15:'fifteen',16:'sixteen',17:'seventeen',
+ 18:'eighteen',19:'nineteen',20:'twenty',30:'thirty',40:'forty',50:'fifty',60:'sixty',70:'seventy',
+ 80:'eighty',90:'ninety'};
+function y2NumWords(n){
+  if(n<21) return Y2_WORDS[n];
+  if(n<100){ const t=Math.floor(n/10)*10, o=n%10; return o? Y2_WORDS[t]+'-'+Y2_WORDS[o] : Y2_WORDS[t]; }
+  const h=Math.floor(n/100), r=n%100;
+  return Y2_WORDS[h]+' hundred'+(r? ' and '+y2NumWords(r) : '');
+}
+function y2Lvl(d){ return d==='easy'||d==='medium'||d==='hard' ? d : 'medium'; }
+
+// ---- 1. Blocks to number ----
+// Easy stays under 100, so it is tens and ones only. Medium adds hundreds. Hard puts a
+// ZERO in the middle, which is the thing children actually get wrong: 302 read as 32.
+// Capped at 5 hundreds — nine flats is 900 unit squares, a wall of blocks rather than
+// something a child counts, and 29KB of drawing.
+function y2_blocks(diff){
+  const level=y2Lvl(diff); let h=0,t,o;
+  if(level==='easy'){ t=randInt(1,9); o=randInt(1,9); }
+  else if(level==='medium'){ h=randInt(1,4); t=randInt(1,9); o=randInt(0,9); }
+  else { h=randInt(1,5); if(Math.random()<0.5){ t=0; o=randInt(1,9); } else { t=randInt(1,9); o=0; } }
+  const n=h*100+t*10+o;
+  return { form:'blocks_to_number', prompt:'What number is shown?', svg:y2mabSVG(h,t,o),
+    answer:String(n), explanation:`${h?h+' hundreds, ':''}${t} tens and ${o} ones is ${n}.` };
+}
+
+// ---- 2. Place value and expanded notation ----
+// Expanded notation used to be hard only. It is now at every level; at easy it is a
+// two-digit number, which is the same idea at a size an easy child can hold.
+function y2_placeValue(diff){
+  const level=y2Lvl(diff);
+  const form=pick(level==='easy'   ? ['digit','digit','digit','digit','expanded']
+                : level==='medium' ? ['digit','digit','expanded','expanded']
+                :                    ['digit','expanded','expanded']);
+  if(form==='expanded'){
+    if(level==='easy'){
+      const t=randInt(1,9), o=randInt(1,9), n=t*10+o;
+      return { form:'expanded_notation', prompt:`Write ${n} in expanded notation.`,
+        partsLead:`${n} =`, partsJoin:'+', parts:[String(t*10),String(o)],
+        answer:`${t*10},${o}`, explanation:`${n} = ${t*10} + ${o}.` };
+    }
+    const n=randInt(100,999), h=Math.floor(n/100), t=Math.floor(n/10)%10, o=n%10;
+    return { form:'expanded_notation', prompt:`Write ${n} in expanded notation.`,
+      partsLead:`${n} =`, partsJoin:'+', parts:[String(h*100),String(t*10),String(o)],
+      answer:`${h*100},${t*10},${o}`, explanation:`${n} = ${h*100} + ${t*10} + ${o}.` };
+  }
+  const n = level==='easy' ? randInt(11,99) : randInt(100,999);
+  const digits={ ones:n%10, tens:Math.floor(n/10)%10, hundreds:Math.floor(n/100) };
+  const place=pick(level==='easy'?['tens','ones']:['hundreds','tens','ones']);
+  return { form:'digit_in_place', prompt:`How many ${place} in ${n}?`,
+    answer:String(digits[place]), explanation:`${n} has ${digits[place]} ${place}.` };
+}
+
+// ---- 3. Regrouping and renaming ----
+// Both directions at every level. "490 is how many tens" used to be hard only, so the
+// renaming direction — the one that is actually the skill — was the one most children
+// never saw.
+function y2_regroup(diff){
+  const level=y2Lvl(diff);
+  const form=pick(level==='easy'   ? ['tens_to_number','tens_to_number','tens_to_number','number_to_tens']
+                : level==='medium' ? ['tens_to_number','tens_to_number','number_to_tens']
+                :                    ['tens_to_number','number_to_tens','number_to_tens']);
+  const t = level==='easy'? randInt(2,9) : level==='medium'? randInt(11,40) : randInt(11,49);
+  if(form==='number_to_tens')
+    return { form, prompt:`${t*10} is the same as how many tens?`, answer:String(t),
+      explanation:`${t*10} is ${t} tens.` };
+  return { form, prompt:`${t} tens is the same as what number?`, answer:String(t*10),
+    explanation:`${t} tens is ${t*10}.` };
+}
+
+// ---- 4. Numbers in words and digits ----
+function y2_words(diff){
+  const level=y2Lvl(diff);
+  const form=pick(level==='easy'   ? ['match_word','match_word','match_word','to_digits']
+                : level==='medium' ? ['match_word','match_word','to_digits']
+                :                    ['match_word','to_digits','to_digits']);
+  const n = level==='easy'? randInt(11,99) : randInt(100,999);
+  if(form==='to_digits')
+    return { form, prompt:`Write this number in digits: ${y2NumWords(n)}`,
+      answer:String(n), explanation:`${y2NumWords(n)} is ${n}.` };
+  const step = n<100?10:100;
+  const opts=new Set([y2NumWords(n)]);
+  opts.add(y2NumWords(n+step)); opts.add(y2NumWords(Math.max(1,n-(n<100?1:10))));
+  return { form, prompt:`Which word matches ${n}?`, choices:[...opts],
+    answer:y2NumWords(n), explanation:`${n} is ${y2NumWords(n)}.` };
+}
+
+// ---- 5. Ordering ----
+function y2_order(diff){
+  const level=y2Lvl(diff);
+  const max = level==='easy'?100: level==='medium'?500:1000;
+  const want = level==='hard'?4:3;
+  const set=new Set(); while(set.size<want) set.add(randInt(10,max));
+  const nums=[...set], sorted=nums.slice().sort((a,b)=>a-b);
+  return { form:'order_smallest_first', prompt:'Put these in order, smallest first.',
+    items:nums.map(String), answer:sorted.join(','),
+    explanation:`Smallest to largest: ${sorted.join(', ')}.` };
+}
+
+// ---- 6. Number line ----
+function y2_numberLine(diff){
+  const level=y2Lvl(diff);
+  const max = level==='easy'? 100 : level==='medium'? 500 : 1000;
+  const target = randInt(1,9)*(max/10);
+  return { form:'read_number_line', prompt:'What number does the arrow point to?',
+    svg:y2numberLineSVG(max,target), answer:String(target),
+    explanation:`The line goes up in ${max/10}s, so the arrow is on ${target}.` };
+}
+
+// ---- 7. Sequences ----
+// Year 2 counts to 1000, not past it. A sequence ending 1050 looks like a mistake to a
+// teacher even though the pattern is correct.
+function y2_sequence(diff){
+  const level=y2Lvl(diff);
+  const form=pick(level==='easy'   ? ['count_up','count_up','count_up','count_back']
+                : level==='medium' ? ['count_up','count_up','count_back']
+                :                    ['count_up','count_back']);
+  const step = level==='easy'? pick([1,2,5,10]) : level==='medium'? pick([2,3,5,10]) : pick([3,4,25,50]);
+  const back = form==='count_back';
+  for(let tries=0;tries<40;tries++){
+    const start = randInt(2, Math.floor((level==='easy'?90:900)/step)) * step;
+    const terms=[0,1,2].map(i=> back ? start-i*step : start+i*step);
+    const next = back ? start-3*step : start+3*step;
+    if(next<0 || next>1000 || terms.some(x=>x>1000 || x<0)) continue;
+    return { form, prompt:`${terms.join(', ')}, ?`, answer:String(next),
+      explanation:`The pattern goes ${back?'back':'up'} by ${step}.` };
+  }
+  return { form:'count_up', prompt:'2, 4, 6, ?', answer:'8', explanation:'The pattern goes up by 2.' };
+}
+
+// ---- 8. Repeating and growing patterns ----
+// "Is it repeating or growing?" used to be hard only. It is a different question, not a
+// bigger one, so it belongs at every level.
+function y2_pattern(diff){
+  const level=y2Lvl(diff);
+  const form=pick(level==='easy'   ? ['what_comes_next','what_comes_next','what_comes_next','repeating_or_growing']
+                : level==='medium' ? ['what_comes_next','what_comes_next','repeating_or_growing']
+                :                    ['what_comes_next','repeating_or_growing','repeating_or_growing']);
+  if(form==='what_comes_next'){
+    const shapes=pick([['🔴','🔵'],['⭐','🌙'],['🟢','🟡','🔺']]);
+    const unit = level==='easy' ? shapes.slice(0,2) : shapes;
+    const seq=[]; for(let i=0;i<7;i++) seq.push(unit[i%unit.length]);
+    return { form, prompt:'What comes next?',
+      svg:y2emojiSVG([seq],'a repeating pattern'),
+      choices:unit.slice(), answer:unit[7%unit.length],
+      explanation:`The pattern repeats every ${unit.length}.` };
+  }
+  const growing=Math.random()<0.5;
+  const rows = growing ? [['🔴'],['🔴','🔴'],['🔴','🔴','🔴'],['🔴','🔴','🔴','🔴']]
+                       : [['🔴','🔵'],['🔴','🔵'],['🔴','🔵'],['🔴','🔵']];
+  return { form, prompt:'Is this pattern repeating or growing?',
+    svg:y2emojiSVG(rows, growing?'each row is one longer':'the same two shapes each row'),
+    choices:['repeating','growing'], answer: growing?'growing':'repeating',
+    explanation: growing?'Each step gets bigger, so it is growing.':'The same part repeats.' };
+}
+
+// ---- 9. Odd and even ----
+function y2_oddEven(diff){
+  const level=y2Lvl(diff);
+  const n = level==='easy'? randInt(1,20) : level==='medium'? randInt(20,99) : randInt(100,999);
+  return { form:'odd_or_even', prompt:`Is ${n} odd or even?`, choices:['odd','even'],
+    answer: n%2 ? 'odd':'even', explanation:`${n} ends in ${n%10}, so it is ${n%2?'odd':'even'}.` };
+}
+
+// ---- 10 & 11. Two-digit addition and subtraction ----
+// The six Maths Trek lessons on ten frames, friendly jumps, friendly pairs, the split
+// strategy, bar models and the jump strategy are all one question: can they add. The
+// child brings whichever strategy they like; we do not prescribe one.
+function y2_addSub(diff, sub){
+  const level=y2Lvl(diff); let a,b;
+  if(level==='easy'){
+    if(sub){
+      // Easy subtraction must not need borrowing. Capping b at a's ones digit is not
+      // enough on its own: when a ends in 0 there is no ones digit to cap to, and
+      // 30 - 2 borrows. So a is built with a ones digit of at least 2 and b is drawn
+      // from inside it.
+      a=randInt(1,4)*10 + randInt(2,9); b=randInt(2, a%10);
+    } else { a=randInt(11,49); b=randInt(2,9); }
+  }
+  else if(level==='medium'){ a=randInt(21,79); b=randInt(3,9); }
+  else { a=randInt(101,499); b=randInt(11,49); }
+  if(sub) return { form:'subtract_'+level, prompt:`${a} − ${b}`, answer:String(a-b),
+    explanation:`${a} − ${b} = ${a-b}.` };
+  return { form:'add_'+level, prompt:`${a} + ${b}`, answer:String(a+b),
+    explanation:`${a} + ${b} = ${a+b}.` };
+}
+function y2_addition(diff){ const q=y2_addSub(diff,false); q.form='add'; return q; }
+function y2_subtraction(diff){ const q=y2_addSub(diff,true); q.form='subtract'; return q; }
+
+// ---- 12. Groups and arrays ----
+// Rows and columns are LABELLED on the answer boxes, so asking for rows first is a
+// stated instruction rather than a convention the child is expected to guess.
+function y2_array(diff){
+  const level=y2Lvl(diff);
+  const form=pick(level==='easy'   ? ['how_many_altogether','how_many_altogether','how_many_altogether','write_multiplication']
+                : level==='medium' ? ['how_many_altogether','how_many_altogether','write_multiplication']
+                :                    ['how_many_altogether','write_multiplication','write_multiplication']);
+  const rows = level==='easy'? randInt(2,3) : level==='medium'? randInt(2,5) : randInt(2,10);
+  const cols = level==='easy'? pick([2,5])  : level==='medium'? pick([2,5,10]) : randInt(2,10);
+  const dot=pick(['🍎','⚽','🐟','🌸','🚗']);
+  const grid=Array.from({length:rows},()=>Array(cols).fill(dot));
+  const svg=y2emojiSVG(grid, `${rows} rows of ${cols}`, rows*cols>40?18:26);
+  if(form==='write_multiplication')
+    return { form, prompt:'Write a multiplication for this array.', svg,
+      partsLead:'', partsJoin:'×', partsLabels:['rows','in each row'],
+      parts:[String(rows),String(cols)], answer:`${rows},${cols}`,
+      explanation:`${rows} rows of ${cols} is ${rows} × ${cols} = ${rows*cols}.` };
+  return { form, prompt:'How many altogether?', svg, answer:String(rows*cols),
+    explanation:`${rows} rows of ${cols} is ${rows*cols}.` };
+}
+
+// ---- 13. Sharing and grouping ----
+// Two different questions that look alike: how many in each group, and how many groups.
+// The second used to be hard only, which hid half the concept.
+function y2_share(diff){
+  const level=y2Lvl(diff);
+  const form=pick(level==='easy'   ? ['how_many_each','how_many_each','how_many_each','how_many_groups']
+                : level==='medium' ? ['how_many_each','how_many_each','how_many_groups']
+                :                    ['how_many_each','how_many_groups','how_many_groups']);
+  const per    = level==='easy'? pick([2,5,10]) : level==='medium'? randInt(2,8) : randInt(2,10);
+  const groups = level==='easy'? randInt(2,5)   : level==='medium'? randInt(2,8) : randInt(2,10);
+  const total=per*groups;
+  if(form==='how_many_groups')
+    // Nine words, and raising how often this form appears pushed the whole generator
+    // past the reading-load rule. Seven words, and it is plainer English besides.
+    return { form, prompt:`How many groups of ${per} in ${total}?`,
+      answer:String(groups), explanation:`${total} ÷ ${per} = ${groups}.` };
+  return { form, prompt:`Share ${total} between ${groups}. How many each?`,
+    answer:String(per), explanation:`${total} ÷ ${groups} = ${per}.` };
+}
+
+// ---- 14. Fraction of a shape ----
+function y2_fracShape(diff){
+  const level=y2Lvl(diff);
+  const form=pick(level==='easy'   ? ['is_it_halves','is_it_halves','is_it_halves','name_the_fraction']
+                : level==='medium' ? ['is_it_halves','name_the_fraction','name_the_fraction']
+                :                    ['is_it_halves','name_the_fraction','name_the_fraction']);
+  const parts = level==='easy'? pick([2,4]) : level==='medium'? pick([2,3,4]) : pick([2,3,4,6,8]);
+  // Several-parts-shaded used to be hard only. It is now at every level; at easy the
+  // shape is only cut into two or four, which is the same idea at a size that fits.
+  const shaded = (parts>2 && Math.random() < (level==='easy'?0.25:level==='medium'?0.4:0.6))
+    ? randInt(2,parts-1) : 1;
+  const shape = (level==='hard'&&Math.random()<0.5)?'circle':'bar';
+  const svg=y2fracShapeSVG(parts, shaded, shape);
+  if(form==='is_it_halves')
+    return { form, prompt:'Does this show halves?', svg, choices:['yes','no'],
+      answer: (parts===2 && shaded===1)?'yes':'no',
+      explanation: (parts===2&&shaded===1)?'Two equal parts, one shaded. That is halves.':`This is ${parts} equal parts.` };
+  // One shaded part and several shaded parts are different ideas, so they are different
+  // forms. Folded into one label, "2 of 3 shaded" lived at hard only and rule 1 was blind
+  // to it.
+  return { form:(shaded===1?'name_unit_fraction':'name_several_parts'), prompt:'What fraction is shaded?', svg,
+    fracNumAns:shaded, fracDenAns:parts, answer:`${shaded}/${parts}`,
+    explanation:`${shaded} of ${parts} equal parts is ${shaded}/${parts}.` };
+}
+
+// ---- 15. Fraction of a group ----
+function y2_fracGroup(diff){
+  const level=y2Lvl(diff);
+  const form=pick(level==='easy'   ? ['half_of','half_of','half_of','quarter_of']
+                : level==='medium' ? ['half_of','half_of','quarter_of']
+                :                    ['half_of','quarter_of','quarter_of']);
+  const parts = form==='half_of'?2:4;
+  const per = level==='easy'? randInt(2,3) : level==='medium'? randInt(2,6) : randInt(2,8);
+  const total=parts*per;
+  const dot=pick(['🍓','🐠','🎈','🧁']);
+  const rows=[]; for(let i=0;i<total;i+=8) rows.push(Array(Math.min(8,total-i)).fill(dot));
+  return { form, prompt:`What is ${parts===2?'half':'a quarter'} of ${total}?`,
+    svg:y2emojiSVG(rows, `${total} things`), answer:String(per),
+    explanation:`${total} shared into ${parts} equal groups is ${per} each.` };
+}
+
+// ---- 16. Money ----
+// Recognising a coin, totalling a handful and deciding whether it is enough all appear
+// at every level. Only the amounts and the number of pieces change. "Is it enough" used
+// to be hard only, which meant most children never met the one money question that is
+// actually about money rather than about adding.
+//
+// Totals are asked in CENTS and the prompt says so, because "how much altogether" invites
+// 85c, $0.85 and 85, and only one of those can be the marked answer.
+const Y2_COIN_VALUES=[5,10,20,50,100,200];
+function y2_money(diff){
+  const level=y2Lvl(diff);
+  const form=pick(['recognise','total','enough']);
+  if(form==='recognise'){
+    // Every Australian coin is recognisable at every level. Restricting easy to the
+    // silver coins meant an easy child never once saw a $1 or a $2, which is not a
+    // difficulty setting, it is a hole. What changes is how many lookalikes sit beside it.
+    const v=pick(Y2_COIN_VALUES);
+    const others=Y2_COIN_VALUES.filter(x=>x!==v).sort(()=>Math.random()-0.5).slice(0, level==='easy'?2:3);
+    const label=(c)=> c<100 ? `${c}c` : `$${c/100}`;
+    const vals=[v,...others].sort(()=>Math.random()-0.5);
+    const coins=vals.map((cv,i)=>({v:cv, l:coinByValue(cv).l, id:'y2c'+i,
+      dx:randInt(-4,4), dy:randInt(-4,4), rot:randInt(-10,10)}));
+    return { form:'recognise_'+label(v), prompt:`Tap the ${label(v)} coin.`,
+      coinTray:coins, targetCents:v, minCoins:1, answer:String(v),
+      explanation:`That is the ${label(v)} coin.` };
+  }
+  if(form==='total'){
+    const howMany = level==='easy'? 2 : level==='medium'? randInt(2,3) : randInt(3,4);
+    const pool    = level==='easy'? [5,10,20] : level==='medium'? [5,10,20,50] : Y2_COIN_VALUES;
+    const coins=[]; let total=0;
+    for(let i=0;i<howMany;i++){ const c=pick(pool); coins.push(c); total+=c; }
+    coins.sort((a,b)=>b-a);
+    return { form:'total_coins', prompt:'How many cents altogether?',
+      svg:y2coinRowSVG(coins), answer:String(total),
+      explanation:`That is ${total}c${total>=100?', which is $'+(total/100).toFixed(2):''}.` };
+  }
+  const priceC = (level==='easy'? randInt(2,6) : level==='medium'? randInt(3,12) : randInt(3,18))*50;
+  const notes=[]; let have=0;
+  while(have<priceC*0.7){ const n=pick([500,1000,2000]); notes.push(n); have+=n; }
+  if(Math.random()<0.5){ const n=pick([500,1000]); notes.push(n); have+=n; }
+  notes.sort((a,b)=>b-a);
+  return { form:'is_it_enough', prompt:`A toy costs $${(priceC/100).toFixed(2)}. Is this enough?`,
+    svg:y2noteRowSVG(notes), choices:['yes','no'], answer: have>=priceC?'yes':'no',
+    explanation:`That is $${(have/100).toFixed(2)}, so it is ${have>=priceC?'enough':'not enough'}.` };
+}
+
+// ---- 17. Time — o'clock to quarter to ----
+// Every time appears at every level. O'clock-only at easy means an easy child never
+// meets half past at all. What changes is the MIX, not which times exist.
+function y2_time(diff){
+  const level=y2Lvl(diff);
+  const h=randInt(1,12);
+  const opts = level==='easy'  ? [0,0,0,0,15,30,45]
+             : level==='medium'? [0,0,30,30,15,45]
+             :                   [0,15,30,45];
+  const say=(hh,mm)=> mm===45 ? `quarter to ${hh===12?1:hh+1}`
+                    : mm===0  ? `${hh} o'clock`
+                    : `${mm===15?'quarter past':'half past'} ${hh}`;
+  const m=pick(opts);
+  const label=say(h,m);
+  const wrong=[];
+  let guard=0;
+  while(wrong.length<3 && guard++<200){
+    const wl=say(randInt(1,12), pick([0,15,30,45]));
+    if(wl!==label && wrong.indexOf(wl)===-1) wrong.push(wl);
+  }
+  return { form:'read_clock_'+({0:'oclock',15:'quarter_past',30:'half_past',45:'quarter_to'}[m]),
+    prompt:'What time is it?', svg:y2clockSVG(h,m),
+    choices:[label,...wrong].sort(()=>Math.random()-0.5), answer:label,
+    explanation:`The hands show ${label}.` };
+}
+
+// ---- 18. Direction and turns ----
+// The teachers' "lefts and rights". EVERY form appears at EVERY level, including turns
+// and including turning left. Hiding turns at hard meant an easy or medium child never
+// met the concept. What changes between levels is how much has to be held in mind —
+// how many things in the row, and how far along it — not which ideas exist.
+const Y2_DIR_ITEMS=['🍎','🍌','⚽','🐶','🚗','🌟','🎈','🐟'];
+function y2_direction(diff){
+  const level=y2Lvl(diff);
+  const form=pick(['which_side','next_to','ordinal','turn']);
+  const n = level==='easy'? 4 : level==='medium'? 5 : 6;
+  const items=Y2_DIR_ITEMS.slice().sort(()=>Math.random()-0.5).slice(0,n);
+  const svg=y2emojiSVG([items], 'a row of pictures', 30);
+
+  if(form==='which_side'){
+    const side=pick(['left','right']);
+    const ans = side==='left'? items[0] : items[items.length-1];
+    return { form:'which_side', prompt:`Which one is on the ${side}?`, svg,
+      choices:items.slice(), answer:ans, explanation:`${ans} is on the ${side}.` };
+  }
+  if(form==='next_to'){
+    const side=pick(['left','right']);
+    const i2 = side==='right' ? randInt(0,items.length-2) : randInt(1,items.length-1);
+    const ans = side==='right'? items[i2+1] : items[i2-1];
+    return { form:'next_to', prompt:`What is to the ${side} of ${items[i2]}?`, svg,
+      choices:items.slice(), answer:ans, explanation:`Looking ${side} from ${items[i2]}.` };
+  }
+  if(form==='ordinal'){
+    // All four ordinals exist at every level. Easy leans on first and second, hard is even.
+    const spots=pick(level==='easy'   ? [1,1,1,2,2,3,4]
+                   : level==='medium' ? [1,1,2,2,3,4]
+                   :                    [1,2,3,4]);
+    const word={1:'first',2:'second',3:'third',4:'fourth'}[spots];
+    return { form:'ordinal_'+word, prompt:`Which one is ${word} from the left?`, svg,
+      choices:items.slice(), answer:items[spots-1],
+      explanation:`Counting from the left, ${items[spots-1]} is ${word}.` };
+  }
+  // Turns. All four combinations of quarter/half and right/left exist at every level.
+  const dirs=['up','right','down','left'];
+  const start=randInt(0,3);
+  // All four combinations at all three levels. Easy leans heavily on the quarter turn
+  // right, which is the one a child meets first, but every turn is reachable — the point
+  // of rule 1. Rule 1 found half-left missing from easy here the moment the form labels
+  // were made specific enough to show it.
+  const combo=pick(level==='easy'   ? [['quarter','right'],['quarter','right'],['quarter','right'],['quarter','right'],
+                                       ['quarter','left'],['quarter','left'],['half','right'],['half','left']]
+                 : level==='medium' ? [['quarter','right'],['quarter','right'],['quarter','left'],['quarter','left'],
+                                       ['half','right'],['half','left']]
+                 :                    [['quarter','right'],['quarter','left'],['half','right'],['half','left']]);
+  const turn=combo[0], way=combo[1];
+  const steps=(turn==='quarter'?1:2) * (way==='right'?1:-1);
+  const end=((start+steps)%4+4)%4;
+  // The form names the turn, not just "a turn". A single 'turn' form let quarter-left
+  // and half-turns hide inside it, which is the fault rule 1 exists to catch — and rule
+  // 1 could not see it, because the classifier was looking at a label too coarse to show
+  // the difference. The label is the check; a vague label is no check.
+  return { form:`turn_${turn}_${way}`, prompt:`You face ${dirs[start]}. Make a ${turn} turn ${way}. Which way now?`,
+    choices:dirs.slice(), answer:dirs[end],
+    explanation:`A ${turn} turn ${way} from ${dirs[start]} faces ${dirs[end]}.` };
+}
+
+// ============================================================
+// THE ADAPTER.
+// ------------------------------------------------------------
+// The generators above describe a question in the terms Year 2 thinks in: a picture,
+// some choices, a fraction, a tray of coins. This turns that into the field names
+// buildQuestion() whitelists and gradeQuestion() understands.
+//
+// It exists as ONE function rather than being spread through eighteen generators
+// because buildQuestion drops any field it does not recognise, silently. A question
+// that loses its picture still renders, still grades and still saves — it is just
+// unanswerable, and nothing anywhere reports a problem. Keeping the translation in
+// one place means there is one thing to check, and the tests check it.
+//
+// Nothing here introduces a second marker. Year 2 grades through gradeQuestion() like
+// every other year, so the gradebook, the read-aloud and the printable sheets needed
+// no special case for it.
+function y2Adapt(q){
+  const out={ prompt:q.prompt, answer:String(q.answer), explanation:q.explanation||'',
+              subskill:q.form||null };
+  if(q.svg) out.svg=q.svg;
+
+  // A tray of real coins, tapped. Reuses the Year 4 coin question machinery exactly.
+  if(q.coinTray){
+    out.inputType='coins'; out.coins=q.coinTray;
+    out.targetCents=q.targetCents; out.minCoins=q.minCoins!=null?q.minCoins:1;
+    out.coinsSubskill=q.form||null;
+    return out;
+  }
+  // Drag-into-order. checkType:'numlist' compares by value, so 07 and 7 both pass.
+  if(q.items){ out.inputType='order'; out.items=q.items; out.checkType='numlist'; return out; }
+
+  // Inline answer boxes. Labels are rendered above the boxes, so "rows first" is an
+  // instruction on screen rather than a convention the child has to guess.
+  if(q.parts){
+    out.inputType='parts';
+    const labels=q.partsLabels||[];
+    out.parts=q.parts.map((_,i)=> labels[i] ? {label:labels[i]} : {});
+    if(q.partsLead) out.partsLead=q.partsLead;
+    if(q.partsJoin) out.partsJoin=q.partsJoin;
+    out.answer=String(q.answer);
+    return out;
+  }
+  // Numerator over denominator, no whole-number box. Graded by value, so a child who
+  // writes 2/4 for a half is right — which is what a Year 2 child looking at a picture
+  // of two shaded quarters has actually seen.
+  if(q.fracDenAns!=null){
+    out.inputType='mixed'; out.wantWhole=false;
+    out.ansNum=q.fracNumAns; out.ansDen=q.fracDenAns;
+    return out;
+  }
+  if(q.choices){ out.inputType='choice'; out.choices=q.choices.map(String); return out; }
+  out.inputType='text';
+  return out;
+}
+
+// ============================================================
+// THE YEAR 2 SLOTS.
+// Codes are PERMANENT. Never rename or reuse one: historical results reference them.
+// ============================================================
+const Y2_SLOTS=[
+  {skill:'Y2_BLOCKS',       title:'Blocks and numbers',        gen:d=>y2Adapt(y2_blocks(d))},
+  {skill:'Y2_PLACE_VALUE',  title:'Place value',               gen:d=>y2Adapt(y2_placeValue(d))},
+  {skill:'Y2_REGROUP',      title:'Regrouping and renaming',   gen:d=>y2Adapt(y2_regroup(d))},
+  {skill:'Y2_WORDS',        title:'Numbers in words',          gen:d=>y2Adapt(y2_words(d))},
+  {skill:'Y2_ORDER',        title:'Ordering numbers',          gen:d=>y2Adapt(y2_order(d))},
+  {skill:'Y2_NUMBER_LINE',  title:'Number line',               gen:d=>y2Adapt(y2_numberLine(d))},
+  {skill:'Y2_SEQUENCE',     title:'Number sequences',          gen:d=>y2Adapt(y2_sequence(d))},
+  {skill:'Y2_PATTERN',      title:'Patterns',                  gen:d=>y2Adapt(y2_pattern(d))},
+  {skill:'Y2_ODD_EVEN',     title:'Odd and even',              gen:d=>y2Adapt(y2_oddEven(d))},
+  {skill:'Y2_ADDITION',     title:'Addition',                  gen:d=>y2Adapt(y2_addition(d))},
+  {skill:'Y2_SUBTRACTION',  title:'Subtraction',               gen:d=>y2Adapt(y2_subtraction(d))},
+  {skill:'Y2_ARRAY',        title:'Groups and arrays',         gen:d=>y2Adapt(y2_array(d))},
+  {skill:'Y2_SHARE',        title:'Sharing and grouping',      gen:d=>y2Adapt(y2_share(d))},
+  {skill:'Y2_FRAC_SHAPE',   title:'Fraction of a shape',       gen:d=>y2Adapt(y2_fracShape(d))},
+  {skill:'Y2_FRAC_GROUP',   title:'Fraction of a group',       gen:d=>y2Adapt(y2_fracGroup(d))},
+  {skill:'Y2_MONEY',        title:'Money',                     gen:d=>y2Adapt(y2_money(d))},
+  {skill:'Y2_TIME',         title:'Time',                      gen:d=>y2Adapt(y2_time(d))},
+  {skill:'Y2_DIRECTION',    title:'Direction and turns',       gen:d=>y2Adapt(y2_direction(d))},
+];
+// END YEAR 2
+
+// ============================================================
 // SKILL REGISTRY & YEAR PLANS
 // ------------------------------------------------------------
 // Questions are identified by a STABLE SKILL CODE, not by their position in
@@ -4495,6 +5132,25 @@ const SKILLS = {
   MEASUREMENT:      { title:'Measuring length, mass and capacity' },
   SHAPES_3D:        { title:'3D shapes' },
   FACT_FAMILY:      { title:'Fact families' },
+  // ---- Year 2 (Maths Trek 2). Codes are PERMANENT. ----
+  Y2_BLOCKS:        { title:'Blocks and numbers' },
+  Y2_PLACE_VALUE:   { title:'Place value' },
+  Y2_REGROUP:       { title:'Regrouping and renaming' },
+  Y2_WORDS:         { title:'Numbers in words' },
+  Y2_ORDER:         { title:'Ordering numbers' },
+  Y2_NUMBER_LINE:   { title:'Number line' },
+  Y2_SEQUENCE:      { title:'Number sequences' },
+  Y2_PATTERN:       { title:'Patterns' },
+  Y2_ODD_EVEN:      { title:'Odd and even' },
+  Y2_ADDITION:      { title:'Addition' },
+  Y2_SUBTRACTION:   { title:'Subtraction' },
+  Y2_ARRAY:         { title:'Groups and arrays' },
+  Y2_SHARE:         { title:'Sharing and grouping' },
+  Y2_FRAC_SHAPE:    { title:'Fraction of a shape' },
+  Y2_FRAC_GROUP:    { title:'Fraction of a group' },
+  Y2_MONEY:         { title:'Money' },
+  Y2_TIME:          { title:'Time' },
+  Y2_DIRECTION:     { title:'Direction and turns' },
   // Retired. Kept so historical results still resolve to a sensible title.
   PLACE_VALUE:      { title:'Place value', retired:true },
   DECIMAL_PLACE:    { title:'Decimal place value', retired:true },
@@ -4503,6 +5159,12 @@ const SKILLS = {
 
 // Which skills each year level gets, in the order they appear in the week.
 const YEAR_PLANS = {
+  // Year 2: 18 questions, from Maths Trek 2. Measurement, shape and data are not here
+  // yet — see YEAR-2-HANDOFF.md. Fast Facts is unaffected: a Year 2 class keeps it and
+  // gains a practice set, rather than trading one for the other.
+  2: ['Y2_BLOCKS','Y2_PLACE_VALUE','Y2_REGROUP','Y2_WORDS','Y2_ORDER','Y2_NUMBER_LINE',
+      'Y2_SEQUENCE','Y2_PATTERN','Y2_ODD_EVEN','Y2_ADDITION','Y2_SUBTRACTION','Y2_ARRAY',
+      'Y2_SHARE','Y2_FRAC_SHAPE','Y2_FRAC_GROUP','Y2_MONEY','Y2_TIME','Y2_DIRECTION'],
   // Year 3: 16 questions, not 24. Decimals are not introduced until Year 4, so
   // FRAC_DEC, ORDER_DECIMAL, SIMPLIFY_FRACTION and MIXED_IMPROPER have no place here. // they are omitted rather than made "easier", because they are not easier, they are
   // a year early. FACTORS and METRIC_CONVERT go for the same reason. 16 is also closer
@@ -4649,6 +5311,7 @@ const SLOTS=[
   {skill:'ORDER_OPS',        title:'Order of operations',          gen:genOrderOps},
   {skill:'VOLUME',           title:'Volume and capacity',          gen:genVolume},
 ];
+Y2_SLOTS.forEach(s=>SLOTS.push(s));
 function buildQuestion(slotIdx, diff, strategyKey, year){
   const list = slotsForYear(year);
   const slot = list[slotIdx] || SLOTS[slotIdx];
@@ -6691,7 +7354,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.73';
+const BUILD = '2026-08-14.03';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
