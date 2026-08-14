@@ -7354,7 +7354,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-14.03';
+const BUILD = '2026-08-14.04';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -9566,7 +9566,7 @@ function renderTeacherWeeks(){
     const y = classYear(from);
     if(!hasCurriculum(y)){
       genCountEl.style.color='var(--incorrect)';
-      genCountEl.textContent = `There are no practice sets for ${yearLabel(y)} yet. The curriculum starts at Year 3. ${yearLabel(y)} students can still use the Fast Facts Training Ground and the Racing Ground.`;
+      genCountEl.textContent = `There are no practice sets for ${yearLabel(y)} yet. The curriculum starts at ${yearLabel(LOWEST_PLANNED_YEAR)}. ${yearLabel(y)} students can still use the Fast Facts Training Ground and the Racing Ground.`;
     } else {
       genCountEl.style.color='var(--ink)';
       const note = YEAR_PLANS[y] ? '' : ` (Year 4 content · ${yearLabel(y)} has no curriculum of its own yet)`;
