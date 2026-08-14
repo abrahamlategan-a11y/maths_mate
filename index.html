@@ -7354,7 +7354,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-14.04';
+const BUILD = '2026-08-14.05';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -9432,7 +9432,7 @@ function renderTeacherWeeks(){
       // One class, one year. So this is back to one set per ability group.
       const yr=classYear(yearFrom);
       if(!hasCurriculum(yr)){
-        S.toast = `No practice sets for ${yearLabel(yr)} yet. The curriculum starts at Year 3. Use the Fast Facts Training Ground for that class.`;
+        S.toast = `No practice sets for ${yearLabel(yr)} yet. The curriculum starts at ${yearLabel(LOWEST_PLANNED_YEAR)}. Use the Fast Facts Training Ground for that class.`;
         btn.disabled=false; btn.textContent='Deploy now'; render(); return;
       }
       for(const [group,difficulty] of pairs){
@@ -9604,8 +9604,11 @@ function renderTeacherWeeks(){
     if(classCbs.length && !classCbs.some(cb=>cb.checked)){
       S.toast='Choose which class this set is for.'; render(); return;
     }
-    if(!allCb.checked && !groupCbs.some(cb=>cb.checked)){
-      S.toast='Choose which group this set is for. Or tick Everyone.'; render(); return;
+    // There is no longer an "Everyone" checkbox — it was removed, but this line still
+    // referred to it, which threw a ReferenceError before anything else ran and left the
+    // Generate button dead for every year level. The rule is simply: pick a group.
+    if(!groupCbs.some(cb=>cb.checked)){
+      S.toast='Choose which group this set is for.'; render(); return;
     }
     const label=form.querySelector('#mmc-gen-label').value.trim() || `Week ${S.weeks.length+1}`;
     const difficulty=form.querySelector('#mmc-gen-diff').value;
@@ -9632,7 +9635,7 @@ function renderTeacherWeeks(){
     // a generated paper is for.
     const years = [classYear(yearFrom)];
     if(!hasCurriculum(years[0])){
-      S.toast = `No practice sets for ${yearLabel(years[0])} yet. The curriculum starts at Year 3. Use the Fast Facts Training Ground for that class.`;
+      S.toast = `No practice sets for ${yearLabel(years[0])} yet. The curriculum starts at ${yearLabel(LOWEST_PLANNED_YEAR)}. Use the Fast Facts Training Ground for that class.`;
       render(); return;
     }
     try{
