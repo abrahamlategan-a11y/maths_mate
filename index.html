@@ -6247,6 +6247,7 @@ function raceCallerTick(){
     // The lead changing hands is always worth calling.
     if(st.lead && st.lead!==lead.id){
       st.lead=lead.id; st.lastCall=Date.now();
+      st.said=st.said||{}; st.said[lead.id]=1;
       raceCommentary(`${raceCallName(lead)} hits the front!`);
     } else if(!st.lead){ st.lead=lead.id; }
     // Otherwise a line every ten seconds or so, chosen to fit what is happening.
@@ -6345,9 +6346,30 @@ function raceCallerTick(){
                                       `The calculators are jealous.`,
                                       `No one told them this was meant to be hard.`);
       }
-      // Nothing is ever said twice in a race. A repeated line is the fastest way to make
-      // a caller sound like a machine.
+      // EVERY racer gets named at least once. Being in a race nobody mentions is worse
+      // than not racing, and a child who hears their own name once will remember it. So
+      // anyone not yet mentioned is called first, before the general lines.
+      st.said=st.said||{};
+      const unnamed=board.filter(p=>!st.said[p.id]);
       st.used=st.used||{};
+      if(unnamed.length){
+        const who=unnamed[0];
+        const nm=raceCallName(who);
+        const place=board.indexOf(who)+1;
+        const shout = place===board.length && board.length>1
+          ? pick([`${nm} is in this too, and not giving up!`,
+                  `Do not count out ${nm}!`,
+                  `${nm} is grinding away back there.`])
+          : pick([`${nm} is in the mix!`,
+                  `${nm} is right in this race.`,
+                  `There goes ${nm}!`,
+                  `${nm} is picking up the pace!`]);
+        st.said[who.id]=1; st.used[shout]=1;
+        raceCommentary(shout);
+        return;
+      }
+      // Then the usual lines, and nothing is ever said twice: a repeated line is the
+      // fastest way to make a caller sound like a machine.
       const fresh=lines.filter(x=>x && !st.used[x]);
       const line=fresh.length? pick(fresh) : null;
       if(line){ st.used[line]=1; raceCommentary(line); }
@@ -6607,7 +6629,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-12.67';
+const BUILD = '2026-08-12.69';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -12663,9 +12685,19 @@ async function submitMyLiveAnswer(given){
     // A wrong answer costs a leader far more than it costs a straggler. It is the only
     // thing that makes a guess a bad idea for someone who is already in front, and it is
     // fair: they had the easier question relative to their ability.
-    const penalty = wasFlying ? 3.2 : 0.8;
-    S.myLive.position = Math.max(0, S.myLive.position - penalty);
-    S.myLive.score = Math.max(0, (S.myLive.score||0) - (wasFlying ? 1 : 0));
+    // The track is drawn from the SCORE now, so only the score really costs anything: a
+    // position penalty is invisible. A leader guessing through the hard questions was
+    // losing almost nothing, which is why it kept working for her.
+    //
+    // After the first minute, a wrong answer while in front costs two. Two wrong in a row
+    // is a four-point swing against whoever is chasing, which is enough to lose a lead.
+    // Before a minute nobody is handicapped, so nobody is punished either.
+    const room2=currentLiveRoom();
+    const dur2=(room2 && Number(room2.durationSec))||300;
+    const elapsed2=room2 ? (dur2 - liveTimeLeft(room2)) : 0;
+    const leading = wasFlying && elapsed2>=60;
+    S.myLive.position = Math.max(0, S.myLive.position - (wasFlying ? 3.2 : 0.8));
+    S.myLive.score = Math.max(0, (S.myLive.score||0) - (leading ? 2 : 0));
   }
   S.myLive.qIndex++;
   // Re-handicapped on every question, so a child who catches up is asked more, and one who
@@ -12702,7 +12734,7 @@ function renderMyLiveSession(){
   const head=el(`
     <div class="mmc-card">
       <div class="mmc-row" style="justify-content:space-between;">
-        <div><h3 style="text-transform:capitalize;">${room && !room.hostUid ? '🏫 Class Race' : esc(S.myLive.level)+'Live!'}</h3><div class="meta">Your score: ${S.myLive.score} / ${S.myLive.attempted} · Room: <code class="mmc-code">${esc(S.myLive.gameId.slice(0,6))}</code></div></div>
+        <div><h3 style="text-transform:capitalize;">${room && !room.hostUid ? '🏫 Class Race' : esc(S.myLive.level)+'Live!'}</h3><div class="meta">Keep going!</div></div>
         <div id="mmc-live-my-timer" style="font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:700;color:var(--purple-deep);">${room? formatMMSS(liveTimeLeft(room)) : ''}</div>
       </div>
     </div>
