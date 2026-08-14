@@ -51,7 +51,7 @@
 <div class="wrap">
 
 <h1>Privacy at Mathmentum</h1>
-<div class="updated">Last updated 10 August 2026</div>
+<div class="updated">Last updated 14 August 2026</div>
 
 <p class="lead">Mathmentum is a maths practice tool for primary classrooms, built and run in Australia by a practising primary school teacher. This page explains exactly what information the app holds, who can see it, and where it is stored. It is written to be read by teachers and parents, not lawyers.</p>
 
@@ -59,9 +59,10 @@
 <ul>
   <li>Students sign in with a <strong>made-up username</strong>, not a real email address.</li>
   <li>A student's work is visible only to <strong>their own teacher</strong>. No other teacher can see it.</li>
+  <li>There is <strong>no artificial intelligence</strong> anywhere in Mathmentum. Questions are produced by ordinary programmed rules, and student work is never sent to an AI service or used to train one.</li>
   <li>There is <strong>no advertising and no tracking</strong> of any kind in Mathmentum.</li>
   <li>We do not sell, rent or share student information with anyone.</li>
-  <li>Student data is currently stored on Google servers <strong>in the United States</strong>. We are moving it to Australia — see <a href="#where">Where information is stored</a> for the honest detail.</li>
+  <li>Student data is currently stored on Google servers <strong>in the United States</strong>. See <a href="#where">Where information is stored</a> for the honest detail.</li>
 </ul>
 
 <h2>What information is held</h2>
@@ -89,11 +90,28 @@
   <li>Name and email address</li>
   <li>A password you choose</li>
   <li>Which classes and students you have created</li>
+  <li>Whether your account is active, so colleagues at your school can be listed</li>
 </ul>
+<p>Teachers at the same school can see each other's names and email addresses in the Teachers
+list. They cannot see each other's students or results.</p>
 
 <h2>Who can see student information</h2>
 <p>Every student record is tied to the teacher who created it. The app is built so that a teacher can only ever read the records of their own students — this is enforced by the database itself, not just by what the app chooses to display.</p>
-<p>Students can see their own work and their own dashboard. They cannot see another student's results. In the multiplayer racing game, students in the same class see each other's first names and scores on a leaderboard, which is the point of the game.</p>
+<p>Students can see their own work and their own dashboard. They cannot see another student's results.</p>
+
+<div class="box">
+  <p><strong>The one place students see each other: the Racing Ground.</strong> During a live
+     race, everyone taking part sees the other racers' first names and positions on a
+     leaderboard. That is the point of the game, and it is the only place a child sees
+     another child's information.</p>
+  <p>A race can also be joined by a student in <em>another class</em>, if they are given that
+     race's four-digit PIN by someone already in it. There is no way to browse or discover
+     other classes' races — a child must be told the PIN. Teachers can switch this off
+     entirely for their own students from the Teachers tab, and once switched off no student
+     of theirs can join or be joined across classes.</p>
+  <p>If a teacher turns on race commentary, it reads racers' <strong>first names only</strong>
+     aloud through the teacher's own device. It never plays on student devices.</p>
+</div>
 <p>The site administrator can see the list of registered teachers, and has the technical access to the database that running the service requires.</p>
 
 <h2>Student passwords</h2>
@@ -104,10 +122,14 @@
 
 <h2 id="where">Where information is stored</h2>
 <p>Mathmentum runs on Google Firebase. Today, the database sits in Google's <strong>us-central1</strong> region in the United States.</p>
-<p>We are moving the student database to Google's Australian region. When that is done, student names, answers, scores and practice history will be stored in Australia.</p>
+<p>Google Cloud is certified under recognised international security standards, and the
+information is encrypted both while it travels and while it is stored.</p>
 <div class="box">
-  <p><strong>The part we will not overstate.</strong> Even after that move, the <em>account records</em> — usernames and password information — will remain on United States infrastructure, because Google's authentication service does not currently offer an Australian option. We will update this page when that changes.</p>
-  <p>In practice the account record for a student is a made-up username such as <em>PriyaN</em> and a password such as <em>puddle88</em>. It is not a real email address and does not on its own identify a child.</p>
+  <p><strong>What that means in practice.</strong> The account record for a student is a
+     made-up username such as <em>PriyaN</em> and a password such as <em>puddle88</em>. It is
+     not a real email address and does not on its own identify a child.</p>
+  <p>Google's authentication service, which holds sign-in details, is a global service and
+     does not currently offer a choice of country at all.</p>
 </div>
 <p>Under the Australian Privacy Principles, storing personal information overseas is a disclosure that should be told to you plainly rather than buried. That is why this section exists. If your school's policy does not permit any student information to be held overseas, Mathmentum is not suitable for you yet, and we would rather you knew that now.</p>
 
@@ -126,7 +148,9 @@
   <li>No advertising, anywhere in the app.</li>
   <li>No analytics or tracking software. There is no Google Analytics, no advertising pixel, and no third-party tracker of any kind in Mathmentum.</li>
   <li>No selling, renting or sharing of student information.</li>
-  <li>No using student work to train artificial intelligence systems.</li>
+  <li><strong>No artificial intelligence of any kind.</strong> Every question a student sees
+      is produced by ordinary programmed rules written by a teacher. Student work is never
+      sent to an AI service, never analysed by one, and never used to train one.</li>
   <li>No contacting students. We have no way to contact a student and never will.</li>
 </ul>
 
@@ -146,11 +170,13 @@
 <p>If information is ever exposed in a way likely to cause serious harm, we will notify affected teachers and schools directly and promptly, and meet our obligations under the Notifiable Data Breaches scheme.</p>
 
 <h2>Changes to this page</h2>
-<p>When this page changes in a way that matters, the date at the top changes and teachers are told. The most likely change is the Australian database move described above.</p>
+<p>When this page changes in a way that matters, the date at the top changes and teachers are
+told. If where information is stored ever changes, this page will say so at the time rather
+than in advance.</p>
 
 <footer>
   Mathmentum · <a href="https://mathmentum.com.au">mathmentum.com.au</a> · hello@mathmentum.com.au<br>
-  Operated by a sole trader registered in Australia.
+  Operated by a sole trader in Perth, Western Australia, holding an Australian Business Number.
 </footer>
 
 </div>
