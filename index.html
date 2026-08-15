@@ -4910,7 +4910,7 @@ function y2_oddEven(diff){
 // ---- 8. ADDITION ---- typed. WA: bridging to 10 is the named strategy.
 function y2_addition(diff){
   const L=y2Lvl(diff);
-  const form=y2mix(L,{ easy:['plain','plain','plain','bridge'], medium:['plain','bridge','bridge','word'], hard:['bridge','word','word','word'] });
+  const form=y2mix(L,{ easy:['plain','plain','plain','bridge'], medium:['plain','bridge','bridge','word'], hard:['plain','bridge','word','word','word'] });
   if(form==='word'){
     // WA mandates modelling real situations. Two-step at extension.
     const a=y2r(11,49), b=y2r(11,49);
@@ -4933,7 +4933,7 @@ function y2_addition(diff){
       svg: L==='easy'? y2tenFrame(base,2) : null,
       explanation:`${base} + ${b} = ${base+b}. Jump to ${Math.ceil(base/10)*10} first.` };
   }
-  const a = L==='easy'? y2r(11,49) : L==='medium'? y2r(21,79) : y2r(101,499);
+  const a = L==='easy'? y2r(11,49) : L==='medium'? y2r(21,79) : y2r(31,89);
   const b = L==='easy'? y2r(2,5) : L==='medium'? y2r(3,9) : y2r(11,49);
   return { form:'add_plain', prompt:`${a} + ${b}`, answer:String(a+b), typed:true,
     explanation:`${a} + ${b} = ${a+b}.` };
@@ -4950,7 +4950,7 @@ function y2_subtraction(diff){
       answer:String(a-b), typed:true, explanation:`${a} − ${b} = ${a-b}.` };
   }
   if(form==='bridge'){
-    const base = L==='easy'? y2r(11,20) : L==='medium'? y2r(21,79) : y2r(101,499);
+    const base = L==='easy'? y2r(11,20) : L==='medium'? y2r(21,79) : y2r(41,99);
     const b = (base%10) + y2r(1,5);
     return { form:'bridge_back', prompt:`${base} − ${b}`, answer:String(base-b), typed:true,
       explanation:`${base} − ${b} = ${base-b}. Jump back to ${Math.floor(base/10)*10} first.` };
@@ -4959,7 +4959,7 @@ function y2_subtraction(diff){
   let a,b;
   if(L==='easy'){ a=y2r(1,4)*10+y2r(2,9); b=y2r(2,a%10); }
   else if(L==='medium'){ a=y2r(21,79); b=y2r(3,9); if(b>a%10) b=a%10||3; }
-  else { a=y2r(101,499); b=y2r(11,49); }
+  else { a=y2r(41,99); b=y2r(11,39); }
   return { form:'subtract_plain', prompt:`${a} − ${b}`, answer:String(a-b), typed:true,
     explanation:`${a} − ${b} = ${a-b}.` };
 }
@@ -7674,7 +7674,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-14.07';
+const BUILD = '2026-08-14.09';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -9752,7 +9752,7 @@ function renderTeacherWeeks(){
       // One class, one year. So this is back to one set per ability group.
       const yr=classYear(yearFrom);
       if(!hasCurriculum(yr)){
-        S.toast = `No practice sets for ${yearLabel(yr)} yet. The curriculum starts at Year 3. Use the Fast Facts Training Ground for that class.`;
+        S.toast = `No practice sets for ${yearLabel(yr)} yet. The curriculum starts at ${yearLabel(LOWEST_PLANNED_YEAR)}. Use the Fast Facts Training Ground for that class.`;
         btn.disabled=false; btn.textContent='Deploy now'; render(); return;
       }
       for(const [group,difficulty] of pairs){
@@ -9886,7 +9886,7 @@ function renderTeacherWeeks(){
     const y = classYear(from);
     if(!hasCurriculum(y)){
       genCountEl.style.color='var(--incorrect)';
-      genCountEl.textContent = `There are no practice sets for ${yearLabel(y)} yet. The curriculum starts at Year 3. ${yearLabel(y)} students can still use the Fast Facts Training Ground and the Racing Ground.`;
+      genCountEl.textContent = `There are no practice sets for ${yearLabel(y)} yet. The curriculum starts at ${yearLabel(LOWEST_PLANNED_YEAR)}. ${yearLabel(y)} students can still use the Fast Facts Training Ground and the Racing Ground.`;
     } else {
       genCountEl.style.color='var(--ink)';
       const note = YEAR_PLANS[y] ? '' : ` (Year 4 content · ${yearLabel(y)} has no curriculum of its own yet)`;
@@ -9924,8 +9924,11 @@ function renderTeacherWeeks(){
     if(classCbs.length && !classCbs.some(cb=>cb.checked)){
       S.toast='Choose which class this set is for.'; render(); return;
     }
-    if(!allCb.checked && !groupCbs.some(cb=>cb.checked)){
-      S.toast='Choose which group this set is for. Or tick Everyone.'; render(); return;
+    // There is no longer an "Everyone" checkbox — it was removed, but this line still
+    // referred to it, which threw a ReferenceError before anything else ran and left the
+    // Generate button dead for every year level. The rule is simply: pick a group.
+    if(!groupCbs.some(cb=>cb.checked)){
+      S.toast='Choose which group this set is for.'; render(); return;
     }
     const label=form.querySelector('#mmc-gen-label').value.trim() || `Week ${S.weeks.length+1}`;
     const difficulty=form.querySelector('#mmc-gen-diff').value;
@@ -9952,7 +9955,7 @@ function renderTeacherWeeks(){
     // a generated paper is for.
     const years = [classYear(yearFrom)];
     if(!hasCurriculum(years[0])){
-      S.toast = `No practice sets for ${yearLabel(years[0])} yet. The curriculum starts at Year 3. Use the Fast Facts Training Ground for that class.`;
+      S.toast = `No practice sets for ${yearLabel(years[0])} yet. The curriculum starts at ${yearLabel(LOWEST_PLANNED_YEAR)}. Use the Fast Facts Training Ground for that class.`;
       render(); return;
     }
     try{
