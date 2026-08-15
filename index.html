@@ -4492,7 +4492,7 @@ function y2mab(h,t,o){
 function y2numberLine(max, target, min, labelAll, gapAt){
   min=min||0;
   const w=620, y=60, x0=46, x1=w-46;
-  const pos = x0 + ((target-min)/(max-min))*(x1-x0);
+  const pos = target==null ? x0 : x0 + ((target-min)/(max-min))*(x1-x0);
   let ticks='';
   for(let i=0;i<=10;i++){
     const x=x0+(i/10)*(x1-x0), v=min+i*((max-min)/10);
@@ -4502,7 +4502,9 @@ function y2numberLine(max, target, min, labelAll, gapAt){
     if(isGap) ticks+=`<rect x="${x-24}" y="${y+16}" width="48" height="26" rx="6" fill="${Y2_PAPER}" stroke="${Y2_HI}" stroke-width="3"/>`;
     else if(show) ticks+=`<text x="${x}" y="${y+32}" text-anchor="middle" font-family="'IBM Plex Mono',monospace" font-size="17" fill="${Y2_INK}">${v}</text>`;
   }
-  const arrow = (gapAt===undefined||gapAt===null)
+  // No arrow when there is no target. On "what does this line count by?" the arrow
+  // points at nothing the child is being asked about, and reads as a fifth wheel.
+  const arrow = (target!=null && (gapAt===undefined||gapAt===null))
     ? `<polygon points="${pos},${y-14} ${pos-9},${y-32} ${pos+9},${y-32}" fill="${Y2_HI}" stroke="${Y2_INK}" stroke-width="2.5"/>` : '';
   return `<svg viewBox="0 0 ${w} 106" width="100%" style="max-width:${w}px" role="img" aria-label="number line from ${min} to ${max}">
     <line x1="${x0}" y1="${y}" x2="${x1}" y2="${y}" stroke="${Y2_INK}" stroke-width="3"/>${ticks}${arrow}</svg>`;
@@ -4533,24 +4535,41 @@ function y2clock(h,m,sparse){
 // ---- fraction shapes ----
 function y2fracBar(parts, shaded){
   const w=460,h=120,seg=w/parts; let g='';
-  for(let i=0;i<parts;i++) g+=`<rect x="${i*seg+3}" y="3" width="${seg-6}" height="${h-6}" rx="8" fill="${i<shaded?Y2_HI:Y2_PAPER}" stroke="${Y2_INK}" stroke-width="4"/>`;
-  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px" role="img" aria-label="${shaded} of ${parts} parts shaded">${g}</svg>`;
+  // fills first, then the dividing lines, then ONE outline round the whole thing
+  for(let i=0;i<parts;i++)
+    g+=`<rect x="${i*seg}" y="0" width="${seg}" height="${h}" fill="${i<shaded?Y2_HI:Y2_PAPER}"/>`;
+  for(let i=1;i<parts;i++)
+    g+=`<line x1="${i*seg}" y1="0" x2="${i*seg}" y2="${h}" stroke="${Y2_INK}" stroke-width="4"/>`;
+  g+=`<rect x="0" y="0" width="${w}" height="${h}" rx="10" fill="none" stroke="${Y2_INK}" stroke-width="5"/>`;
+  return `<svg viewBox="-3 -3 ${w+6} ${h+6}" width="100%" style="max-width:${w}px" role="img"
+    aria-label="a bar cut into ${parts} equal parts with ${shaded} shaded">${g}</svg>`;
 }
-// Unequal parts. Unit 25.2's own tip is "look for two equal parts", so a shape cut into
-// the right NUMBER of unequal pieces is the distractor the lesson is built around.
+// The right NUMBER of parts, but not equal ones. Unit 25.2's own tip is "look for two
+// equal parts", so this is the distractor the lesson is built around — and it only works
+// if it reads as one whole, not as separate boxes.
 function y2fracUneven(widths, shaded){
-  const w=460,h=120,tot=widths.reduce((a,b)=>a+b,0); let x=0,g='';
+  const w=460,h=120,tot=widths.reduce((a,b)=>a+b,0); let x=0,g='',edges=[];
   widths.forEach((p,i)=>{ const pw=(p/tot)*w;
-    g+=`<rect x="${x+3}" y="3" width="${pw-6}" height="${h-6}" rx="8" fill="${i===shaded?Y2_HI:Y2_PAPER}" stroke="${Y2_INK}" stroke-width="4"/>`; x+=pw; });
-  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px" role="img" aria-label="a shape cut into ${widths.length} unequal parts">${g}</svg>`;
+    g+=`<rect x="${x}" y="0" width="${pw}" height="${h}" fill="${i===shaded?Y2_HI:Y2_PAPER}"/>`;
+    x+=pw; if(i<widths.length-1) edges.push(x); });
+  edges.forEach(e=>{ g+=`<line x1="${e}" y1="0" x2="${e}" y2="${h}" stroke="${Y2_INK}" stroke-width="4"/>`; });
+  g+=`<rect x="0" y="0" width="${w}" height="${h}" rx="10" fill="none" stroke="${Y2_INK}" stroke-width="5"/>`;
+  return `<svg viewBox="-3 -3 ${w+6} ${h+6}" width="100%" style="max-width:${w}px" role="img"
+    aria-label="a bar cut into ${widths.length} unequal parts">${g}</svg>`;
 }
 function y2fracCircle(parts, shaded){
   const size=210,c=size/2,r=c-6; let g='';
   for(let i=0;i<parts;i++){
     const a0=(i/parts)*2*Math.PI-Math.PI/2, a1=((i+1)/parts)*2*Math.PI-Math.PI/2;
-    g+=`<path d="M${c},${c} L${(c+r*Math.cos(a0)).toFixed(1)},${(c+r*Math.sin(a0)).toFixed(1)} A${r},${r} 0 ${(a1-a0)>Math.PI?1:0} 1 ${(c+r*Math.cos(a1)).toFixed(1)},${(c+r*Math.sin(a1)).toFixed(1)} Z" fill="${i<shaded?Y2_HI:Y2_PAPER}" stroke="${Y2_INK}" stroke-width="4"/>`;
+    g+=`<path d="M${c},${c} L${(c+r*Math.cos(a0)).toFixed(1)},${(c+r*Math.sin(a0)).toFixed(1)} A${r},${r} 0 ${(a1-a0)>Math.PI?1:0} 1 ${(c+r*Math.cos(a1)).toFixed(1)},${(c+r*Math.sin(a1)).toFixed(1)} Z" fill="${i<shaded?Y2_HI:Y2_PAPER}"/>`;
   }
-  return `<svg viewBox="0 0 ${size} ${size}" width="210" height="210" role="img" aria-label="${shaded} of ${parts} parts shaded">${g}</svg>`;
+  for(let i=0;i<parts;i++){
+    const a=(i/parts)*2*Math.PI-Math.PI/2;
+    g+=`<line x1="${c}" y1="${c}" x2="${(c+r*Math.cos(a)).toFixed(1)}" y2="${(c+r*Math.sin(a)).toFixed(1)}" stroke="${Y2_INK}" stroke-width="4"/>`;
+  }
+  g+=`<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${Y2_INK}" stroke-width="5"/>`;
+  return `<svg viewBox="0 0 ${size} ${size}" width="210" height="210" role="img"
+    aria-label="a circle cut into ${parts} equal parts with ${shaded} shaded">${g}</svg>`;
 }
 
 // ---- objects in drawn tiles ----
@@ -4594,6 +4613,130 @@ function y2pictureArray(total, emoji, rows, cols){
   // Capped like every other drawing. Without the cap a wide array sets its own width
   // and is simply cut off on the right, which is exactly what happened.
   return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${Math.min(w,600)}px" role="img" aria-label="${total} objects in ${rows} rows of ${cols}">${g}</svg>`;
+}
+
+
+// A bundle of ten sticks tied with a band, plus loose ones. This is the picture the
+// curriculum actually describes for partitioning, and it makes "57 tens and 4 ones"
+// visible in a way MAB does not: you can SEE the band that has to be undone.
+function y2sticks(tens, ones){
+  const TAN='#E0A868', TAN_D='#A9732F', BAND='#C0392B';
+  const sw=9, sh=94, gap=4;                 // one stick
+  const bundleW=10*(sw+gap)+16;
+  const looseW=Math.max(0,ones)*(sw+gap)+8;
+  const perRow=Math.min(Math.max(1,tens),5);
+  const rows=Math.ceil(Math.max(tens,1)/perRow);
+  const w=Math.max(bundleW*perRow+looseW+24, 180);
+  const h=rows*(sh+30)+24;
+  const stick=(x,y)=>`<rect x="${x}" y="${y}" width="${sw}" height="${sh}" rx="${sw/2}"
+      fill="${TAN}" stroke="${TAN_D}" stroke-width="1.6"/>`;
+  let g='';
+  for(let b=0;b<tens;b++){
+    const col=b%perRow, row=Math.floor(b/perRow);
+    const bx=12+col*bundleW, by=14+row*(sh+30);
+    for(let i=0;i<10;i++) g+=stick(bx+i*(sw+gap), by);
+    // the band is what makes it a BUNDLE rather than ten sticks side by side
+    g+=`<rect x="${bx-4}" y="${by+sh*0.42}" width="${10*(sw+gap)+2}" height="15" rx="4"
+        fill="${BAND}" stroke="${Y2_INK}" stroke-width="2"/>`;
+  }
+  const lx=12+Math.min(tens,perRow)*bundleW + (tens?14:0);
+  const ly=14;
+  for(let i=0;i<ones;i++) g+=stick(lx+i*(sw+gap), ly);
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${Math.min(w,600)}px"
+    role="img" aria-label="${tens} bundles of ten sticks and ${ones} single sticks">${g}</svg>`;
+}
+
+
+// ---- REAL OBJECTS AND REAL UNITS, DRAWN TO SCALE ----
+// Original flat drawings: a crayon is a generic object, not anyone's intellectual
+// property. What would NOT be safe is tracing someone's artwork or copying a brand's
+// barrel and packaging, so there is no brand name, no logo and no trade dress here.
+//
+// Everything is drawn at a consistent scale in millimetres, so a cube really is smaller
+// than a handspan and the estimate a child makes is an honest one.
+const Y2_MM = 1.55;   // pixels per millimetre
+
+function y2unitArt(kind, mm){
+  const w=mm*Y2_MM;
+  if(kind==='cube'){
+    const d=w*0.34;
+    return `<g><polygon points="0,${d} ${w-d},${d} ${w-d},${w} 0,${w}" fill="#7FC4E0" stroke="${Y2_INK}" stroke-width="2"/>
+      <polygon points="0,${d} ${d},0 ${w},0 ${w-d},${d}" fill="#A9DCF0" stroke="${Y2_INK}" stroke-width="2"/>
+      <polygon points="${w-d},${d} ${w},0 ${w},${w-d} ${w-d},${w}" fill="#5AA8C8" stroke="${Y2_INK}" stroke-width="2"/></g>`;
+  }
+  if(kind==='paperclip'){
+    const h=w*0.42;
+    return `<g fill="none" stroke="#9AA3AC" stroke-width="${Math.max(2.4,w*0.09)}" stroke-linecap="round">
+      <path d="M${w*0.18},${h*0.86} L${w*0.18},${h*0.26} a${w*0.16},${h*0.22} 0 0 1 ${w*0.32},0 L${w*0.5},${h*0.9}
+               a${w*0.16},${h*0.22} 0 0 0 ${w*0.32},0 L${w*0.82},${h*0.3}"/></g>`;
+  }
+  // handspan: a simplified open hand, five fingers, no detail to date it
+  const h=w*1.05;
+  return `<g fill="#F2C9A0" stroke="${Y2_INK}" stroke-width="2" stroke-linejoin="round">
+    <path d="M${w*0.28},${h} L${w*0.28},${h*0.52} L${w*0.16},${h*0.30} a${w*0.06},${w*0.06} 0 0 1 ${w*0.11},-${h*0.06}
+             L${w*0.36},${h*0.44} L${w*0.36},${h*0.14} a${w*0.06},${w*0.06} 0 0 1 ${w*0.12},0 L${w*0.48},${h*0.42}
+             L${w*0.50},${h*0.10} a${w*0.06},${w*0.06} 0 0 1 ${w*0.12},0 L${w*0.62},${h*0.42}
+             L${w*0.66},${h*0.18} a${w*0.06},${w*0.06} 0 0 1 ${w*0.12},0 L${w*0.76},${h*0.52}
+             L${w*0.80},${h} Z"/></g>`;
+}
+
+function y2objectArt(kind, mm){
+  const w=mm*Y2_MM;
+  if(kind==='crayon'){
+    // A plain barrel with a paper wrap. Deliberately NO oval label, NO wavy bands and no
+    // lettering: those are a particular brand's trade dress, not what a crayon looks like.
+    const h=w*0.17, tip=w*0.14, r=h*0.16;
+    const bodyEnd=w-tip;
+    return `<g>
+      <rect x="0" y="0" width="${bodyEnd}" height="${h}" rx="${r}" fill="#D9453C" stroke="${Y2_INK}" stroke-width="3"/>
+      <rect x="${w*0.13}" y="0" width="${w*0.55}" height="${h}" fill="#F2EDE0" stroke="${Y2_INK}" stroke-width="2.5"/>
+      <line x1="${w*0.13}" y1="${h*0.28}" x2="${w*0.68}" y2="${h*0.28}" stroke="#D9453C" stroke-width="${h*0.13}"/>
+      <line x1="${w*0.13}" y1="${h*0.72}" x2="${w*0.68}" y2="${h*0.72}" stroke="#D9453C" stroke-width="${h*0.13}"/>
+      <polygon points="${bodyEnd},${h*0.04} ${w},${h/2} ${bodyEnd},${h*0.96}"
+        fill="#B0332B" stroke="${Y2_INK}" stroke-width="3" stroke-linejoin="round"/></g>`;
+  }
+  if(kind==='pencil'){
+    const h=w*0.13, tip=w*0.11, fer=w*0.07, r=h*0.16;
+    const woodStart=w-tip, ferEnd=w*0.16;
+    return `<g>
+      <rect x="0" y="0" width="${w*0.09}" height="${h}" rx="${r}" fill="#E58A9A" stroke="${Y2_INK}" stroke-width="3"/>
+      <rect x="${w*0.08}" y="0" width="${ferEnd-w*0.08}" height="${h}" fill="#B9BFC4" stroke="${Y2_INK}" stroke-width="2.5"/>
+      <line x1="${w*0.11}" y1="0" x2="${w*0.11}" y2="${h}" stroke="${Y2_INK}" stroke-width="1.6" opacity="0.6"/>
+      <line x1="${w*0.135}" y1="0" x2="${w*0.135}" y2="${h}" stroke="${Y2_INK}" stroke-width="1.6" opacity="0.6"/>
+      <rect x="${ferEnd}" y="0" width="${woodStart-ferEnd}" height="${h}" fill="#E2B33C" stroke="${Y2_INK}" stroke-width="3"/>
+      <line x1="${ferEnd}" y1="${h*0.3}" x2="${woodStart}" y2="${h*0.3}" stroke="${Y2_INK}" stroke-width="1.4" opacity="0.35"/>
+      <polygon points="${woodStart},${h*0.02} ${w*0.965},${h*0.42} ${w*0.965},${h*0.58} ${woodStart},${h*0.98}"
+        fill="#E8CBA4" stroke="${Y2_INK}" stroke-width="3" stroke-linejoin="round"/>
+      <polygon points="${w*0.965},${h*0.42} ${w},${h/2} ${w*0.965},${h*0.58}"
+        fill="${Y2_INK}" stroke="${Y2_INK}" stroke-width="2" stroke-linejoin="round"/></g>`;
+  }
+  if(kind==='eraser'){
+    const h=w*0.55;
+    return `<g><rect x="0" y="0" width="${w}" height="${h}" rx="${h*0.16}" fill="#F0EDE6" stroke="${Y2_INK}" stroke-width="3"/>
+      <rect x="0" y="${h*0.34}" width="${w}" height="${h*0.32}" fill="#7FA9D8" stroke="${Y2_INK}" stroke-width="2.5"/></g>`;
+  }
+  const h=w*0.72;
+  return `<g><rect x="0" y="0" width="${w}" height="${h}" rx="6" fill="#2E7D4F" stroke="${Y2_INK}" stroke-width="3"/>
+    <rect x="${w*0.10}" y="0" width="${w*0.06}" height="${h}" fill="#E2C46A" stroke="${Y2_INK}" stroke-width="2.5"/>
+    <rect x="${w*0.26}" y="${h*0.24}" width="${w*0.56}" height="${h*0.10}" rx="3" fill="#F5F0E4" opacity="0.9"/>
+    <rect x="${w*0.26}" y="${h*0.46}" width="${w*0.40}" height="${h*0.08}" rx="3" fill="#F5F0E4" opacity="0.7"/></g>`;
+}
+
+// The object, and ONE unit beside it. The child ESTIMATES how many of the unit would fit
+// along the object — which is what the WA curriculum asks for — instead of counting a
+// row that has already been laid out for them.
+function y2estimateArt(objKind, objMM, unitKind, unitMM, objName, unitName){
+  const pad=18, w=Math.min(objMM*Y2_MM+pad*2, 580);
+  const objH = objKind==='book'? objMM*Y2_MM*0.72 : objKind==='eraser'? objMM*Y2_MM*0.55 : objMM*Y2_MM*0.17;
+  const unitH= unitKind==='handspan'? unitMM*Y2_MM*1.05 : unitKind==='cube'? unitMM*Y2_MM : unitMM*Y2_MM*0.42;
+  const rowTop=26, gap=30;
+  const h=rowTop+objH+gap+unitH+34;
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px" role="img"
+    aria-label="a ${objName} and one ${unitName}, drawn to the same scale">
+    <text x="${pad}" y="16" font-family="'Baloo 2',sans-serif" font-weight="700" font-size="17" fill="${Y2_INK}">the ${objName}</text>
+    <g transform="translate(${pad},${rowTop})">${y2objectArt(objKind,objMM)}</g>
+    <text x="${pad}" y="${rowTop+objH+gap-8}" font-family="'Baloo 2',sans-serif" font-weight="700" font-size="17" fill="${Y2_INK}">one ${unitName}</text>
+    <g transform="translate(${pad},${rowTop+objH+gap})">${y2unitArt(unitKind,unitMM)}</g></svg>`;
 }
 
 // ---- arrow for turns ----
@@ -4782,9 +4925,9 @@ function y2ceiling(level, rot){
 function y2_placeValue(diff, rot){
   const L=y2Lvl(diff);
   const form=y2mix(L,{
-    easy:  ['blocks','blocks','blocks','digit','expand'],
-    medium:['blocks','digit','digit','expand','rename'],
-    hard:  ['blocks','digit','expand','expand','rename','rename'],
+    easy:  ['blocks','bundles','bundles','digit','expand'],
+    medium:['blocks','bundles','digit','digit','expand','rename'],
+    hard:  ['blocks','bundles','digit','expand','expand','rename','rename'],
   });
   if(form==='blocks'){
     let h=0,t,o;
@@ -4796,6 +4939,23 @@ function y2_placeValue(diff, rot){
     return { form:'blocks_to_number', prompt:'What number is shown?', svg:y2mab(h,t,o),
       answer:String(n), typed:true,
       explanation:`${h?h+' hundreds, ':''}${t} tens and ${o} ones is ${n}.` };
+  }
+  if(form==='bundles'){
+    // Bundles of ten paddle pops, exactly as the lessons describe partitioning.
+    const t = L==='easy'? y2r(2,5) : L==='medium'? y2r(3,8) : y2r(4,9);
+    const o = y2r(1,9);
+    const n = t*10+o;
+    const askTens = (L!=='easy') && Math.random()<0.45;
+    if(askTens)
+      return { form:'bundles_rename', prompt:`How many bundles of ten?`,
+        svg:y2sticks(t,o),
+        choices:y2shuf([String(t),...y2distract(t,()=>y2r(1,12))]), answer:String(t),
+        explanation:`There are ${t} bundles of ten and ${o} loose sticks, so ${n} is ${t} tens and ${o} ones.` };
+    return { form:'bundles_to_number', prompt:'What number is shown?',
+      svg:y2sticks(t,o),
+      choices:y2shuf([String(n),...y2distract(n,()=>y2p([n+10,n-10,o*10+t,n+1,n-1]).toString())]),
+      answer:String(n),
+      explanation:`${t} bundles of ten is ${t*10}, and ${o} more makes ${n}.` };
   }
   if(form==='digit'){
     const n = L==='easy'? y2r(11,99) : y2r(100,999);
@@ -4884,7 +5044,7 @@ function y2_numberLine(diff, rot){
   }
   if(form==='counts_by'){
     return { form:'number_line_counts_by', prompt:'What does this line count by?',
-      svg:y2numberLine(max, step*y2r(1,9), 0, true),
+      svg:y2numberLine(max, null, 0, true),
       choices:y2shuf([String(step),...y2distract(step,()=>y2p([1,2,5,10,20,50,100,200]))]),
       answer:String(step), explanation:`The marks go up in ${step}s.` };
   }
@@ -4927,9 +5087,10 @@ function y2_pattern(diff){
     const unit = L==='easy'? set.slice(0,2) : set;
     const seq=[]; for(let i=0;i<7;i++) seq.push(unit[i%unit.length].e);
     const ans=unit[7%unit.length];
+    const extra=y2shuf(Y2_OBJ.filter(o=>!unit.some(u=>u.e===o.e))).slice(0, Math.max(0,4-unit.length));
     return { form:'pattern_next', prompt:'What comes next?',
       svg:y2tileRow(seq,72,'a repeating pattern'),
-      choices:y2shuf(unit.map(o=>o.e)), answer:ans.e,
+      choices:y2shuf([...unit.map(o=>o.e), ...extra.map(o=>o.e)]), answer:ans.e,
       speak:'What comes next in this pattern?',
       explanation:`The pattern repeats every ${unit.length}.` };
   }
@@ -5077,9 +5238,17 @@ function y2_share(diff){
     medium:['each','each','groups','groups'],
     hard:  ['each','groups','groups','groups'],
   });
-  const per    = L==='easy'? y2p([2,5]) : L==='medium'? y2r(2,6) : y2r(2,10);
-  const groups = L==='easy'? y2r(2,4)   : L==='medium'? y2r(2,6) : y2r(2,10);
-  const total=per*groups;
+  // Unit 26.1 shares 6 between 3; unit 27.2 puts 8 into groups of 4. Extension goes to
+  // 24, not 54 — beyond that it stops being sharing and becomes a counting endurance test,
+  // and the picture becomes a wall.
+  const cap = L==='easy'? 12 : L==='medium'? 20 : 24;
+  let per, groups, total, guard=0;
+  do {
+    per    = L==='easy'? y2p([2,5]) : L==='medium'? y2r(2,5) : y2r(2,6);
+    groups = L==='easy'? y2r(2,4)   : L==='medium'? y2r(2,5) : y2r(2,6);
+    total  = per*groups;
+  } while(total>cap && guard++<60);
+  if(total>cap){ per=2; groups=3; total=6; }
   const obj=y2p(Y2_OBJ).e;
   // The picture must show the WHOLE collection, laid out so no row is the answer —
   // otherwise the child counts a row instead of sharing.
@@ -5130,19 +5299,18 @@ function y2_fraction(diff){
         : y2shuf([...new Set([NAME[parts],NAME[2],NAME[4],NAME[8]])]),
       answer:NAME[parts], explanation:`One of ${parts} equal parts is ${NAME[parts]}.` };
   }
-  // Comparing two shaded shapes. Unit 26.2 asks "are two quarters always the same amount
-  // as one half?", which is fraction work rather than sharing, and it does not collide
-  // with question 12 the way "a quarter of 12" did.
+  // Comparing shaded shapes. Unit 26.2 asks whether two quarters is the same as one
+  // half. THREE shapes, not two, so it is a judgement rather than a coin toss.
   const NM={2:'one half',3:'one third',4:'one quarter',6:'one sixth',8:'one eighth'};
   const opts = L==='medium'? [2,4,8] : [2,3,4,6,8];
-  const a=y2p(opts), b=y2p(opts.filter(x=>x!==a));
-  const bigger = a<b ? a : b;   // fewer parts means bigger pieces
-  return { form:'compare_fractions', prompt:'Which is the bigger piece?',
-    svg:`<div style="display:flex;gap:22px;flex-wrap:wrap;justify-content:center">
-      ${y2fracBar(a,1)}${y2fracBar(b,1)}</div>`,
-    speak:`Which is the bigger piece, ${NM[a]} or ${NM[b]}?`,
-    choices:y2shuf([NM[a],NM[b]]), answer:NM[bigger],
-    explanation:`${NM[bigger]} is bigger, because the fewer the parts, the bigger each one is.` };
+  const three=y2shuf(opts).slice(0,3);
+  const biggest=Math.min(...three);   // fewer parts means bigger pieces
+  return { form:'compare_fractions', prompt:'Which is the biggest piece?',
+    svg:`<div style="display:flex;gap:18px;flex-wrap:wrap;justify-content:center;align-items:center">
+      ${three.map(p2=>y2fracBar(p2,1)).join('')}</div>`,
+    speak:`Which is the biggest piece: ${three.map(p2=>NM[p2]).join(', ')}?`,
+    choices:y2shuf(three.map(p2=>NM[p2])), answer:NM[biggest],
+    explanation:`${NM[biggest]} is biggest, because the fewer the parts, the bigger each one is.` };
 }
 
 // ---- 14. MONEY ---- units 18.2, 19.2, 20.3. Teaching order: enough -> total -> menu.
@@ -5297,13 +5465,26 @@ function y2_measurement(diff){
       explanation:`A ${tall.n} is about ${ans} ${unit.n} tall. The others are far too big or small.` };
   }
   if(kind==='length'){
-    const it = L==='easy'? y2p(Y2_SHORT) : y2p(Y2_SHORT.concat(Y2_LONG));
-    const n = L==='easy'? y2r(3,6) : L==='medium'? y2r(4,9) : y2r(5,12);
-    const u=y2p([{e:'📎',n:'paperclips'},{e:'🖍️',n:'crayons'},{e:'🧊',n:'cubes'}]);
-    return { form:'length_informal', prompt:`How many ${u.n} long is the ${it.n}?`,
-      svg:y2lengthStrip(n,u.e,'the '+it.n),
-      choices:y2shuf([String(n),...y2distract(n,()=>y2r(2,14))]), answer:String(n),
-      explanation:`It is ${n} ${u.n} long.` };
+    // Real sizes in millimetres, so the drawing is honest and the estimate is possible.
+    const OBJ=[{k:'crayon',n:'crayon',mm:90},{k:'pencil',n:'pencil',mm:170},
+               {k:'eraser',n:'eraser',mm:50},{k:'book',n:'book',mm:240}];
+    const UNIT=[{k:'cube',n:'cube',p:'cubes',mm:20},{k:'paperclip',n:'paperclip',p:'paperclips',mm:30},
+                {k:'handspan',n:'handspan',p:'handspans',mm:180}];
+    const o=y2p(L==='easy'? OBJ.filter(x=>x.mm<=170) : OBJ);
+    const pool=UNIT.filter(u=>{ const k=Math.round(o.mm/u.mm); return k>=2 && k<=12; });
+    const u=y2p(pool.length?pool:[UNIT[0]]);
+    const n=Math.round(o.mm/u.mm);
+    // One near-miss the picture rules out, and two that are nowhere near.
+    const near = n>2 ? n-1 : n+1;
+    const far1 = n*3, far2 = Math.max(1,Math.round(n/3));
+    const opts=[...new Set([n,near,far1,far2].map(String))];
+    while(opts.length<4) opts.push(String(n+opts.length+2));
+    return { form:'length_informal',
+      prompt:`About how many ${u.p} long is the ${o.n}?`,
+      svg:y2estimateArt(o.k,o.mm,u.k,u.mm,o.n,u.n),
+      choices:y2shuf([String(n), ...opts.filter(x=>x!==String(n)).slice(0,3)]),
+      answer:String(n),
+      explanation:`The ${o.n} is about ${n} ${u.p} long.` };
   }
   if(kind==='capacity'){
     const c=y2p(Y2_HOLD);
@@ -7807,7 +7988,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-14.13';
+const BUILD = '2026-08-14.16';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
