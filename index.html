@@ -509,7 +509,16 @@
   }
   .mmc-nameedit.changed { border-color:var(--gold); background:#FFFDF5; }
   .mmc-nameedit:focus { border-color:var(--ink); outline:none; }
-  .mmc-speak { margin:2px 0 10px; opacity:.85; }
+  /* Top right, clear of the question and the answers. Sitting under the prompt put it
+     directly in the child's path to the answer boxes, which was distracting. */
+  .mmc-quiz-q { position:relative; }
+  .mmc-speak { position:absolute; top:0; right:0; margin:0; opacity:.8; z-index:2; }
+  .mmc-speak:hover { opacity:1; }
+  .mmc-quiz-q .qtext { padding-right:132px; }
+  @media (max-width:520px){
+    .mmc-speak { position:static; margin:2px 0 10px; }
+    .mmc-quiz-q .qtext { padding-right:0; }
+  }
   .mmc-speak:hover { opacity:1; }
   .mmc-setfilter { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:16px; }
   .mmc-setchip {
@@ -4477,20 +4486,25 @@ function y2mab(h,t,o){
 }
 
 // ---- number line ----
-function y2numberLine(max, target, min, labelAll){
+// gapAt: leave that tick BLANK and draw a box under it, which is the book's own
+// "write the missing numbers" task from units 5.1 and 20.2.
+function y2numberLine(max, target, min, labelAll, gapAt){
   min=min||0;
   const w=620, y=60, x0=30, x1=w-30;
   const pos = x0 + ((target-min)/(max-min))*(x1-x0);
   let ticks='';
   for(let i=0;i<=10;i++){
     const x=x0+(i/10)*(x1-x0), v=min+i*((max-min)/10);
+    const isGap=(gapAt!==undefined && gapAt!==null && i===gapAt);
     const show=(i===0||i===10||labelAll);
     ticks+=`<line x1="${x}" y1="${y-10}" x2="${x}" y2="${y+10}" stroke="${Y2_INK}" stroke-width="${show?3:1.8}"/>`;
-    if(show) ticks+=`<text x="${x}" y="${y+32}" text-anchor="middle" font-family="'IBM Plex Mono',monospace" font-size="17" fill="${Y2_INK}">${v}</text>`;
+    if(isGap) ticks+=`<rect x="${x-24}" y="${y+16}" width="48" height="26" rx="6" fill="${Y2_PAPER}" stroke="${Y2_HI}" stroke-width="3"/>`;
+    else if(show) ticks+=`<text x="${x}" y="${y+32}" text-anchor="middle" font-family="'IBM Plex Mono',monospace" font-size="17" fill="${Y2_INK}">${v}</text>`;
   }
-  return `<svg viewBox="0 0 ${w} 96" width="100%" style="max-width:${w}px" role="img" aria-label="number line from ${min} to ${max}">
-    <line x1="${x0}" y1="${y}" x2="${x1}" y2="${y}" stroke="${Y2_INK}" stroke-width="3"/>${ticks}
-    <polygon points="${pos},${y-14} ${pos-9},${y-32} ${pos+9},${y-32}" fill="${Y2_HI}" stroke="${Y2_INK}" stroke-width="2.5"/></svg>`;
+  const arrow = (gapAt===undefined||gapAt===null)
+    ? `<polygon points="${pos},${y-14} ${pos-9},${y-32} ${pos+9},${y-32}" fill="${Y2_HI}" stroke="${Y2_INK}" stroke-width="2.5"/>` : '';
+  return `<svg viewBox="0 0 ${w} 100" width="100%" style="max-width:${w}px" role="img" aria-label="number line from ${min} to ${max}">
+    <line x1="${x0}" y1="${y}" x2="${x1}" y2="${y}" stroke="${Y2_INK}" stroke-width="3"/>${ticks}${arrow}</svg>`;
 }
 
 // ---- clock. sparse=true numbers only 12, 3, 6 and 9. ----
@@ -4571,7 +4585,9 @@ function y2pictureArray(total, emoji, rows, cols){
     const x=(i%cols)*size+6, y=Math.floor(i/cols)*size+6;
     g+=`<g transform="translate(${x},${y})">${y2tile(emoji,size-4)}</g>`;
   }
-  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px" role="img" aria-label="${total} objects in ${rows} rows of ${cols}">${g}</svg>`;
+  // Capped like every other drawing. Without the cap a wide array sets its own width
+  // and is simply cut off on the right, which is exactly what happened.
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${Math.min(w,600)}px" role="img" aria-label="${total} objects in ${rows} rows of ${cols}">${g}</svg>`;
 }
 
 // ---- arrow for turns ----
@@ -4820,24 +4836,32 @@ function y2_numberLine(diff, rot){
   const max = L==='easy'?100 : L==='medium'?500 : ((rot||0)%2===0?1000:2000);
   const step=max/10;
   const form=y2mix(L,{
-    easy:  ['read','read','read','counts_by'],
-    medium:['read','read','counts_by','between'],
-    hard:  ['read','counts_by','between','between'],
+    easy:  ['missing','missing','missing','read','counts_by'],
+    medium:['missing','missing','read','read','counts_by'],
+    hard:  ['missing','read','counts_by','between','between'],
   });
+  if(form==='missing'){
+    // Units 5.1 and 20.2: most numbers shown, one gap. The child continues the count
+    // rather than decoding an unlabelled scale.
+    const idx=y2r(2,8), target=idx*step;
+    return { form:'number_line_missing', prompt:'What is the missing number?',
+      svg:y2numberLine(max,target,0,true,idx),
+      choices:y2shuf([String(target),...y2distract(target,()=>{
+        const v=target+y2p([step,-step,step*2,-step*2]); return (v>=0&&v<=max)?v:target+step; })]),
+      answer:String(target), explanation:`The line counts by ${step}s, so the gap is ${target}.` };
+  }
   if(form==='counts_by'){
-    // WA names "the even spaces between the markings" as a feature to recognise.
     return { form:'number_line_counts_by', prompt:'What does this line count by?',
       svg:y2numberLine(max, step*y2r(1,9), 0, true),
       choices:y2shuf([String(step),...y2distract(step,()=>y2p([1,2,5,10,20,50,100,200]))]),
       answer:String(step), explanation:`The marks go up in ${step}s.` };
   }
-  // Extension reads a point BETWEEN the marks, which is estimating rather than reading off.
   const between = form==='between';
   const idx=y2r(1,9);
   const target = between ? idx*step + step/2 : idx*step;
   return { form: between?'number_line_between':'number_line_on_mark',
     prompt:'What number does the arrow point to?',
-    svg:y2numberLine(max,target,0,L==='easy'),
+    svg:y2numberLine(max,target,0, L!=='hard'),
     choices:y2shuf([String(target),...y2distract(target,()=>{
       const off=y2p([step,-step,step/2,-step/2]); const v=target+off;
       return (v>=0&&v<=max)? v : target+step; })]),
@@ -4995,8 +5019,8 @@ function y2_equality(diff){
 function y2_array(diff){
   const L=y2Lvl(diff);
   const form=y2mix(L,{ easy:['count','count','count','count','times'], medium:['count','count','times','times'], hard:['count','times','times','times'] });
-  const rows = L==='easy'? y2r(2,3) : L==='medium'? y2r(2,5) : y2r(2,8);
-  const cols = L==='easy'? y2p([2,5])  : L==='medium'? y2p([2,5,10]) : y2r(2,8);
+  const rows = L==='easy'? y2r(2,3) : L==='medium'? y2r(2,4) : y2r(2,6);
+  const cols = L==='easy'? y2p([2,5])  : L==='medium'? y2p([2,3,5]) : y2r(2,8);
   const o=y2p(Y2_OBJ).e;
   const svg=y2pictureArray(rows*cols,o,rows,Math.min(cols,8));
   if(form==='times'){
@@ -5016,16 +5040,25 @@ function y2_array(diff){
 // ---- 12. SHARING AND GROUPING ---- units 26.1, 27.2, 30.2
 function y2_share(diff){
   const L=y2Lvl(diff);
-  const form=y2mix(L,{ easy:['each','each','each','each','groups'], medium:['each','each','groups','groups'], hard:['each','groups','groups','groups'] });
-  const per    = L==='easy'? y2p([2,5,10]) : L==='medium'? y2r(2,8) : y2r(2,10);
-  const groups = L==='easy'? y2r(2,5)      : L==='medium'? y2r(2,8) : y2r(2,10);
+  const form=y2mix(L,{
+    easy:  ['each','each','each','each','groups'],
+    medium:['each','each','groups','groups'],
+    hard:  ['each','groups','groups','groups'],
+  });
+  const per    = L==='easy'? y2p([2,5]) : L==='medium'? y2r(2,6) : y2r(2,10);
+  const groups = L==='easy'? y2r(2,4)   : L==='medium'? y2r(2,6) : y2r(2,10);
   const total=per*groups;
+  const obj=y2p(Y2_OBJ).e;
+  // The picture must show the WHOLE collection, laid out so no row is the answer —
+  // otherwise the child counts a row instead of sharing.
+  const [rw,cl]=y2arrayLayout(total, groups, per);
+  const svg=y2pictureArray(total, obj, rw, cl);
   if(form==='groups')
     return { form:'how_many_groups', prompt:`${total} in groups of ${per}. How many groups?`,
-      choices:y2shuf([String(groups),...y2distract(groups,()=>y2r(2,12))]), answer:String(groups),
+      svg, choices:y2shuf([String(groups),...y2distract(groups,()=>y2r(2,12))]), answer:String(groups),
       explanation:`${total} ÷ ${per} = ${groups}.` };
-  return { form:'how_many_each', prompt:`Share ${total} between ${groups}. How many each?`,
-    choices:y2shuf([String(per),...y2distract(per,()=>y2r(2,12))]), answer:String(per),
+  return { form:'how_many_each', prompt:`Share ${total} into ${groups} groups. How many each?`,
+    svg, choices:y2shuf([String(per),...y2distract(per,()=>y2r(2,12))]), answer:String(per),
     explanation:`${total} ÷ ${groups} = ${per}.` };
 }
 
@@ -5192,41 +5225,65 @@ function y2_calendar(diff){
 
 // ---- 17. MEASUREMENT ---- WA Year 2: length, capacity and mass in UNIFORM INFORMAL
 // units. No centimetres, no kilograms. Units 12.2, 15.3, 16.3, 23.3, 24.2.
+const Y2_LONG =[{n:'door',u:'handspans',big:true},{n:'whiteboard',u:'handspans',big:true},
+  {n:'classroom',u:'steps',big:true},{n:'desk',u:'handspans',big:true}];
+const Y2_SHORT=[{n:'pencil',u:'cubes',big:false},{n:'eraser',u:'paperclips',big:false},
+  {n:'book',u:'cubes',big:false},{n:'crayon',u:'paperclips',big:false}];
+const Y2_HOLD =[{n:'tub',c:8},{n:'bowl',c:4},{n:'water bottle',c:3},{n:'milk bottle',c:6},{n:'jug',c:5}];
 function y2_measurement(diff){
   const L=y2Lvl(diff);
-  const kind=y2mix(L,{ easy:['length','length','capacity','mass'], medium:['length','capacity','mass','compare'], hard:['length','capacity','mass','compare','compare'] });
+  const kind=y2mix(L,{
+    easy:  ['length','length','capacity','mass','choose_unit'],
+    medium:['length','capacity','mass','choose_unit','estimate'],
+    hard:  ['length','capacity','mass','choose_unit','estimate','estimate'],
+  });
+  if(kind==='choose_unit'){
+    // Unit 12.2: "Which measuring unit did you choose for the whiteboard? Tell a
+    // classmate why." A big thing measured in paperclips is the misconception.
+    const big=Math.random()<0.5;
+    const it=big? y2p(Y2_LONG) : y2p(Y2_SHORT);
+    const right = big? 'handspans' : 'paperclips';
+    const wrong = big? 'paperclips' : 'handspans';
+    return { form:'choose_a_unit', prompt:`Which is the best unit for measuring the ${it.n}?`,
+      choices:y2shuf([right,wrong,'cups']), answer:right,
+      explanation: big
+        ? `The ${it.n} is big, so a big unit like handspans means fewer to count.`
+        : `The ${it.n} is small, so a small unit like paperclips measures it properly.` };
+  }
+  if(kind==='estimate'){
+    // "About how many water bottles tall is the door?" — estimation against a real object,
+    // which is what every measuring lesson in the book opens with.
+    const tall=y2p([{n:'door',v:9},{n:'window',v:5},{n:'cupboard',v:7},{n:'whiteboard',v:4}]);
+    const unit=y2p([{n:'water bottles',s:1},{n:'rulers',s:2}]);
+    const ans=tall.v*unit.s;
+    return { form:'estimate_real_object',
+      prompt:`About how many ${unit.n} tall is the ${tall.n}?`,
+      choices:y2shuf([String(ans),String(Math.max(1,Math.round(ans/3))),String(ans*3),String(ans*10)]),
+      answer:String(ans),
+      explanation:`A ${tall.n} is about ${ans} ${unit.n} tall. The others are far too big or small.` };
+  }
   if(kind==='length'){
+    const it = L==='easy'? y2p(Y2_SHORT) : y2p(Y2_SHORT.concat(Y2_LONG));
     const n = L==='easy'? y2r(3,6) : L==='medium'? y2r(4,9) : y2r(5,12);
-    const u=y2p([{e:'📎',n:'paperclips'},{e:'🖍️',n:'crayons'},{e:'🧊',n:'blocks'}]);
-    return { form:'length_informal', prompt:`How many ${u.n} long?`,
-      svg:y2lengthStrip(n,u.e,'the pencil'),
+    const u=y2p([{e:'📎',n:'paperclips'},{e:'🖍️',n:'crayons'},{e:'🧊',n:'cubes'}]);
+    return { form:'length_informal', prompt:`How many ${u.n} long is the ${it.n}?`,
+      svg:y2lengthStrip(n,u.e,'the '+it.n),
       choices:y2shuf([String(n),...y2distract(n,()=>y2r(2,14))]), answer:String(n),
       explanation:`It is ${n} ${u.n} long.` };
   }
   if(kind==='capacity'){
+    const c=y2p(Y2_HOLD);
     const n = L==='easy'? y2r(2,5) : y2r(3,9);
-    return { form:'capacity_informal', prompt:'How many cups fill the jug?',
+    return { form:'capacity_informal', prompt:`How many cups fill the ${c.n}?`,
       svg:y2cups(n), choices:y2shuf([String(n),...y2distract(n,()=>y2r(1,11))]),
-      answer:String(n), explanation:`The jug holds ${n} cups.` };
+      answer:String(n), explanation:`The ${c.n} holds ${n} cups.` };
   }
-  if(kind==='mass'){
-    const n = L==='easy'? y2r(2,6) : y2r(3,10);
-    const o=y2p(Y2_OBJ);
-    return { form:'mass_informal', prompt:`How many blocks balance the ${o.n}?`,
-      svg:y2balance(o.e,n), choices:y2shuf([String(n),...y2distract(n,()=>y2r(1,12))]),
-      answer:String(n), explanation:`It takes ${n} blocks to balance.` };
-  }
-  // The relationship WA names: a bigger unit means fewer units for the same object.
-  const small=y2r(8,14), big=y2r(3,5);
-  const which=y2p(['fewer','more']);
-  return { form:'unit_size_relationship',
-    prompt: which==='fewer' ? 'A bigger unit means you need...' : 'A smaller unit means you need...',
-    choices:['fewer of them','more of them'],
-    answer: which==='fewer' ? 'fewer of them' : 'more of them',
-    speak: which==='fewer' ? 'A bigger unit means you need what?' : 'A smaller unit means you need what?',
-    explanation: which==='fewer'
-      ? `A pencil is ${big} crayons long but ${small} paperclips long. Bigger unit, fewer of them.`
-      : `A pencil is ${small} paperclips long but ${big} crayons long. Smaller unit, more of them.` };
+  const n = L==='easy'? y2r(2,6) : y2r(3,10);
+  const o=y2p(Y2_OBJ);
+  const u=y2p(['cubes','pencils','marbles']);
+  return { form:'mass_informal', prompt:`How many ${u} balance the ${o.n}?`,
+    svg:y2balance(o.e,n), choices:y2shuf([String(n),...y2distract(n,()=>y2r(1,12))]),
+    answer:String(n), explanation:`It takes ${n} ${u} to balance the ${o.n}.` };
 }
 
 // ---- 18. DATA ---- unit 4.3 and the assessments. WA: one-to-one picture graphs.
@@ -7674,7 +7731,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-14.09';
+const BUILD = '2026-08-14.11';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -9925,8 +9982,7 @@ function renderTeacherWeeks(){
       S.toast='Choose which class this set is for.'; render(); return;
     }
     // There is no longer an "Everyone" checkbox — it was removed, but this line still
-    // referred to it, which threw a ReferenceError before anything else ran and left the
-    // Generate button dead for every year level. The rule is simply: pick a group.
+    // referred to it, which threw a ReferenceError and left Generate questions dead.
     if(!groupCbs.some(cb=>cb.checked)){
       S.toast='Choose which group this set is for.'; render(); return;
     }
@@ -14336,10 +14392,7 @@ function renderQuestionBody(q, st, onCheck, headerHTML){
   // Every student question goes through this function, so the read-aloud button only
   // needs adding once and can never be missing from one question type.
   const speak=renderSpeakButton(q);
-  if(speak){
-    const qt=qbox.querySelector('.qtext');
-    if(qt) qt.insertAdjacentElement('afterend', speak); else qbox.appendChild(speak);
-  }
+  if(speak) qbox.insertBefore(speak, qbox.firstChild);
   // A blank answer must never be graded. It used to be accepted, marked wrong, and stored
   // as "no response", which is worse than a wrong answer: the gradebook then says a child
   // got something wrong when they never actually attempted it, and that follows them into
