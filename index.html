@@ -1841,8 +1841,9 @@ function genArea(diff, _strategy, year){
     const [thing,LR,WR]=pick(things);
     if(diff==='medium'){
       const a=randInt(LR[0],LR[1]), b=randInt(WR[0],WR[1]);
-      return { prompt:`${thing.charAt(0).toUpperCase()+thing.slice(1)} measures ${a} m by ${b} m. What are its area and perimeter?`,
-        answer:`Area = ${a*b} m², Perimeter = ${2*(a+b)} m`,
+      return { prompt:`${thing.charAt(0).toUpperCase()+thing.slice(1)} measures ${a} m by ${b} m. Find its area and perimeter.`,
+        inputType:'parts', parts:[{label:'area in m²'},{label:'perimeter in m'}], partsJoin:'and',
+        answer:`${a*b},${2*(a+b)}`,
         apArea:a*b, apPerim:2*(a+b),
         explanation:`Area = ${a} × ${b} = ${a*b} m². Perimeter = 2 × (${a} + ${b}) = ${2*(a+b)} m.`,
         subskill:'area_perimeter' };
@@ -1853,8 +1854,9 @@ function genArea(diff, _strategy, year){
     const a=dec(LR[0],LR[1]);
     const b=dec(WR[0],WR[1]);
     const area=Number((a*b).toPrecision(12)), per=Number((2*(a+b)).toPrecision(12));
-    return { prompt:`${thing.charAt(0).toUpperCase()+thing.slice(1)} measures ${a} m by ${b} m. What are its area and perimeter?`,
-      answer:`Area = ${area} m², Perimeter = ${per} m`,
+    return { prompt:`${thing.charAt(0).toUpperCase()+thing.slice(1)} measures ${a} m by ${b} m. Find its area and perimeter.`,
+      inputType:'parts', parts:[{label:'area in m²'},{label:'perimeter in m'}], partsJoin:'and',
+      answer:`${area},${per}`,
       apArea:area, apPerim:per,
       explanation:`Area = ${a} × ${b} = ${area} m². Perimeter = 2 × (${a} + ${b}) = ${per} m.`,
       subskill:'area_perimeter' };
@@ -2060,7 +2062,9 @@ function drawPrism(l,w,h){
       fill="#F6E3B8" stroke="#2B2620" stroke-width="2.5"/>
     <text x="${x+W/2}" y="${y+H+18}" text-anchor="middle" font-size="13" font-family="sans-serif">${l} cm</text>
     <text x="${x-8}" y="${y+H/2}" text-anchor="end" font-size="13" font-family="sans-serif">${h} cm</text>
-    <text x="${x+W+D+6}" y="${y-D/2+4}" font-size="13" font-family="sans-serif">${w} cm</text>
+    <line x1="${x+W+D/2}" y1="${y-D/2}" x2="${x+W+D/2+14}" y2="${y-D/2-12}"
+      stroke="#2B2620" stroke-width="1.2" opacity="0.55"/>
+    <text x="${x+W+D/2+17}" y="${y-D/2-13}" font-size="13" font-family="sans-serif">${w} cm</text>
   `, Math.max(200, W+D+64), 165);
 }
 
@@ -6034,9 +6038,9 @@ const Y6_EVENTS=[
 function y6_probability(diff){
   const L=y6Lvl(diff);
   const form=y6mix(L,{
-    easy:  ['word','word','word','expected'],
-    medium:['word','expected','expected','as_percent'],
-    hard:  ['expected','as_percent','observed','observed'],
+    easy:  ['word','word','expected','expected','as_percent'],
+    medium:['expected','as_percent','complement','complement','observed'],
+    hard:  ['as_percent','complement','observed','observed','complement'],
   });
   if(form==='word'){
     const e=y6p(Y6_EVENTS);
@@ -6057,8 +6061,21 @@ function y6_probability(diff){
       answer:ans,
       explanation:`One ${name} segment out of ${seg} equal segments is ${ans}.` };
   }
+  if(form==='complement'){
+    // The chance of NOT getting something. WA Year 6 works with the complement, and it is
+    // the first probability idea that cannot be read straight off the picture.
+    const seg=y6p([4,5,8,10]);
+    const want=y6r(1,seg-1);
+    const pct=Math.round((seg-want)/seg*100);
+    return { form:'prob_complement',
+      prompt:`${want} of the ${seg} segments are blue. What is the chance of NOT spinning blue?`,
+      svg:y6spinner(seg,null),
+      choices:y6shuf([pct+'%', Math.round(want/seg*100)+'%', ...y6distract(pct+'%',()=>Math.max(5,Math.min(95,pct+y6p([10,-10,20,-20])))+'%',2)].filter((v,i,a)=>a.indexOf(v)===i)),
+      answer:pct+'%',
+      explanation:`${want} out of ${seg} are blue, so ${seg-want} out of ${seg} are not — that is ${pct}%.` };
+  }
   if(form==='as_percent'){
-    const seg=y6p([2,4,5,8,10]);
+    const seg=y6p([4,5,8,10,20]);
     const want=y6r(1,seg-1);
     const pct=Math.round(want/seg*100);
     const isAre = want===1? 'segment is' : 'segments are';
@@ -6201,10 +6218,18 @@ function y6_misleading(diff){
     strategy='nothing — this graph is fair';
     why='The axis starts at zero and every column is the same width, so the heights can be compared honestly.';
   }
-  if(form==='spot')
-    return { form:'mislead_spot', prompt:'Is this graph misleading?', svg,
-      choices:['yes','no'], answer: TRICK==='honest'?'no':'yes',
-      explanation:why };
+  if(form==='spot'){
+    const OPTIONS={
+      truncated:'Yes — the vertical axis does not start at zero',
+      widths:'Yes — one column is drawn much wider than the others',
+      honest:'No — the axis starts at zero and the columns match',
+    };
+    const wrongNo='No — the columns are all different heights, so it is fine';
+    const answer=OPTIONS[TRICK];
+    const pool=[OPTIONS.truncated, OPTIONS.widths, OPTIONS.honest, wrongNo];
+    return { form:'mislead_spot', prompt:'Is this graph misleading, and why?', svg,
+      choices:y6shuf(pool), answer, explanation:why };
+  }
   return { form:'mislead_strategy', prompt:'What makes this graph misleading?', svg,
     choices:y6shuf(['the vertical axis does not start at zero',
                     'one column is drawn much wider than the others',
@@ -6740,6 +6765,7 @@ function buildQuestion(slotIdx, diff, strategyKey, year){
     showFracDen:q.showFracDen!=null?q.showFracDen:null,
     parts:q.parts||null, partsLead:q.partsLead||null, partsJoin:q.partsJoin||null,
     partsAnyOrder:!!q.partsAnyOrder, spokenPrompt:q.spokenPrompt||null,
+    fracEq:q.fracEq||null,
     partsTail:q.partsTail||null,
     fracNum:q.fracNum!=null?q.fracNum:null, fracDen:q.fracDen!=null?q.fracDen:null,
     ofTotal:q.ofTotal!=null?q.ofTotal:null };
@@ -8752,7 +8778,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-16.03';
+const BUILD = '2026-08-16.04';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
