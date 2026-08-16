@@ -360,9 +360,21 @@
      up before it appears, and there was nothing on screen to suggest hovering at all. */
   .mmc-strandhead {
     font-size:12px; letter-spacing:.06em; text-transform:uppercase; font-weight:800;
-    background:var(--bg); color:var(--ink); opacity:.75;
-    border-bottom:2px solid var(--ink); padding:6px 8px; white-space:nowrap;
+    color:var(--ink); border-bottom:2px solid var(--ink);
+    padding:6px 8px; white-space:nowrap;
   }
+  /* One hue per strand, carried from the heading down the column edges so a teacher can
+     see where a strand starts and ends without reading the headings. Kept very pale: the
+     red/green accuracy shading in the cells is the signal and must stay readable. */
+  .mmc-strand-0 { background:#E4F1E8; }   /* Number and Algebra      · green  */
+  .mmc-strand-1 { background:#ECE4F2; }   /* Measurement and Geometry · purple */
+  .mmc-strand-2 { background:#F9E9DA; }   /* Probability and Statistics · orange */
+  .mmc-qhead.mmc-strand-0 { background:#F1F8F3; }
+  .mmc-qhead.mmc-strand-1 { background:#F6F1F9; }
+  .mmc-qhead.mmc-strand-2 { background:#FDF5ED; }
+  /* The boundary line runs the full height of the table, which is what actually shows
+     where one strand stops. */
+  .mmc-strand-start { border-left:3px solid var(--ink) !important; }
   .mmc-qhead { position:relative; cursor:help; overflow:visible; }
   .mmc-ledger thead { position:relative; z-index:5; }
   .mmc-qhead::after {
@@ -9996,7 +10008,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-16.14';
+const BUILD = '2026-08-16.15';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -13417,11 +13429,13 @@ function renderLedgerByQuestion(){
   // number ends and measurement begins.
   const strandRow=el('<tr></tr>');
   strandRow.appendChild(el('<th></th>'));
-  let run=[];
+  let run=[], firstStrand=true;
   const flush=()=>{
     if(!run.length) return;
     const st=strandOf(run[0]);
-    strandRow.appendChild(el(`<th colspan="${run.length}" class="mmc-strandhead">${esc(STRAND_NAMES[st])}</th>`));
+    strandRow.appendChild(el(
+      `<th colspan="${run.length}" class="mmc-strandhead mmc-strand-${st}${firstStrand?'':' mmc-strand-start'}">${esc(STRAND_NAMES[st])}</th>`));
+    firstStrand=false;
     run=[];
   };
   COLS.forEach(code=>{
@@ -13430,27 +13444,33 @@ function renderLedgerByQuestion(){
   });
   flush();
   thead.insertBefore(strandRow, trh);
+  // The column index each strand starts at. Every row marks the same ones, so the
+  // boundary is a single line running the whole height of the table.
+  const strandStarts=new Set();
+  COLS.forEach((code,i)=>{ if(i>0 && strandOf(code)!==strandOf(COLS[i-1])) strandStarts.add(i); });
+  const strandClass=(i)=>` mmc-strand-${strandOf(COLS[i])}${strandStarts.has(i)?' mmc-strand-start':''}`;
 
   // The skill name was already on a `title`, but nothing said so and the browser's own
   // tooltip takes about a second to appear. A dotted underline and a help cursor say
   // "there is more here", and the tooltip below shows instantly.
   COLS.forEach((code,i)=> trh.appendChild(el(
-    `<th class="mmc-qhead" data-tip="${esc(skillTitle(code))}"><span>Q${i+1}</span></th>`)));
+    `<th class="mmc-qhead${strandClass(i)}" data-tip="${esc(skillTitle(code))}"><span>Q${i+1}</span></th>`)));
   table.appendChild(thead);
   const tbody=el('<tbody></tbody>');
 
   const avgRow=el('<tr style="background:var(--bg);font-weight:700;"></tr>');
   avgRow.appendChild(el('<td>Class average</td>'));
-  COLS.forEach((code)=>{
+  COLS.forEach((code,ci)=>{
     let avgCorrect=0, avgTotal=0;
     S.results.forEach(rec=>{
       const map=qidToSlotByWeek[rec.weekId]; if(!map) return;
       (rec.answers||[]).forEach(a=>{ if(map[a.qId]===code){ avgTotal++; if(a.correct) avgCorrect++; } });
     });
-    if(avgTotal===0) avgRow.appendChild(el('<td style="color:var(--ink-soft);">-</td>'));
+    const edge = strandStarts.has(ci) ? ' mmc-strand-start' : '';
+    if(avgTotal===0) avgRow.appendChild(el(`<td class="${edge.trim()}" style="color:var(--ink-soft);">-</td>`));
     else {
       const pct=Math.round((avgCorrect/avgTotal)*100);
-      avgRow.appendChild(el(`<td class="mmc-q ${qBand(pct)}" title="${avgCorrect}/${avgTotal} correct across the class">${pct}%</td>`));
+      avgRow.appendChild(el(`<td class="mmc-q ${qBand(pct)}${edge}" title="${avgCorrect}/${avgTotal} correct across the class">${pct}%</td>`));
     }
   });
   tbody.appendChild(avgRow);
@@ -13468,7 +13488,8 @@ function renderLedgerByQuestion(){
         const map=qidToSlotByWeek[rec.weekId]; if(!map) return;
         (rec.answers||[]).forEach(a=>{ if(map[a.qId]===code){ total++; if(a.correct) correctCount++; } });
       });
-      if(total===0){ tr.appendChild(el('<td style="color:var(--ink-soft);">-</td>')); }
+      const edge = strandStarts.has(qi) ? ' mmc-strand-start' : '';
+      if(total===0){ tr.appendChild(el(`<td class="${edge.trim()}" style="color:var(--ink-soft);">-</td>`)); }
       else {
         const pct=Math.round((correctCount/total)*100);
         // NOT clickable. This column is an average across every set the class has ever
@@ -13476,7 +13497,7 @@ function renderLedgerByQuestion(){
         // meaningful with one set and became nonsense with two. The skill name on the
         // header hover is the useful thing here; the specific question belongs in By Week,
         // where a cell really is one question.
-        const td=el(`<td class="mmc-q ${qBand(pct)}"></td>`);
+        const td=el(`<td class="mmc-q ${qBand(pct)}${edge}"></td>`);
         const btn=el(`<span class="mmc-qbtn static" title="${esc(S.profiles[uid].displayName||uid)} · ${esc(skillTitle(code))} · ${correctCount} of ${total} correct across ${total===1?'1 set':'all sets'}">${pct}%</span>`);
         btn.onclick=()=>{
           // Remember the sideways position AND where on screen the cell is, so the bubble
