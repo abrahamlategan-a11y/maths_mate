@@ -7580,18 +7580,39 @@ function y4Adapt(q){
   out.inputType='text';
   return out;
 }
+// ---- CONTINUATIONS, not replacements ----
+//
+// A question number has to keep meaning the same skill, because the class average per
+// question over time is what tells a teacher what to reteach. Minting a new code for a
+// skill that already existed stops that trend line dead and starts a new one beside it.
+//
+// So five skills keep their ORIGINAL code and get a better Year 4 generator behind it.
+// The year is passed to every generator, so Years 3, 5 and 6 keep exactly what they had —
+// the same pattern genArea and genAngle already use.
+function y4Override(){
+  const swap=(code, y4gen)=>{
+    const slot=SLOTS.find(s=>s.skill===code);
+    if(!slot) return;
+    const orig=slot.gen;
+    slot.gen=(d,strategy,year)=> (+year===4) ? y4Adapt(y4gen(d,strategy,year)) : orig(d,strategy,year);
+  };
+  swap('FACTORS',        y4_multiples);   // unit 10.1 factors AND unit 4.1 multiples
+  swap('AREA_PERIMETER', y4_area);        // both numbers, every time, two typed boxes
+  swap('TIME',           y4_time);        // clock stays, am/pm and unit conversion rotate in
+  swap('PROBABILITY',    y4_probability); // rebuilt around independence, unit 14.2
+  swap('COINS',          y4_money);       // coins stay the medium, budgets added on top
+}
+
+// Genuinely NEW skills. These have no history to protect, because Year 4 generated
+// nothing for them before — the whole space strand, graduated scales, timetables and
+// many-to-one picture graphs.
 const Y4_SLOTS=[
-  {skill:'Y4_MULTIPLES',   title:'Factors and multiples',         gen:d=>y4Adapt(y4_multiples(d))},
-  {skill:'Y4_MONEY',       title:'Money',                         gen:d=>y4Adapt(y4_money(d))},
-  {skill:'Y4_AREA',        title:'Area and perimeter',            gen:d=>y4Adapt(y4_area(d))},
-  {skill:'Y4_SCALES',      title:'Reading graduated scales',      gen:d=>y4Adapt(y4_scales(d))},
-  {skill:'Y4_TIME',        title:'Time',                          gen:d=>y4Adapt(y4_time(d))},
-  {skill:'Y4_TIMETABLE',   title:'Timetables and duration',       gen:d=>y4Adapt(y4_timetable(d))},
-  {skill:'Y4_SYMMETRY',    title:'Symmetry',                      gen:d=>y4Adapt(y4_symmetry(d))},
-  {skill:'Y4_GRIDREF',     title:'Grid references and directions',gen:d=>y4Adapt(y4_gridref(d))},
-  {skill:'Y4_SHAPES',      title:'Shapes and quadrilaterals',     gen:d=>y4Adapt(y4_shapes(d))},
-  {skill:'Y4_PROBABILITY', title:'Probability',                   gen:d=>y4Adapt(y4_probability(d))},
-  {skill:'Y4_PICGRAPH',    title:'Reading graphs',                gen:d=>y4Adapt(y4_picgraph(d))},
+  {skill:'Y4_SCALES',    title:'Reading graduated scales',      gen:d=>y4Adapt(y4_scales(d))},
+  {skill:'Y4_TIMETABLE', title:'Timetables and duration',       gen:d=>y4Adapt(y4_timetable(d))},
+  {skill:'Y4_SYMMETRY',  title:'Symmetry',                      gen:d=>y4Adapt(y4_symmetry(d))},
+  {skill:'Y4_GRIDREF',   title:'Grid references and directions',gen:d=>y4Adapt(y4_gridref(d))},
+  {skill:'Y4_SHAPES',    title:'Shapes and quadrilaterals',     gen:d=>y4Adapt(y4_shapes(d))},
+  {skill:'Y4_PICGRAPH',  title:'Reading graphs',                gen:d=>y4Adapt(y4_picgraph(d))},
 ];
 // END YEAR 4
 
@@ -7613,7 +7634,7 @@ const SKILLS = {
   SEQUENCE:         { title:'Number patterns' },
   ROUNDING:         { title:'Rounding' },
   ORDER_WHOLE:      { title:'Ordering whole numbers' },
-  FACTORS:          { title:'Factors' },
+  FACTORS:          { title:'Factors and multiples' },
   ADDITION:         { title:'Addition' },
   SUBTRACTION:      { title:'Subtraction' },
   MULTIPLICATION:   { title:'Multiplication' },
@@ -7622,7 +7643,7 @@ const SKILLS = {
   VISUAL_FRACTION:  { title:'Visual fractions' },
   FRAC_DEC:         { title:'Fractions and decimals' },
   ORDER_DECIMAL:    { title:'Ordering decimals' },
-  COINS:            { title:'Australian coins' },
+  COINS:            { title:'Money' },
   AREA_PERIMETER:   { title:'Area and perimeter' },
   TIME:             { title:'Time' },
   SIMPLIFY_FRACTION:{ title:'Simplifying fractions' },
@@ -7683,16 +7704,11 @@ const SKILLS = {
   Y6_MISLEADING:    { title:'Misleading graphs' },
   Y6_TIMETABLE:     { title:'Timetables and duration' },
   // ---- Year 4 rebuild (Maths Trek 4 + WA Curriculum 2026). Codes are PERMANENT. ----
-  Y4_MULTIPLES:     { title:'Factors and multiples' },
-  Y4_MONEY:         { title:'Money' },
-  Y4_AREA:          { title:'Area and perimeter' },
   Y4_SCALES:        { title:'Reading graduated scales' },
-  Y4_TIME:          { title:'Time' },
   Y4_TIMETABLE:     { title:'Timetables and duration' },
   Y4_SYMMETRY:      { title:'Symmetry' },
   Y4_GRIDREF:       { title:'Grid references and directions' },
   Y4_SHAPES:        { title:'Shapes and quadrilaterals' },
-  Y4_PROBABILITY:   { title:'Probability' },
   Y4_PICGRAPH:      { title:'Reading graphs' },
   // Retired. Kept so historical results still resolve to a sensible title.
   PLACE_VALUE:      { title:'Place value', retired:true },
@@ -7705,67 +7721,48 @@ const YEAR_PLANS = {
   // Year 2: 19 questions from Maths Trek 2, mapped to the WA Curriculum (implementation
   // 2026). Difficulty is the CONTEXT, not the numbers: the teaching order in the book is
   // the ladder. Fast Facts is unaffected — a Year 2 class keeps it and gains a set.
-  2: ['Y2_PLACE_VALUE',
-      'Y2_WORDS',
-      'Y2_ORDER',
-      'Y2_NUMBER_LINE',
-      'Y2_SEQUENCE',
-      'Y2_PATTERN',
-      'Y2_ODD_EVEN',
-      'Y2_ADDITION',
-      'Y2_SUBTRACTION',
-      'Y2_EQUALITY',
-      'Y2_ARRAY',
-      'Y2_SHARE',
-      'Y2_FRACTION',
-      'Y2_MONEY',
-      'Y2_TIME',
-      'Y2_CALENDAR',
-      'Y2_MEASUREMENT',
-      'Y2_DATA',
-      'Y2_POSITION'],
+  2: [
+      // Number and Algebra (14)
+      'Y2_PLACE_VALUE', 'Y2_WORDS', 'Y2_ORDER', 'Y2_NUMBER_LINE',
+      'Y2_SEQUENCE', 'Y2_PATTERN', 'Y2_ODD_EVEN', 'Y2_ADDITION',
+      'Y2_SUBTRACTION', 'Y2_EQUALITY', 'Y2_ARRAY', 'Y2_SHARE',
+      'Y2_FRACTION', 'Y2_MONEY',
+      // Measurement and Geometry (4)
+      'Y2_TIME', 'Y2_CALENDAR', 'Y2_MEASUREMENT', 'Y2_POSITION',
+      // Probability and Statistics (1)
+      'Y2_DATA'],
   // Year 3: 16 questions, not 24. Decimals are not introduced until Year 4, so
   // FRAC_DEC, ORDER_DECIMAL, SIMPLIFY_FRACTION and MIXED_IMPROPER have no place here. // they are omitted rather than made "easier", because they are not easier, they are
   // a year early. FACTORS and METRIC_CONVERT go for the same reason. 16 is also closer
   // to Year 3 stamina than 24.
-  3: ['PARTITION','SEQUENCE','ROUNDING','ORDER_WHOLE','ADDITION','SUBTRACTION',
-      'MULTIPLICATION','DIVISION','FACT_FAMILY','MISSING_NUMBER','VISUAL_FRACTION',
-      'FRACTION_OF','COINS','TIME','MEASUREMENT','AREA_PERIMETER','ANGLES',
-      'SHAPES_3D','PROBABILITY','STATISTICS'],
+  3: [
+      // Number and Algebra (13)
+      'PARTITION', 'SEQUENCE', 'ROUNDING', 'ORDER_WHOLE',
+      'ADDITION', 'SUBTRACTION', 'MULTIPLICATION', 'DIVISION',
+      'FACT_FAMILY', 'MISSING_NUMBER', 'VISUAL_FRACTION', 'FRACTION_OF',
+      'COINS',
+      // Measurement and Geometry (5)
+      'TIME', 'MEASUREMENT', 'AREA_PERIMETER', 'ANGLES',
+      'SHAPES_3D',
+      // Probability and Statistics (2)
+      'PROBABILITY', 'STATISTICS'],
   // Rebuilt against the WA Curriculum (implementation 2026) and all 86 Maths Trek 4
   // sheets. Grew from 24 to 30: space and geometry generated NOTHING before, and
   // multiples, many-to-one picture graphs and irregular area were all missing.
   // Simplifying fractions is out (not Year 4 content); equivalent fractions is in.
-  4: ['PARTITION',
-      'SEQUENCE',
-      'ROUNDING',
-      'ORDER_WHOLE',
-      'Y4_MULTIPLES',
-      'ADDITION',
-      'SUBTRACTION',
-      'MULTIPLICATION',
-      'DIVISION',
-      'MISSING_NUMBER',
-      'EQUIV_FRACTION',
-      'COMPARE_FRACTION',
-      'VISUAL_FRACTION',
-      'FRAC_DEC',
-      'ORDER_DECIMAL',
-      'FRACTION_OF',
-      'MIXED_IMPROPER',
-      'Y4_MONEY',
-      'Y4_AREA',
-      'METRIC_CONVERT',
-      'Y4_SCALES',
-      'Y4_TIME',
-      'Y4_TIMETABLE',
-      'Y4_SYMMETRY',
-      'Y4_GRIDREF',
+  4: [
+      // Number and Algebra (18)
+      'PARTITION', 'SEQUENCE', 'ROUNDING', 'ORDER_WHOLE',
+      'FACTORS', 'ADDITION', 'SUBTRACTION', 'MULTIPLICATION',
+      'DIVISION', 'COMPARE_FRACTION', 'VISUAL_FRACTION', 'FRAC_DEC',
+      'ORDER_DECIMAL', 'COINS', 'EQUIV_FRACTION', 'FRACTION_OF',
+      'MISSING_NUMBER', 'MIXED_IMPROPER',
+      // Measurement and Geometry (9)
+      'AREA_PERIMETER', 'TIME', 'METRIC_CONVERT', 'ANGLES',
+      'Y4_SCALES', 'Y4_TIMETABLE', 'Y4_SYMMETRY', 'Y4_GRIDREF',
       'Y4_SHAPES',
-      'ANGLES',
-      'Y4_PROBABILITY',
-      'Y4_PICGRAPH',
-      'STATISTICS'],
+      // Probability and Statistics (3)
+      'PROBABILITY', 'STATISTICS', 'Y4_PICGRAPH'],
   // Year 6: 24 questions, weighted hard toward number fluency. Nets, transformations,
   // spinners, coordinates and timetables are deliberately absent. Each needs a drawing
   // where a small rendering error makes the question unanswerable, and the underlying
@@ -7774,39 +7771,31 @@ const YEAR_PLANS = {
   // room for the six mandated areas Year 6 generated nothing for: coordinates,
   // transformations, probability, reading graphs, misleading graphs and timetables.
   // Prime factorisation is dropped — factor trees are not in the WA curriculum.
-  6: ['PRIME_COMPOSITE',
-      'Y6_FACTORS',
-      'Y6_ADD_SUB',
-      'Y6_MUL_DIV',
-      'POWERS_TEN',
-      'INTEGERS',
-      'Y6_EQUIV_FRAC',
-      'FRACTION_ADD_SUB',
-      'Y6_FRACTION_OF',
-      'FDP',
-      'DECIMAL_ADD_SUB',
-      'DECIMAL_MUL_DIV',
-      'ORDER_OPS',
-      'SEQUENCE',
-      'METRIC_CONVERT',
-      'AREA_PERIMETER',
-      'VOLUME',
-      'Y6_ANGLES',
-      'Y6_COORDINATES',
-      'Y6_TRANSFORM',
-      'Y6_PROBABILITY',
-      'Y6_GRAPHS',
-      'Y6_MISLEADING',
-      'Y6_TIMETABLE'],
+  6: [
+      // Number and Algebra (14)
+      'PRIME_COMPOSITE', 'Y6_FACTORS', 'Y6_ADD_SUB', 'Y6_MUL_DIV',
+      'POWERS_TEN', 'INTEGERS', 'Y6_EQUIV_FRAC', 'FRACTION_ADD_SUB',
+      'Y6_FRACTION_OF', 'FDP', 'DECIMAL_ADD_SUB', 'DECIMAL_MUL_DIV',
+      'ORDER_OPS', 'SEQUENCE',
+      // Measurement and Geometry (7)
+      'METRIC_CONVERT', 'AREA_PERIMETER', 'VOLUME', 'Y6_ANGLES',
+      'Y6_COORDINATES', 'Y6_TRANSFORM', 'Y6_TIMETABLE',
+      // Probability and Statistics (3)
+      'Y6_PROBABILITY', 'Y6_GRAPHS', 'Y6_MISLEADING'],
   // Year 5: Year 4's shape with the genuinely new Year 5 ideas in it. Percentages, mixed
   // numerals, fraction arithmetic, thousandths and 24-hour time are the markers. None of
   // them appear in the Year 4 set, so this is recognisably Year 5 rather than Year 4 with
   // bigger numbers. Coordinates, nets and transformations are still out: each needs a
   // drawing where a small rendering error makes the question unanswerable.
-  5: ['PARTITION','SEQUENCE','ROUNDING','ORDER_WHOLE','FACTORS','ADDITION','SUBTRACTION',
-      'MULTIPLICATION','DIVISION','MISSING_NUMBER','COMPARE_FRACTION','EQUIV_FRACTION',
-      'SIMPLIFY_FRACTION','MIXED_IMPROPER','FRACTION_ADD_SUB','FRACTION_OF','ORDER_DECIMAL',
-      'FRAC_DEC','FDP','PERCENT_OF','METRIC_CONVERT','AREA_PERIMETER','TIME','ANGLES'],
+  5: [
+      // Number and Algebra (20)
+      'PARTITION', 'SEQUENCE', 'ROUNDING', 'ORDER_WHOLE',
+      'FACTORS', 'ADDITION', 'SUBTRACTION', 'MULTIPLICATION',
+      'DIVISION', 'MISSING_NUMBER', 'COMPARE_FRACTION', 'EQUIV_FRACTION',
+      'SIMPLIFY_FRACTION', 'MIXED_IMPROPER', 'FRACTION_ADD_SUB', 'FRACTION_OF',
+      'ORDER_DECIMAL', 'FRAC_DEC', 'FDP', 'PERCENT_OF',
+      // Measurement and Geometry (4)
+      'METRIC_CONVERT', 'AREA_PERIMETER', 'TIME', 'ANGLES'],
 };
 
 // Weeks generated before skill codes existed carry only a slot number. Every
@@ -7927,6 +7916,7 @@ const SLOTS=[
 Y2_SLOTS.forEach(s=>SLOTS.push(s));
 Y6_SLOTS.forEach(s=>SLOTS.push(s));
 Y4_SLOTS.forEach(s=>SLOTS.push(s));
+y4Override();
 function buildQuestion(slotIdx, diff, strategyKey, year){
   const list = slotsForYear(year);
   const slot = list[slotIdx] || SLOTS[slotIdx];
@@ -9977,7 +9967,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-16.10';
+const BUILD = '2026-08-16.12';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
