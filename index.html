@@ -5819,19 +5819,25 @@ function y6probLine(markAt, showLabels){
 
 // ---- spinner, for expected probability ----
 const Y6_SEGNAMES=['blue','yellow','red','green','purple','orange','sky','brown'];
-function y6spinner(segments, highlight){
+function y6spinner(segments, highlight, blueCount){
   const size=210,c=size/2,r=c-8;
   const COL=[Y6_BLUE,Y6_GOLD,Y6_RED,Y6_GREEN,'#7A4E9B','#E08A6B','#5AA8C8','#8A5A2B'];
   let g='';
   for(let i=0;i<segments;i++){
     const a0=(i/segments)*2*Math.PI-Math.PI/2, a1=((i+1)/segments)*2*Math.PI-Math.PI/2;
+    // blueCount is the number of segments the QUESTION says are blue. Without it the
+    // spinner drew every segment a different colour while the text claimed four were
+    // blue — the picture contradicted the words, and the picture is the evidence.
+    const fill = blueCount!=null ? (i<blueCount ? Y6_BLUE : '#EDE7DA') : COL[i%COL.length];
     g+=`<path d="M${c},${c} L${(c+r*Math.cos(a0)).toFixed(1)},${(c+r*Math.sin(a0)).toFixed(1)} A${r},${r} 0 ${(a1-a0)>Math.PI?1:0} 1 ${(c+r*Math.cos(a1)).toFixed(1)},${(c+r*Math.sin(a1)).toFixed(1)} Z"
-        fill="${COL[i%COL.length]}" fill-opacity="${highlight!=null&&i!==highlight?0.30:0.95}" stroke="${Y6_INK}" stroke-width="2.5"/>`;
+        fill="${fill}" fill-opacity="${highlight!=null&&i!==highlight?0.30:0.95}" stroke="${Y6_INK}" stroke-width="2.5"/>`;
   }
   g+=`<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${Y6_INK}" stroke-width="4"/>`;
   g+=`<circle cx="${c}" cy="${c}" r="7" fill="${Y6_INK}"/>`;
-  return `<svg viewBox="0 0 ${size} ${size}" width="210" height="210" role="img"
-    aria-label="a spinner with ${segments} equal segments">${g}</svg>`;
+  const alt = blueCount!=null
+    ? `a spinner with ${segments} equal segments, ${blueCount} of them blue`
+    : `a spinner with ${segments} equal segments`;
+  return `<svg viewBox="0 0 ${size} ${size}" width="210" height="210" role="img" aria-label="${alt}">${g}</svg>`;
 }
 
 // ---- timetable ----
@@ -6069,7 +6075,7 @@ function y6_probability(diff){
     const pct=Math.round((seg-want)/seg*100);
     return { form:'prob_complement',
       prompt:`${want} of the ${seg} segments are blue. What is the chance of NOT spinning blue?`,
-      svg:y6spinner(seg,null),
+      svg:y6spinner(seg,null,want),
       choices:y6shuf([pct+'%', Math.round(want/seg*100)+'%', ...y6distract(pct+'%',()=>Math.max(5,Math.min(95,pct+y6p([10,-10,20,-20])))+'%',2)].filter((v,i,a)=>a.indexOf(v)===i)),
       answer:pct+'%',
       explanation:`${want} out of ${seg} are blue, so ${seg-want} out of ${seg} are not — that is ${pct}%.` };
@@ -6080,7 +6086,7 @@ function y6_probability(diff){
     const pct=Math.round(want/seg*100);
     const isAre = want===1? 'segment is' : 'segments are';
     return { form:'prob_percent', prompt:`${want} of the ${seg} ${isAre} blue. What is the chance as a percentage?`,
-      svg:y6spinner(seg,null),
+      svg:y6spinner(seg,null,want),
       choices:y6shuf([pct+'%', ...y6distract(pct+'%',()=>Math.max(5,Math.min(95, pct+y6p([10,-10,25,-25,5,-5])))+'%')]),
       answer:pct+'%',
       explanation:`${want} out of ${seg} is ${y6frac(want,seg)}, which is ${pct}%.` };
@@ -8778,7 +8784,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-16.04';
+const BUILD = '2026-08-16.07';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -9644,12 +9650,30 @@ function answerFlags(q, given){
     const n=Number(given.num), d=Number(given.den);
     if(isFinite(n)&&isFinite(d)&&d!==0&&n!==0&&!isSimplest(n,d)) flags.push('could_simplify');
   }
+  // fracHard and fracEasy hand back a plain "3/6" string rather than a {num,den} object,
+  // so they never reached the branch above. Adding and subtracting fractions is exactly
+  // where an unsimplified answer turns up, and it was the one place not being flagged.
+  if((q.inputType==='fracHard'||q.inputType==='fracEasy') && given && !q.requireSimplest){
+    const m=String(given).match(/^\s*(-?\d+)\s*\/\s*(-?\d+)\s*$/);
+    if(m){
+      const n=+m[1], d=+m[2];
+      if(isFinite(n)&&isFinite(d)&&d!==0&&n!==0&&!isSimplest(n,d)) flags.push('could_simplify');
+    }
+  }
   return flags;
 }
 function nudgeText(q, given){
   if(!given) return '';
-  const n=Number(given.num), d=Number(given.den);
-  if(!isFinite(n)||!isFinite(d)||d===0) return '';
+  // 'mixed' gives {num,den}; fracHard and fracEasy give the string "3/6".
+  let n, d;
+  if(typeof given==='object'){ n=Number(given.num); d=Number(given.den); }
+  else {
+    const m=String(given).match(/^\s*(-?\d+)\s*\/\s*(-?\d+)\s*$/);
+    if(!m) return '';
+    n=+m[1]; d=+m[2];
+  }
+  if(!isFinite(n)||!isFinite(d)||d===0||n===0) return '';
+  if(isSimplest(n,d)) return '';
   const [sn,sd]=simplifyFrac(n,d);
   return `Remember to simplify · ${n}/${d} can be written as ${sn}/${sd}.`;
 }
@@ -9657,8 +9681,16 @@ function fracPromptHTML(q){
   // A row of fractions and operators: [{n,d}, '+', {n,d}, '=', '?']. Written once here so
   // every fraction question on the paper looks like a fraction rather than "2/9 + 3/9".
   if(Array.isArray(q.fracEq) && q.fracEq.length){
+    // The trailing "= ?" comes off when the INPUT already supplies an equals sign and the
+    // answer boxes. Leaving it in printed the equals twice with a "?" stranded between.
+    let eq=q.fracEq.slice();
+    const inputSuppliesEquals = q.inputType==='fracHard' || q.inputType==='fracEasy' || q.inputType==='mixed';
+    if(inputSuppliesEquals){
+      if(eq[eq.length-1]==='?') eq.pop();
+      if(eq[eq.length-1]==='=') eq.pop();
+    }
     return `<div class="mmc-frac-eq" style="margin-top:10px;gap:12px;">${
-      q.fracEq.map(x=> (x && typeof x==='object')
+      eq.map(x=> (x && typeof x==='object')
         ? fracHTML(x.n, x.d)
         : `<span style="font-size:24px;font-weight:700;">${esc(x)}</span>`).join('')}</div>`;
   }
@@ -15622,7 +15654,7 @@ function renderQuestionBody(q, st, onCheck, headerHTML){
   } else if(q.inputType==='fracEasy'){
     const row=el(`
       <div class="mmc-frac-eq">
-        ${fracHTML(q.givenNum, q.givenDen)}
+        ${q.givenNum!=null && q.givenDen!=null ? fracHTML(q.givenNum, q.givenDen) : ''}
         <span>=</span>
         <span class="mmc-frac"><input type="text" id="mmc-frac-in" autocomplete="off" value="${esc(st.given)}" ${st.checked?'disabled':''}><span class="line"></span><span class="den">${esc(q.targetDen)}</span></span>
       </div>
@@ -15638,7 +15670,7 @@ function renderQuestionBody(q, st, onCheck, headerHTML){
     const parts=String(st.given||'').split('/');
     const row=el(`
       <div class="mmc-frac-eq">
-        ${fracHTML(q.givenNum, q.givenDen)}
+        ${q.givenNum!=null && q.givenDen!=null ? fracHTML(q.givenNum, q.givenDen) : ''}
         <span>=</span>
         <span class="mmc-frac">
           <input type="text" id="mmc-frac-num" autocomplete="off" value="${esc(parts[0]||'')}" ${st.checked?'disabled':''}>
