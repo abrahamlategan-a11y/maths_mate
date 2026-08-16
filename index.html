@@ -1255,7 +1255,11 @@ function drawShapePair(s1,s2){
   inner+=`<text x="${offset2+w2/2}" y="-6" font-size="14" text-anchor="middle" fill="#2B2620" font-family="IBM Plex Mono, monospace" font-weight="600">B</text>`;
   return svgWrap(`<g transform="translate(4,${topPad})">${inner}</g>`, w1+gap+w2+8, maxH+topPad+8);
 }
-function drawClock(hour,minute,minorTicks){
+// numerals is a Year 3 and Year 4 SUPPORT aid: at that level a child is still learning
+// which number the hand is nearest, and counting round from 12 unaided is a different
+// (harder) task than reading the time. One clock drawing for every year, so Year 3 and
+// Year 4 look identical.
+function drawClock(hour,minute,minorTicks,numerals){
   const cx=100, cy=100, r=90;
   const minuteAngle = minute*6, hourAngle=(hour%12)*30 + minute*0.5;
   function pt(deg,len){ const rad=(deg-90)*Math.PI/180; return [cx+len*Math.cos(rad), cy+len*Math.sin(rad)]; }
@@ -1270,6 +1274,12 @@ function drawClock(hour,minute,minorTicks){
       if(i%5===0) continue;
       const [x1,y1]=pt(i*6,84), [x2,y2]=pt(i*6,88);
       ticks+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#2B2620" stroke-width="1"/>`;
+    }
+  }
+  if(numerals){
+    for(let i=1;i<=12;i++){
+      const [nx,ny]=pt(i*30,66);
+      ticks+=`<text x="${nx.toFixed(1)}" y="${(ny+6).toFixed(1)}" text-anchor="middle" font-family="'Baloo 2',sans-serif" font-weight="700" font-size="19" fill="#2B2620">${i}</text>`;
     }
   }
   return svgWrap(`<circle cx="${cx}" cy="${cy}" r="${r}" fill="#fff" stroke="#2B2620" stroke-width="3"/>${ticks}
@@ -1921,7 +1931,7 @@ function genClock(diff){
   }
   const choices=shuffleArr([correct, ...decoys.slice(0,3)]);
   return { prompt:`What time does the clock show?`, answer:correct, inputType:'choice', choices,
-    explanation:`The clock shows ${correct}.`, svg:drawClock(hour,minute) };
+    explanation:`The clock shows ${correct}.`, svg:drawClock(hour,minute,false,diff==='easy') };
 }
 const UNIT_SCENARIOS=[
   {q:'the length of a tennis court', choices:['millimetres','centimetres','metres','kilometres'], answer:'metres'},
@@ -4225,7 +4235,7 @@ function genTimeY4(diff, familyOverride){
   return { prompt:`What time does the clock show?`, answer:correct, inputType:'choice',
     choices:shuffleArr([correct, ...decoys.slice(0,3)]),
     explanation:`The clock shows ${correct}.`,
-    svg:drawClock(hour,minute, diff==='medium'),
+    svg:drawClock(hour,minute, diff==='medium', diff==='easy'),
     subskill: diff==='easy' && quarter ? 'clock_quarter' : (diff==='hard' ? 'clock_to_minute' : 'clock_reading') };
 }
 
@@ -6451,6 +6461,1059 @@ const Y6_SLOTS=[
 ];
 // END YEAR 6
 
+// The Year 4 block draws clocks and timetables with the app's OWN drawings, so every
+// year level looks the same and there is only one of each to maintain.
+const y4clockFace=(hh,mm,minorTicks,numerals)=>drawClock(hh,mm,minorTicks,numerals);
+
+// ============================================================
+// YEAR 4 — drawings for the skills added or rewritten in this pass.
+// Same conventions as Years 2 and 6: SVG only, capped so nothing is cut off,
+// aria-label on every drawing so read-aloud and the printable sheet work.
+// ============================================================
+const Y4_INK='#2B2620', Y4_PAPER='#FFFDF8', Y4_HI='#FF7A1A', Y4_GRID='#C9C2B4';
+const Y4_BLUE='#2C6E9B', Y4_GREEN='#2E7D4F', Y4_GOLD='#E2B33C', Y4_RED='#D9453C';
+
+// ---- SHAPES, defined once as unit polygons so symmetry, quadrilaterals and
+// combining shapes all draw the same square and mean the same thing by it.
+const Y4_SHAPES={
+  square:        {pts:[[0,0],[1,0],[1,1],[0,1]], lines:4, quad:true},
+  rectangle:     {pts:[[0,0],[1.6,0],[1.6,1],[0,1]], lines:2, quad:true},
+  rhombus:       {pts:[[0.3,0],[1.3,0],[1,1],[0,1]], lines:2, quad:true},
+  parallelogram: {pts:[[0.35,0],[1.6,0],[1.25,1],[0,1]], lines:0, quad:true},
+  trapezium:     {pts:[[0.3,0],[1.2,0],[1.5,1],[0,1]], lines:1, quad:true},
+  kite:          {pts:[[0.75,0],[1.4,0.55],[0.75,1.6],[0.1,0.55]], lines:1, quad:true},
+  triangle:      {pts:[[0.75,0],[1.5,1.3],[0,1.3]], lines:3, quad:false},
+  pentagon:      {pts:[[0.75,0],[1.5,0.55],[1.2,1.45],[0.3,1.45],[0,0.55]], lines:5, quad:false},
+  hexagon:       {pts:[[0.5,0],[1.2,0],[1.7,0.87],[1.2,1.74],[0.5,1.74],[0,0.87]], lines:6, quad:false},
+  circle:        {circle:true, lines:99, quad:false},
+};
+const Y4_SHAPE_NAMES=Object.keys(Y4_SHAPES);
+
+function y4shape(name, size, opts){
+  opts=opts||{};
+  const S=Y4_SHAPES[name], k=size||120, pad=16;
+  if(S.circle){
+    const r=k/2;
+    let g=`<circle cx="${r+pad}" cy="${r+pad}" r="${r}" fill="${opts.fill||Y4_GOLD}" fill-opacity="0.5" stroke="${Y4_INK}" stroke-width="3"/>`;
+    if(opts.mirror) g+=`<line x1="${pad}" y1="${r+pad}" x2="${k+pad}" y2="${r+pad}" stroke="${Y4_HI}" stroke-width="3" stroke-dasharray="7 5"/>`;
+    return `<svg viewBox="0 0 ${k+pad*2} ${k+pad*2}" width="${k+pad*2}" height="${k+pad*2}" role="img" aria-label="a circle">${g}</svg>`;
+  }
+  const xs=S.pts.map(p=>p[0]), ys=S.pts.map(p=>p[1]);
+  const w=Math.max(...xs), h=Math.max(...ys);
+  const sc=k/Math.max(w,h);
+  const pts=S.pts.map(p=>`${(p[0]*sc+pad).toFixed(1)},${(p[1]*sc+pad).toFixed(1)}`).join(' ');
+  let g=`<polygon points="${pts}" fill="${opts.fill||Y4_GOLD}" fill-opacity="0.5" stroke="${Y4_INK}" stroke-width="3" stroke-linejoin="round"/>`;
+  // A mirror line drawn on the shape. A WRONG one is how "is this a line of symmetry?"
+  // becomes a real question rather than a shape-recognition one.
+  if(opts.mirror){
+    const cx=(w*sc)/2+pad, cy=(h*sc)/2+pad;
+    const len=Math.max(w,h)*sc*0.72;
+    const ang=(opts.mirrorAngle||90)*Math.PI/180;
+    const dx=Math.cos(ang)*len, dy=Math.sin(ang)*len;
+    g+=`<line x1="${(cx-dx).toFixed(1)}" y1="${(cy-dy).toFixed(1)}" x2="${(cx+dx).toFixed(1)}" y2="${(cy+dy).toFixed(1)}"
+        stroke="${Y4_HI}" stroke-width="3.5" stroke-dasharray="8 5" stroke-linecap="round"/>`;
+  }
+  return `<svg viewBox="0 0 ${w*sc+pad*2} ${h*sc+pad*2}" width="${(w*sc+pad*2).toFixed(0)}" height="${(h*sc+pad*2).toFixed(0)}"
+    role="img" aria-label="a ${name}">${g}</svg>`;
+}
+function y4shapeRow(names, size, labels){
+  const k=size||96, cell=k+34;
+  const w=names.length*cell, h=k+58; let g='';
+  names.forEach((n,i)=>{
+    const inner=y4shape(n,k).replace(/^<svg[^>]*>/,'').replace(/<\/svg>$/,'');
+    g+=`<g transform="translate(${i*cell},0)">${inner}</g>`;
+    if(labels) g+=`<text x="${i*cell+cell/2-8}" y="${h-8}" text-anchor="middle" font-family="'Baloo 2',sans-serif"
+      font-weight="800" font-size="19" fill="${Y4_INK}">${labels[i]}</text>`;
+  });
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${Math.min(w,600)}px"
+    role="img" aria-label="a row of ${names.length} shapes">${g}</svg>`;
+}
+
+
+// ---- SYMMETRY SHAPES, defined accurately ----
+// The loose shapes above are fine for "name this shape" but not for symmetry, where the
+// question is whether a line really is an axis. These are geometrically honest: the
+// rhombus is a rhombus, the isosceles triangle is isosceles, and the axis angles below
+// are the real ones.
+const Y4_SYMSHAPES={
+  square:        {pts:[[0,0],[2,0],[2,2],[0,2]],                 axes:[0,90,45,135]},
+  rectangle:     {pts:[[0,0],[3,0],[3,1.8],[0,1.8]],             axes:[0,90]},
+  isosTriangle:  {pts:[[1.2,0],[2.4,2.2],[0,2.2]],               axes:[90]},
+  equiTriangle:  {pts:[[1.2,0],[2.4,2.08],[0,2.08]],             axes:[90,30,150]},
+  rhombus:       {pts:[[1.2,0],[2.4,1.6],[1.2,3.2],[0,1.6]],     axes:[90,0]},
+  kite:          {pts:[[1.2,0],[2.2,1.3],[1.2,3.2],[0.2,1.3]],   axes:[90]},
+  parallelogram: {pts:[[0.7,0],[3,0],[2.3,1.8],[0,1.8]],         axes:[]},
+  pentagon:      {pts:[[1.2,0],[2.34,0.83],[1.91,2.17],[0.49,2.17],[0.06,0.83]], axes:[90,18,54,126,162]},
+  hexagon:       {pts:[[0.6,0],[1.8,0],[2.4,1.04],[1.8,2.08],[0.6,2.08],[0,1.04]], axes:[0,90,30,150,60,120]},
+};
+const Y4_SYMNAMES=Object.keys(Y4_SYMSHAPES);
+
+// A shape with several candidate mirror lines drawn across it, each labelled. Exactly one
+// is a real axis. The wrong ones can be a plausible angle, or the RIGHT angle nudged off
+// centre — which is the subtle version and the one that separates a child who is checking
+// from one who is pattern-matching.
+function y4symPick(shapeName, lines, size){
+  const S=Y4_SYMSHAPES[shapeName], k=size||150, pad=34;
+  const xs=S.pts.map(p=>p[0]), ys=S.pts.map(p=>p[1]);
+  const w=Math.max(...xs), h=Math.max(...ys), sc=k/Math.max(w,h);
+  const W=w*sc, H=h*sc, cx=W/2+pad, cy=H/2+pad;
+  const pts=S.pts.map(p=>`${(p[0]*sc+pad).toFixed(1)},${(p[1]*sc+pad).toFixed(1)}`).join(' ');
+  let g=`<polygon points="${pts}" fill="${Y4_GOLD}" fill-opacity="0.42" stroke="${Y4_INK}" stroke-width="3" stroke-linejoin="round"/>`;
+  const reach=Math.max(W,H)*0.78;
+  const COLS=['#2C6E9B','#D9453C','#2E7D4F','#7A4E9B'];
+  lines.forEach((ln,i)=>{
+    const a=ln.ang*Math.PI/180;
+    // offset is measured PERPENDICULAR to the line, so an off-centre axis stays parallel
+    const ox=Math.cos(a+Math.PI/2)*(ln.off||0)*sc;
+    const oy=Math.sin(a+Math.PI/2)*(ln.off||0)*sc;
+    const x1=cx+ox-Math.cos(a)*reach, y1=cy+oy+Math.sin(a)*reach;
+    const x2=cx+ox+Math.cos(a)*reach, y2=cy+oy-Math.sin(a)*reach;
+    g+=`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"
+        stroke="${COLS[i%4]}" stroke-width="3.2" stroke-dasharray="9 6" stroke-linecap="round"/>`;
+    g+=`<text x="${x2.toFixed(1)}" y="${(y2-8).toFixed(1)}" text-anchor="middle"
+        font-family="'Baloo 2',sans-serif" font-weight="800" font-size="20" fill="${COLS[i%4]}">${ln.label}</text>`;
+  });
+  const box=Math.max(W,H)+pad*2;
+  return `<svg viewBox="0 0 ${W+pad*2} ${H+pad*2}" width="100%" style="max-width:${Math.min(W+pad*2,420)}px"
+    role="img" aria-label="a ${shapeName} with ${lines.length} dotted lines drawn across it">${g}</svg>`;
+}
+function y4symPlain(shapeName, size){
+  return y4symPick(shapeName, [], size);
+}
+
+
+// ---- MIRROR IMAGES ----
+// A small figure made of grid squares, a mirror line, and candidate reflections. This is
+// what unit 10.2 is actually about — folding a shape and seeing whether it matches — and
+// it beats asking about an abstract axis on a regular polygon, where a child can answer
+// from memory of the shape rather than by checking.
+function y4cellFig(cells, cols, rows, cell, opts){
+  opts=opts||{};
+  const k=cell||26;
+  let g='';
+  for(let c=0;c<cols;c++) for(let r=0;r<rows;r++){
+    const on=cells.some(p=>p[0]===c&&p[1]===r);
+    g+=`<rect x="${c*k}" y="${r*k}" width="${k}" height="${k}"
+        fill="${on?(opts.fill||Y4_BLUE):'#F2EFE6'}" fill-opacity="${on?0.85:1}"
+        stroke="${Y4_GRID}" stroke-width="1"/>`;
+  }
+  g+=`<rect x="0" y="0" width="${cols*k}" height="${rows*k}" fill="none" stroke="${Y4_INK}" stroke-width="2"/>`;
+  return {g, w:cols*k, h:rows*k};
+}
+// The figure, the mirror line, and four labelled candidates underneath.
+function y4mirrorQuestion(cells, cols, rows, options, mirror){
+  const k=26, gap=26;
+  const top=y4cellFig(cells, cols, rows, k);
+  const optW=cols*k, optH=rows*k;
+  const rowW=options.length*(optW+gap)-gap;
+  const W=Math.max(top.w+70, rowW)+20;
+  const H=top.h+optH+96;
+  let g=`<g transform="translate(${(W-top.w-70)/2},10)">${top.g}</g>`;
+  // the mirror line, drawn where the fold would be
+  if(mirror==='vertical')
+    g+=`<line x1="${(W-top.w-70)/2+top.w+16}" y1="6" x2="${(W-top.w-70)/2+top.w+16}" y2="${top.h+14}"
+        stroke="${Y4_HI}" stroke-width="3.4" stroke-dasharray="8 5"/>`;
+  else
+    g+=`<line x1="${(W-top.w-70)/2-8}" y1="${top.h+18}" x2="${(W-top.w-70)/2+top.w+8}" y2="${top.h+18}"
+        stroke="${Y4_HI}" stroke-width="3.4" stroke-dasharray="8 5"/>`;
+  const y0=top.h+52;
+  options.forEach((o,i)=>{
+    const f=y4cellFig(o.cells, cols, rows, k, {fill:Y4_GREEN});
+    const x=(W-rowW)/2 + i*(optW+gap);
+    g+=`<g transform="translate(${x},${y0})">${f.g}</g>`;
+    g+=`<text x="${x+optW/2}" y="${y0+optH+22}" text-anchor="middle" font-family="'Baloo 2',sans-serif"
+        font-weight="800" font-size="19" fill="${Y4_INK}">${o.label}</text>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${Math.min(W,560)}px"
+    role="img" aria-label="a shape with a ${mirror} mirror line, and ${options.length} possible reflections">${g}</svg>`;
+}
+
+
+// ---- MANY-TO-ONE PICTURE GRAPH ---- unit 20.1. The key is a KEY: one symbol stands for
+// several, so the child multiplies rather than counts.
+function y4picGraph(title, rows, sym, each){
+  const cell=44, labelW=96;
+  const maxN=Math.max(...rows.map(r=>r.sym));
+  const w=labelW+maxN*cell+30, h=rows.length*cell+92;
+  let g=`<text x="10" y="22" font-family="'Baloo 2',sans-serif" font-weight="800" font-size="18" fill="${Y4_INK}">${title}</text>`;
+  rows.forEach((r,i)=>{
+    const y=40+i*cell;
+    g+=`<text x="10" y="${y+cell/2}" dominant-baseline="central" font-family="'Baloo 2',sans-serif" font-weight="700" font-size="17" fill="${Y4_INK}">${r.label}</text>`;
+    for(let k=0;k<r.sym;k++)
+      g+=`<text x="${labelW+k*cell+cell/2}" y="${y+cell/2}" text-anchor="middle" dominant-baseline="central" font-size="26">${sym}</text>`;
+  });
+  const ky=40+rows.length*cell+22;
+  g+=`<line x1="10" y1="${ky-16}" x2="${w-16}" y2="${ky-16}" stroke="${Y4_GRID}" stroke-width="1.6"/>`;
+  g+=`<text x="10" y="${ky+6}" font-family="'Baloo 2',sans-serif" font-weight="700" font-size="16" fill="${Y4_INK}">Key: ${sym} = ${each}</text>`;
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${Math.min(w,560)}px"
+    role="img" aria-label="a picture graph where each symbol stands for ${each}">${g}</svg>`;
+}
+
+// ---- GRID REFERENCES. Unit 17.2 is explicit: "write a map reference with the letter
+// first: A2". Letters across, numbers up, naming a SQUARE — not a point. Coordinates
+// naming a point are Year 6 and are a different idea that looks the same.
+const Y4_LETTERS=['A','B','C','D','E','F','G','H'];
+function y4gridMap(cols, rows, items, opts){
+  opts=opts||{};
+  const cell=Math.min(54, 460/cols), pad=30;
+  const w=cols*cell+pad*2, h=rows*cell+pad*2;
+  let g=`<rect x="${pad}" y="${pad}" width="${cols*cell}" height="${rows*cell}" fill="#F2EFE6" stroke="${Y4_INK}" stroke-width="2.5"/>`;
+  for(let c=1;c<cols;c++) g+=`<line x1="${pad+c*cell}" y1="${pad}" x2="${pad+c*cell}" y2="${pad+rows*cell}" stroke="${Y4_GRID}" stroke-width="1.4"/>`;
+  for(let r=1;r<rows;r++) g+=`<line x1="${pad}" y1="${pad+r*cell}" x2="${pad+cols*cell}" y2="${pad+r*cell}" stroke="${Y4_GRID}" stroke-width="1.4"/>`;
+  for(let c=0;c<cols;c++) g+=`<text x="${pad+c*cell+cell/2}" y="${pad+rows*cell+20}" text-anchor="middle"
+    font-family="'Baloo 2',sans-serif" font-weight="700" font-size="16" fill="${Y4_INK}">${Y4_LETTERS[c]}</text>`;
+  // numbers count UP the side, so row 1 is at the BOTTOM, the way a map is read
+  for(let r=0;r<rows;r++) g+=`<text x="${pad-10}" y="${pad+(rows-1-r)*cell+cell/2+5}" text-anchor="end"
+    font-family="'Baloo 2',sans-serif" font-weight="700" font-size="16" fill="${Y4_INK}">${r+1}</text>`;
+  (items||[]).forEach(it=>{
+    const cx=pad+it.c*cell+cell/2, cy=pad+(rows-1-it.r)*cell+cell/2;
+    g+=`<text x="${cx}" y="${cy+2}" text-anchor="middle" dominant-baseline="central" font-size="${Math.round(cell*0.56)}">${it.e}</text>`;
+  });
+  if(opts.path && opts.path.length>1){
+    const pts=opts.path.map(p=>`${pad+p.c*cell+cell/2},${pad+(rows-1-p.r)*cell+cell/2}`).join(' ');
+    g+=`<polyline points="${pts}" fill="none" stroke="${Y4_HI}" stroke-width="3.5" stroke-dasharray="8 5" stroke-linecap="round"/>`;
+  }
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${Math.min(w,560)}px"
+    role="img" aria-label="${opts.alt||('a map grid, '+cols+' columns by '+rows+' rows')}">${g}</svg>`;
+}
+
+// ---- GRADUATED SCALES. Unit 7.1 asks three things: what does it hold when full, how
+// much is BETWEEN each mark, and how much more to fill it. The interval is the skill, so
+// the marks are deliberately not all labelled and the step varies.
+function y4jug(capacity, step, level, unit){
+  const w=200, h=280, jx=48, jy=26, jw=104, jh=214;
+  const marks=Math.round(capacity/step);
+  let g=`<path d="M${jx},${jy} L${jx},${jy+jh} Q${jx},${jy+jh+16} ${jx+jw/2},${jy+jh+16}
+      Q${jx+jw},${jy+jh+16} ${jx+jw},${jy+jh} L${jx+jw},${jy} Z" fill="${Y4_PAPER}" stroke="${Y4_INK}" stroke-width="3"/>`;
+  if(level>0){
+    const lh=(level/capacity)*jh;
+    g+=`<path d="M${jx+3},${jy+jh-lh} L${jx+3},${jy+jh} Q${jx+3},${jy+jh+13} ${jx+jw/2},${jy+jh+13}
+        Q${jx+jw-3},${jy+jh+13} ${jx+jw-3},${jy+jh} L${jx+jw-3},${jy+jh-lh} Z" fill="#8FD0E8" fill-opacity="0.85"/>`;
+  }
+  for(let i=0;i<=marks;i++){
+    const y=jy+jh-(i/marks)*jh;
+    // every second mark is labelled, so the child must work the interval out
+    const big = (i%2===0) || marks<=5;
+    g+=`<line x1="${jx+jw-(big?26:15)}" y1="${y}" x2="${jx+jw}" y2="${y}" stroke="${Y4_INK}" stroke-width="${big?2.4:1.5}"/>`;
+    if(big) g+=`<text x="${jx+jw+7}" y="${y+5}" font-family="'IBM Plex Mono',monospace" font-size="13" fill="${Y4_INK}">${i*step}</text>`;
+  }
+  g+=`<text x="${jx+jw/2}" y="${h-6}" text-anchor="middle" font-family="'Baloo 2',sans-serif" font-weight="700" font-size="15" fill="${Y4_INK}">${unit}</text>`;
+  return `<svg viewBox="0 0 ${w} ${h}" width="200" height="280" role="img"
+    aria-label="a measuring jug holding ${capacity} ${unit} with marks every ${step}">${g}</svg>`;
+}
+function y4dial(capacity, step, level, unit){
+  const size=250, c=size/2, r=c-34;
+  const marks=Math.round(capacity/step);
+  let g=`<circle cx="${c}" cy="${c}" r="${r}" fill="${Y4_PAPER}" stroke="${Y4_INK}" stroke-width="4"/>`;
+  for(let i=0;i<marks;i++){
+    const a=(i/marks)*2*Math.PI-Math.PI/2;
+    const big=(i%2===0)||marks<=6;
+    g+=`<line x1="${(c+(r-(big?18:10))*Math.cos(a)).toFixed(1)}" y1="${(c+(r-(big?18:10))*Math.sin(a)).toFixed(1)}"
+      x2="${(c+r*Math.cos(a)).toFixed(1)}" y2="${(c+r*Math.sin(a)).toFixed(1)}" stroke="${Y4_INK}" stroke-width="${big?2.6:1.5}"/>`;
+    if(big) g+=`<text x="${(c+(r-32)*Math.cos(a)).toFixed(1)}" y="${(c+(r-32)*Math.sin(a)).toFixed(1)}"
+      text-anchor="middle" dominant-baseline="central" font-family="'IBM Plex Mono',monospace" font-size="13" fill="${Y4_INK}">${i*step}</text>`;
+  }
+  const a=(level/capacity)*2*Math.PI-Math.PI/2;
+  g+=`<line x1="${c}" y1="${c}" x2="${(c+(r-40)*Math.cos(a)).toFixed(1)}" y2="${(c+(r-40)*Math.sin(a)).toFixed(1)}"
+    stroke="${Y4_HI}" stroke-width="6" stroke-linecap="round"/>`;
+  g+=`<circle cx="${c}" cy="${c}" r="7" fill="${Y4_INK}"/>`;
+  g+=`<text x="${c}" y="${size-6}" text-anchor="middle" font-family="'Baloo 2',sans-serif" font-weight="700" font-size="15" fill="${Y4_INK}">${unit}</text>`;
+  return `<svg viewBox="0 0 ${size} ${size}" width="250" height="250" role="img"
+    aria-label="a dial scale reading to ${capacity} ${unit} with marks every ${step}">${g}</svg>`;
+}
+function y4thermo(lo, hi, step, level){
+  const w=150, h=280, bx=52, by=24, bw=26, bh=206;
+  const marks=Math.round((hi-lo)/step);
+  let g=`<rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="${bw/2}" fill="${Y4_PAPER}" stroke="${Y4_INK}" stroke-width="3"/>`;
+  const lh=((level-lo)/(hi-lo))*bh;
+  g+=`<rect x="${bx+4}" y="${by+bh-lh}" width="${bw-8}" height="${lh}" rx="${(bw-8)/2}" fill="${Y4_RED}"/>`;
+  g+=`<circle cx="${bx+bw/2}" cy="${by+bh+16}" r="17" fill="${Y4_RED}" stroke="${Y4_INK}" stroke-width="3"/>`;
+  for(let i=0;i<=marks;i++){
+    const y=by+bh-(i/marks)*bh, big=(i%2===0)||marks<=5;
+    g+=`<line x1="${bx+bw}" y1="${y}" x2="${bx+bw+(big?16:9)}" y2="${y}" stroke="${Y4_INK}" stroke-width="${big?2.4:1.4}"/>`;
+    if(big) g+=`<text x="${bx+bw+21}" y="${y+5}" font-family="'IBM Plex Mono',monospace" font-size="13" fill="${Y4_INK}">${lo+i*step}</text>`;
+  }
+  g+=`<text x="${bx+bw/2}" y="${h-4}" text-anchor="middle" font-family="'Baloo 2',sans-serif" font-weight="700" font-size="14" fill="${Y4_INK}">°C</text>`;
+  return `<svg viewBox="0 0 ${w} ${h}" width="150" height="280" role="img"
+    aria-label="a thermometer from ${lo} to ${hi} degrees with marks every ${step}">${g}</svg>`;
+}
+
+// ---- ANGLES. Unit 21.2 classifies against a right angle rather than measuring with a
+// protractor, which is a physical skill a screen cannot ask for honestly.
+function y4angle(deg, showSquare){
+  const size=250, c=size*0.30, cy=size*0.70, r=115;
+  const P=d=>[c+r*Math.cos(-d*Math.PI/180), cy+r*Math.sin(-d*Math.PI/180)];
+  const [x2,y2]=P(deg);
+  let g=`<line x1="${c}" y1="${cy}" x2="${c+r}" y2="${cy}" stroke="${Y4_INK}" stroke-width="4" stroke-linecap="round"/>`;
+  g+=`<line x1="${c}" y1="${cy}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${Y4_INK}" stroke-width="4" stroke-linecap="round"/>`;
+  g+=`<path d="M${c+42},${cy} A42,42 0 ${deg>180?1:0} 0 ${(c+42*Math.cos(-deg*Math.PI/180)).toFixed(1)},${(cy+42*Math.sin(-deg*Math.PI/180)).toFixed(1)}"
+      fill="none" stroke="${Y4_HI}" stroke-width="3.6"/>`;
+  // a faint right angle to compare against — this is what unit 21.2 actually asks for
+  if(showSquare) g+=`<path d="M${c+26},${cy} L${c+26},${cy-26} L${c},${cy-26}" fill="none"
+      stroke="${Y4_BLUE}" stroke-width="2.4" stroke-dasharray="5 4"/>`;
+  g+=`<circle cx="${c}" cy="${cy}" r="5" fill="${Y4_INK}"/>`;
+  return `<svg viewBox="0 0 ${size} ${size}" width="250" height="250" role="img"
+    aria-label="an angle${showSquare?', with a right angle marked for comparison':''}">${g}</svg>`;
+}
+// ============================================================
+// YEAR 4 — the skills added or rewritten in this pass.
+//
+// THE LADDER IS THE TEACHING ORDER, as in Years 2 and 6. Difficulty is context and the
+// number of steps, not the size of the numbers: the assessments' 3-mark questions are
+// multi-step problems in real settings using small numbers.
+//
+// A SKILL NEVER DISAPPEARS FROM A LEVEL. Coins keep appearing after budgets arrive,
+// clock reading keeps appearing after time conversion arrives, and classifying angles
+// keeps appearing after comparing arrives — about one question in six — so a gap shows
+// up in the data instead of being quietly assumed.
+// ============================================================
+function y4r(a,b){ return Math.floor(Math.random()*(b-a+1))+a; }
+function y4p(a){ return a[y4r(0,a.length-1)]; }
+function y4mix(level,pools){ return y4p(pools[level]||pools.medium); }
+function y4shuf(a){ return a.slice().sort(()=>Math.random()-0.5); }
+function y4Lvl(d){ return d==='easy'||d==='medium'||d==='hard' ? d : 'medium'; }
+function y4distract(answer, make, n){
+  const out=new Set(); let guard=0;
+  while(out.size<(n||3) && guard++<500){ const v=String(make()); if(v!==String(answer)) out.add(v); }
+  return [...out];
+}
+
+// ---- 1. SYMMETRY ---- units 10.2 line symmetry, 10.3 symmetrical patterns
+// PICK THE LINE, not yes/no. One shape, several dotted lines, exactly one of them a real
+// axis. The ladder is how subtle the wrong ones are:
+//   support   — wrong lines are at obviously wrong angles
+//   mainstream— wrong lines include the diagonal of a rectangle, the classic misconception
+//   extension — wrong lines are the RIGHT angle nudged off centre, or a few degrees out
+function y4_symmetry(diff){
+  const L=y4Lvl(diff);
+  const form=y4mix(L,{
+    easy:  ['pick','pick','pick','how_many'],
+    medium:['pick','pick','how_many','rotate'],
+    hard:  ['pick','pick','how_many','rotate'],
+  });
+
+  if(form==='rotate'){
+    const turn=y4mix(L,{easy:['quarter','half'],medium:['quarter','half'],hard:['quarter','half','three-quarter']});
+    const way=y4p(['clockwise','anticlockwise']);
+    const deg={quarter:90,half:180,'three-quarter':270}[turn];
+    const start=y4p([0,90,180,270]);
+    const end=((start + deg*(way==='clockwise'?1:-1))%360+360)%360;
+    const NAME={0:'up',90:'right',180:'down',270:'left'};
+    return { form:'rotate_pattern',
+      prompt:`An arrow points ${NAME[start]}. It is turned a ${turn} turn ${way}. Which way does it point?`,
+      choices:['up','right','down','left'], answer:NAME[end],
+      explanation:`A ${turn} turn ${way} from ${NAME[start]} points ${NAME[end]}.` };
+  }
+
+  if(form==='how_many'){
+    const pool = L==='easy'? ['square','rectangle','isosTriangle']
+               : L==='medium'? ['square','rectangle','isosTriangle','kite','equiTriangle','parallelogram']
+               : Y4_SYMNAMES;
+    const name=y4p(pool);
+    const n=Y4_SYMSHAPES[name].axes.length;
+    const nice={isosTriangle:'triangle',equiTriangle:'triangle'}[name]||name;
+    return { form:'count_lines', prompt:'How many lines of symmetry does this shape have?',
+      svg:y4symPlain(name,150),
+      choices:y4shuf([String(n),...y4distract(n,()=>y4r(0,6))]), answer:String(n),
+      explanation: n===0 ? `This ${nice} has no lines of symmetry at all.` : `It has ${n}.` };
+  }
+
+  // MIRROR IMAGE. A small figure of filled squares, a mirror line, and four candidates.
+  // The wrong ones are the things children actually confuse reflection with: sliding it
+  // across without flipping, turning it upside down, and flipping the wrong way.
+  const cols = L==='easy'? 3 : L==='medium'? 4 : 4;
+  const rows = L==='easy'? 3 : L==='medium'? 4 : 5;
+  const count = L==='easy'? 4 : L==='medium'? 5 : 7;
+  const cells=[]; const seen=new Set();
+  // grown one square at a time from a seed, so the figure is always joined up
+  cells.push([y4r(0,cols-1), y4r(0,rows-1)]); seen.add(cells[0].join(','));
+  let guard=0;
+  while(cells.length<count && guard++<200){
+    const from=y4p(cells);
+    const d=y4p([[1,0],[-1,0],[0,1],[0,-1]]);
+    const nc=from[0]+d[0], nr=from[1]+d[1];
+    if(nc<0||nr<0||nc>=cols||nr>=rows) continue;
+    if(seen.has(nc+','+nr)) continue;
+    seen.add(nc+','+nr); cells.push([nc,nr]);
+  }
+  const mirror = L==='hard' ? y4p(['vertical','horizontal']) : 'vertical';
+  const flipV=cs=>cs.map(p=>[cols-1-p[0], p[1]]);
+  const flipH=cs=>cs.map(p=>[p[0], rows-1-p[1]]);
+  const rot180=cs=>cs.map(p=>[cols-1-p[0], rows-1-p[1]]);
+  const correct = mirror==='vertical' ? flipV(cells) : flipH(cells);
+  const same=(a2,b2)=>a2.length===b2.length && a2.every(p=>b2.some(q2=>q2[0]===p[0]&&q2[1]===p[1]));
+  const candidates=[];
+  const add=cs=>{ if(!candidates.some(x=>same(x,cs))) candidates.push(cs); };
+  // A figure that is ALREADY symmetric is useless here: its reflection is itself, so the
+  // "slid across without flipping" distractor becomes a second correct answer.
+  if(same(correct, cells)) return y4_symmetry(diff);
+  add(correct);
+  add(cells);                                        // slid across, never flipped
+  add(rot180(cells));                                // turned upside down
+  add(mirror==='vertical' ? flipH(cells) : flipV(cells));  // flipped the wrong way
+  // Top up with single-square variations of the correct answer if any of the above
+  // collided, so the child always chooses from four genuinely different pictures.
+  let g2=0;
+  while(candidates.length<4 && g2++<80){
+    const v=correct.slice();
+    const idx=y4r(0,v.length-1);
+    const d2=y4p([[1,0],[-1,0],[0,1],[0,-1]]);
+    const nc=v[idx][0]+d2[0], nr=v[idx][1]+d2[1];
+    if(nc<0||nr<0||nc>=cols||nr>=rows) continue;
+    if(v.some(q3=>q3[0]===nc&&q3[1]===nr)) continue;
+    v[idx]=[nc,nr];
+    add(v);
+  }
+  if(candidates.length<4) return y4_symmetry(diff);
+  const labels=['A','B','C','D'];
+  const opts=y4shuf(candidates.slice(0,4)).map((cs,i2)=>({cells:cs, label:labels[i2]}));
+  const answer=opts.find(o=>same(o.cells,correct)).label;
+  return { form:'pick_mirror_image_'+mirror,
+    // The reflected cells travel with the question so a test can recompute them. Without
+    // this, a bug that answered with the TRANSLATION instead of the reflection passed
+    // every check — the drawing looks equally plausible either way.
+    mirrorCells:correct, sourceCells:cells, mirrorAxis:mirror, mirrorGrid:[cols,rows],
+    prompt:`Which one is the mirror image across the dotted line?`,
+    svg:y4mirrorQuestion(cells, cols, rows, opts, mirror),
+    choices:labels.slice(0,opts.length), answer,
+    explanation: mirror==='vertical'
+      ? `Flipped left to right, every square swaps to the opposite side. That is ${answer}.`
+      : `Flipped top to bottom, every square swaps to the opposite end. That is ${answer}.` };
+}
+
+// ---- 2. GRID REFERENCES AND DIRECTIONS ---- units 17.2, 17.3
+// LETTER FIRST — unit 17.2 says so explicitly, and a reference names a SQUARE. Naming a
+// point with (3, 4) is Year 6 and is a different idea that looks the same.
+const Y4_PLACES=[{e:'🎡',n:'the ferris wheel'},{e:'🎠',n:'the carousel'},{e:'🏰',n:'the castle'},
+ {e:'🍦',n:'the ice cream stand'},{e:'🎢',n:'the roller coaster'},{e:'🚻',n:'the toilets'},
+ {e:'🅿️',n:'the car park'},{e:'🎪',n:'the big top'}];
+function y4_gridref(diff){
+  const L=y4Lvl(diff);
+  const cols = L==='easy'?5 : L==='medium'?6 : 7;
+  const rows = L==='easy'?4 : L==='medium'?5 : 6;
+  const form=y4mix(L,{
+    easy:  ['where_is','where_is','where_is','whats_at'],
+    medium:['where_is','whats_at','path','path'],
+    hard:  ['path','give_directions','give_directions','between'],
+  });
+  const picks=y4shuf(Y4_PLACES).slice(0,4).map((p,i)=>({...p, c:0, r:0}));
+  const used=new Set();
+  picks.forEach(p=>{ let c,r,g=0;
+    do{ c=y4r(0,cols-1); r=y4r(0,rows-1); }while(used.has(c+','+r) && g++<40);
+    used.add(c+','+r); p.c=c; p.r=r; });
+  const ref=p=>`${Y4_LETTERS[p.c]}${p.r+1}`;
+  const map=(opts)=>y4gridMap(cols,rows,picks,opts||{});
+
+  if(form==='path'){
+    // 17.3: start at a reference and follow directions.
+    // Moves must STAY ON THE MAP. Clamping at the edge made the directions lie —
+    // "start at A1, go down 2, then up 2" clamped to A1 and then answered A3, so a child
+    // following the instructions correctly got it wrong.
+    const start=y4p(picks);
+    const steps = L==='hard' ? 2 : 1;
+    let c=start.c, r=start.r; const legs=[];
+    for(let i=0;i<steps;i++){
+      const room={ up:rows-1-r, down:r, right:cols-1-c, left:c };
+      const possible=Object.keys(room).filter(d=>room[d]>=1);
+      if(!possible.length) break;
+      const dir=y4p(possible);
+      const n=y4r(1, Math.min(2, room[dir]));
+      if(dir==='up') r+=n; else if(dir==='down') r-=n;
+      else if(dir==='right') c+=n; else c-=n;
+      legs.push(`${dir} ${n}`);
+    }
+    if(!legs.length) return y4_gridref(diff);
+    const dest=`${Y4_LETTERS[c]}${r+1}`;
+    return { form:'follow_path',
+      prompt:`Start at ${ref(start)}. Go ${legs.join(', then ')}. Which square do you reach?`,
+      svg:map({alt:'a map grid with four places marked'}),
+      choices:y4shuf([dest,...y4distract(dest,()=>`${Y4_LETTERS[y4r(0,cols-1)]}${y4r(1,rows)}`)]),
+      answer:dest,
+      explanation:`From ${ref(start)}, ${legs.join(' then ')} lands on ${dest}.` };
+  }
+  if(form==='give_directions'){
+    // Unit 17.3 exercise 2: "write directions from the Entry to the rides". Naming the
+    // PLACES rather than the grid squares adds the step the question was missing — the
+    // child has to find both items on the map first, then work out the route between them.
+    const from=y4p(picks), to=y4p(picks.filter(p=>p!==from));
+    const dx=to.c-from.c, dy=to.r-from.r;
+    const say=(x,y)=>{ const bits=[];
+      if(x) bits.push(`${Math.abs(x)} ${x>0?'right':'left'}`);
+      if(y) bits.push(`${Math.abs(y)} ${y>0?'up':'down'}`);
+      return bits.length? bits.join(', ') : 'stay where you are'; };
+    const right=say(dx,dy);
+    const wrongs=[say(dy,dx), say(-dx,dy), say(dx,-dy)].filter((v,i2,a2)=>v!==right && a2.indexOf(v)===i2);
+    while(wrongs.length<3) wrongs.push(say(dx+y4r(1,2), dy-y4r(1,2)));
+    return { form:'give_directions',
+      prompt:`How do you get from ${from.n} to ${to.n}?`,
+      svg:map({alt:'a map grid with four places marked'}),
+      choices:y4shuf([right,...[...new Set(wrongs)].slice(0,3)]), answer:right,
+      explanation:`${from.n} is at ${ref(from)} and ${to.n} is at ${ref(to)}, so it is ${right}.` };
+  }
+  if(form==='between'){
+    // Which place sits between two others. The outer two must be at least two columns
+    // apart or "between F and G" is being asked about adjacent columns, where nothing
+    // can sit between them. Named by PLACE, not by column letter, which reads better.
+    const sorted=picks.slice().sort((a2,b2)=>a2.c-b2.c);
+    if(sorted[2].c - sorted[0].c < 2) return y4_gridref(diff);
+    const mid=sorted[1];
+    if(mid.c<=sorted[0].c || mid.c>=sorted[2].c) return y4_gridref(diff);
+    return { form:'which_is_between',
+      prompt:`Which place is between ${sorted[0].n} and ${sorted[2].n}, going across?`,
+      svg:map({alt:'a map grid with four places marked'}),
+      choices:y4shuf(picks.map(p=>p.n)), answer:mid.n,
+      explanation:`${sorted[0].n} is in column ${Y4_LETTERS[sorted[0].c]} and ${sorted[2].n} is in column ${Y4_LETTERS[sorted[2].c]}. ${mid.n} is at ${ref(mid)}, in between.` };
+  }
+  if(form==='whats_at'){
+    const t=y4p(picks);
+    return { form:'what_is_at_reference', prompt:`What is at ${ref(t)}?`,
+      svg:map({alt:'a map grid with four places marked'}),
+      choices:y4shuf(picks.map(p=>p.n)), answer:t.n,
+      explanation:`${Y4_LETTERS[t.c]} across and ${t.r+1} up is ${t.n}.` };
+  }
+  const t=y4p(picks);
+  return { form:'where_is_it', prompt:`What is the grid reference for ${t.n}?`,
+    svg:map({alt:'a map grid with four places marked'}),
+    choices:y4shuf([ref(t), `${t.r+1}${Y4_LETTERS[t.c]}`,
+      `${Y4_LETTERS[(t.c+1)%cols]}${t.r+1}`, `${Y4_LETTERS[t.c]}${(t.r+2)>rows?1:t.r+2}`].filter((v,i,a)=>a.indexOf(v)===i)),
+    answer:ref(t),
+    explanation:`Letter first: ${Y4_LETTERS[t.c]} across, then ${t.r+1} up.` };
+}
+
+// ---- 3. SHAPES AND QUADRILATERALS ---- units 30.1, 30.2
+function y4_shapes(diff){
+  const L=y4Lvl(diff);
+  const form=y4mix(L,{
+    easy:  ['is_quad','is_quad','is_quad','name_it'],
+    medium:['is_quad','name_it','name_it','how_many_sides'],
+    hard:  ['name_it','how_many_sides','which_quad','which_quad'],
+  });
+  if(form==='which_quad'){
+    const quads=Y4_SHAPE_NAMES.filter(n=>Y4_SHAPES[n].quad);
+    const others=Y4_SHAPE_NAMES.filter(n=>!Y4_SHAPES[n].quad);
+    const four=y4shuf([y4p(quads),...y4shuf(others).slice(0,3)]);
+    const labels=['A','B','C','D'];
+    const idx=four.findIndex(n=>Y4_SHAPES[n].quad);
+    return { form:'which_is_quadrilateral', prompt:'Which one is a quadrilateral?',
+      svg:y4shapeRow(four,90,labels),
+      choices:labels.slice(), answer:labels[idx],
+      explanation:`${labels[idx]} is a ${four[idx]} — four straight sides.` };
+  }
+  if(form==='how_many_sides'){
+    const name=y4p(Y4_SHAPE_NAMES.filter(n=>n!=='circle'));
+    const sides=Y4_SHAPES[name].pts.length;
+    return { form:'count_sides', prompt:'How many straight sides does this shape have?',
+      svg:y4shape(name,130),
+      choices:y4shuf([String(sides),...y4distract(sides,()=>y4r(3,7))]), answer:String(sides),
+      explanation:`A ${name} has ${sides} straight sides.` };
+  }
+  if(form==='name_it'){
+    const pool = L==='easy'? ['square','rectangle','triangle','circle']
+               : L==='medium'? ['square','rectangle','triangle','circle','hexagon','pentagon']
+               : Y4_SHAPE_NAMES;
+    const name=y4p(pool);
+    return { form:'name_the_shape', prompt:'What is this shape called?',
+      svg:y4shape(name,130),
+      choices:y4shuf([name,...y4shuf(pool.filter(n=>n!==name)).slice(0,3)]), answer:name,
+      explanation:`This is a ${name}.` };
+  }
+  // 30.1's own wording: "colour the bubble to show which shapes are quadrilaterals"
+  const name=y4p(Y4_SHAPE_NAMES);
+  const isQ=Y4_SHAPES[name].quad;
+  return { form:'is_it_a_quadrilateral', prompt:`Is a ${name} a quadrilateral?`,
+    svg:y4shape(name,130), choices:['yes','no'], answer: isQ?'yes':'no',
+    explanation: isQ ? `A ${name} has four straight sides, so yes.`
+                     : `A quadrilateral has four straight sides. A ${name} does not.` };
+}
+
+// ---- 4. READING GRADUATED SCALES ---- unit 7.1
+// The three questions the unit actually asks: what does it read, how much is BETWEEN each
+// mark, and how much more to fill. Variety of instruments matters — the skill is reading
+// a scale, not reading a jug.
+function y4_scales(diff){
+  const L=y4Lvl(diff);
+  const form=y4mix(L,{
+    easy:  ['read','read','read','interval'],
+    medium:['read','read','interval','how_much_more'],
+    hard:  ['read','interval','how_much_more','how_much_more'],
+  });
+  const kind=y4p(['jug','dial','thermo']);
+  let capacity, step, level, unit, svg, lo=0;
+  if(kind==='jug'){
+    capacity=y4p([500,1000,2000]);
+    step = L==='easy'? capacity/5 : y4p([capacity/10, capacity/8, capacity/5]);
+    step = Math.round(step/10)*10 || 10;
+    const marks=Math.round(capacity/step);
+    level=y4r(1,marks-1)*step; unit='mL';
+    svg=y4jug(capacity, step, level, unit);
+  } else if(kind==='dial'){
+    capacity=y4p([500,1000,2000]);
+    step = L==='easy'? capacity/5 : y4p([capacity/10, capacity/8]);
+    step = Math.round(step/10)*10 || 10;
+    const marks=Math.round(capacity/step);
+    level=y4r(1,marks-1)*step; unit='g';
+    svg=y4dial(capacity, step, level, unit);
+  } else {
+    lo=0; capacity=y4p([40,50,100]);
+    step = L==='easy'? capacity/5 : y4p([capacity/10, capacity/5]);
+    step=Math.max(1,Math.round(step));
+    const marks=Math.round(capacity/step);
+    level=y4r(1,marks-1)*step; unit='°C';
+    svg=y4thermo(lo, capacity, step, level);
+  }
+  if(form==='interval')
+    return { form:'scale_interval', prompt:'How much is there between each mark?',
+      svg, choices:y4shuf([String(step)+(unit==='°C'?'':' '+unit),
+        ...y4distract(String(step)+(unit==='°C'?'':' '+unit),
+          ()=>y4p([step*2, Math.max(1,Math.round(step/2)), step*5, step+10])+(unit==='°C'?'':' '+unit))]),
+      answer:String(step)+(unit==='°C'?'':' '+unit),
+      explanation:`The scale goes up in ${step}s.` };
+  if(form==='how_much_more'){
+    const gap=capacity-level;
+    return { form:'scale_how_much_more', prompt:`How much more to reach ${capacity}${unit==='°C'?'°C':' '+unit}?`,
+      svg, choices:y4shuf([String(gap)+(unit==='°C'?'':' '+unit),
+        ...y4distract(String(gap)+(unit==='°C'?'':' '+unit),
+          ()=>y4p([gap+step, Math.max(step,gap-step), level, capacity])+(unit==='°C'?'':' '+unit))]),
+      answer:String(gap)+(unit==='°C'?'':' '+unit),
+      explanation:`${capacity} − ${level} = ${gap}.` };
+  }
+  return { form:'scale_read', prompt: kind==='thermo'? 'What temperature does it show?' : 'What does the scale show?',
+    svg, choices:y4shuf([String(level)+(unit==='°C'?'':' '+unit),
+      ...y4distract(String(level)+(unit==='°C'?'':' '+unit),
+        ()=>y4p([level+step, Math.max(step,level-step), level+step*2, capacity-level])+(unit==='°C'?'':' '+unit))]),
+    answer:String(level)+(unit==='°C'?'':' '+unit),
+    explanation:`The marks go up in ${step}s, so it reads ${level}.` };
+}
+
+// ---- 5. ANGLES ---- unit 21.2, rewritten.
+// No protractor. Measuring one on screen tests dragging, not maths — the child either
+// gets the alignment done for them or fights it with a finger. Unit 21.2 compares against
+// a right angle, which is the real Year 4 idea and draws honestly.
+// Classifying ROTATES through every level rather than sitting at support and vanishing.
+function y4_angles(diff){
+  const L=y4Lvl(diff);
+  const form=y4mix(L,{
+    easy:  ['classify','classify','classify','compare'],
+    medium:['classify','compare','compare','which_largest'],
+    hard:  ['classify','compare','which_largest','estimate','estimate'],
+  });
+  const pickDeg=(band)=>{
+    if(band==='acute') return y4r(3,17)*5;
+    if(band==='right') return 90;
+    if(band==='obtuse') return y4r(19,35)*5;
+    if(band==='straight') return 180;
+    return y4r(37,71)*5;   // reflex
+  };
+  const nameOf=d=> d<90?'acute' : d===90?'right' : d<180?'obtuse' : d===180?'straight' : 'reflex';
+
+  if(form==='estimate'){
+    const d=y4p([30,45,60,120,135,150,210,270]);
+    const wrong=[30,45,60,90,120,135,150,180,210,270].filter(x=>Math.abs(x-d)>=40);
+    return { form:'estimate_angle', prompt:'About how many degrees is this angle?',
+      svg:y4angle(d,true),
+      choices:y4shuf([d+'°',...y4shuf(wrong).slice(0,3).map(x=>x+'°')]), answer:d+'°',
+      explanation:`It is about ${d}°. The dotted square marks 90° to compare against.` };
+  }
+  if(form==='which_largest'){
+    const set=y4shuf([pickDeg('acute'),pickDeg('obtuse'),pickDeg('reflex')]);
+    const labels=['A','B','C'];
+    const big=set.indexOf(Math.max(...set));
+    const inner=set.map(d=>y4angle(d,false).replace(/^<svg[^>]*>/,'').replace(/<\/svg>$/,''));
+    const svg=`<svg viewBox="0 0 750 260" width="100%" style="max-width:600px" role="img" aria-label="three angles side by side">${
+      inner.map((s,i)=>`<g transform="translate(${i*250},0)">${s}</g>
+        <text x="${i*250+60}" y="248" font-family="'Baloo 2',sans-serif" font-weight="800" font-size="20" fill="${Y4_INK}">${labels[i]}</text>`).join('')}</svg>`;
+    return { form:'which_angle_largest', prompt:'Which angle is the largest?', svg,
+      choices:labels.slice(), answer:labels[big],
+      explanation:`${labels[big]} opens the widest.` };
+  }
+  if(form==='compare'){
+    const d=pickDeg(y4p(['acute','obtuse','reflex']));
+    const bigger = d>90;
+    return { form:'compare_to_right_angle', prompt:'Is this angle bigger or smaller than a right angle?',
+      svg:y4angle(d,true),
+      choices:['bigger','smaller'], answer: bigger?'bigger':'smaller',
+      explanation:`The dotted square is a right angle. This one is ${bigger?'wider':'narrower'} than it.` };
+  }
+  const band = L==='easy' ? y4p(['acute','right','obtuse'])
+             : L==='medium' ? y4p(['acute','right','obtuse','straight'])
+             : y4p(['acute','right','obtuse','straight','reflex']);
+  const d=pickDeg(band);
+  return { form:'classify_angle', prompt:'What type of angle is this?',
+    svg:y4angle(d,false),
+    choices:['acute','right','obtuse','straight','reflex'], answer:nameOf(d),
+    explanation:`It is ${d}°, which is ${nameOf(d)}.` };
+}
+
+// ---- 6. MONEY ---- units 6.2 calculating with money, 6.3 budgets.
+// Coins stay the MEDIUM at every level. What changes is the thinking: make an amount,
+// give change with coins, then plan a budget. Giving change in coins keeps appearing at
+// extension so a child who cannot do it is flagged rather than assumed to have moved on.
+const Y4_COINS=[5,10,20,50,100,200];
+function y4money(c){ return c<100 ? c+'c' : '$'+(c/100).toFixed(c%100?2:0); }
+function y4_money(diff){
+  const L=y4Lvl(diff);
+  // EVERY money question ends with the child clicking coins. genCoinsY4 already does
+  // make-an-amount and change-from-a-payment that way. Budgets now do too: work out what
+  // is left, then show it in coins. The arithmetic and the coin handling are one question.
+  const form=y4mix(L,{
+    easy:  ['coins','coins','coins','coins'],
+    medium:['coins','coins','coins','calculate'],
+    hard:  ['coins','coins','calculate','budget','budget'],
+  });
+  if(form==='coins') return genCoinsY4(L, false);
+  if(form==='calculate'){
+    // Kept under $5 so the answer is showable in coins — the tray has no notes in it.
+    const a=y4r(1,3)*100+y4p([0,50,25,75]), b=y4r(1,2)*100+y4p([0,50,25,75]);
+    const total=a+b;
+    return buildCoinsQuestion(total,
+      `${y4money(a)} + ${y4money(b)} = ? Choose the fewest coins to show the answer.`,
+      `${y4money(a)} + ${y4money(b)} = ${y4money(total)}, which is ${minimalCoins(total).map(v=>coinByValue(v).l).join(' + ')}.`,
+      {runningTotal:false, subskill:'calculate_money'});
+  }
+  // 6.3 budgets. Amounts are kept small enough that the change left over can be shown in
+  // coins — a $47 answer cannot be, because the tray holds coins only. If notes are added
+  // to the coin tray later, the budget can grow to the $65 and $1000 the book uses.
+  const budget=y4p([5,8,10]);
+  const items=y4shuf([['a drink',150],['a muffin',225],['an apple',95],['chips',175],
+    ['a juice',250],['a biscuit',120]]).slice(0,2);
+  const spent=items.reduce((s2,i2)=>s2+i2[1],0);
+  const left=budget*100-spent;
+  if(left<=0 || left>500) return y4_money(diff);
+  return buildCoinsQuestion(left,
+    `You have $${budget}. You buy ${items.map(i2=>i2[0]+' ('+y4money(i2[1])+')').join(' and ')}. Choose the fewest coins for what is left.`,
+    `${items.map(i2=>y4money(i2[1])).join(' + ')} = ${y4money(spent)}, and $${budget} − ${y4money(spent)} = ${y4money(left)}.`,
+    {runningTotal:false, subskill:'budget_left'});
+}
+
+// ---- 7. TIME ---- units 32.1 am and pm, 32.3 to the nearest minute, 30.3 converting.
+// The CLOCK FACE STAYS at every level. What rotates in is the thinking around it.
+const Y4_TIMEUNITS=[['minutes','seconds',60],['hours','minutes',60],['days','hours',24],['weeks','days',7]];
+function y4_time(diff){
+  const L=y4Lvl(diff);
+  const form=y4mix(L,{
+    easy:  ['read','read','read','am_pm'],
+    medium:['read','am_pm','am_pm','convert'],
+    hard:  ['read','am_pm','convert','convert'],
+  });
+  if(form==='convert'){
+    const [big,small,k]=y4p(Y4_TIMEUNITS);
+    const n = L==='hard'? y4r(2,9) : y4r(2,5);
+    return { form:'convert_time_'+big, prompt:`How many ${small} are there in ${n} ${big}?`,
+      choices:y4shuf([String(n*k),...y4distract(n*k,()=>y4p([n*k+k, Math.max(1,n*k-k), n+k, n*60]))]),
+      answer:String(n*k),
+      explanation:`1 ${big.replace(/s$/,'')} is ${k} ${small}, so ${n} × ${k} = ${n*k}.` };
+  }
+  if(form==='am_pm'){
+    const events=[['you eat breakfast',7,'am'],['school starts',9,'am'],['you eat lunch',12,'pm'],
+      ['school finishes',3,'pm'],['you go to bed',8,'pm'],['the sun rises',6,'am'],['dinner is ready',6,'pm']];
+    const [what,h,ap]=y4p(events);
+    return { form:'am_or_pm', prompt:`It is ${h} o'clock and ${what}. Is that am or pm?`,
+      svg:y4clockFace(h,0,false,L==='easy'),
+      choices:['am','pm'], answer:ap,
+      explanation: ap==='am' ? 'am is midnight to midday.' : 'pm is midday to midnight.' };
+  }
+  const h=y4r(1,12);
+  const m = L==='easy'? y4p([0,15,30,45]) : L==='medium'? y4p([0,5,10,15,20,25,30,35,40,45,50,55]) : y4r(0,59);
+  const mm=String(m).padStart(2,'0');
+  // THE HANDS-SWAPPED DISTRACTOR. Read the minute hand as the hour and the hour hand as
+  // the minutes and 10:10 becomes 2:50 — the hands sit in each other's places. It is the
+  // single most common way a child misreads a clock, and it looks nothing like a random
+  // wrong answer, so a child who picks it has one specific fixable problem rather than
+  // "got time wrong". Always offered, so the data can see it.
+  let swapH = Math.round(m/5) % 12; if(swapH===0) swapH=12;
+  const swapM = (h%12)*5;
+  const swapped = `${swapH}:${String(swapM).padStart(2,'0')}`;
+  const others = y4distract(`${h}:${mm}`,()=>{
+    const hh=y4r(1,12), mi=L==='easy'? y4p([0,15,30,45]) : y4r(0,59);
+    return `${hh}:${String(mi).padStart(2,'0')}`; }, 3)
+    .filter(x=>x!==swapped).slice(0, swapped===`${h}:${mm}` ? 3 : 2);
+  const pool=[`${h}:${mm}`, ...others];
+  if(swapped!==`${h}:${mm}`) pool.push(swapped);
+  return { form:'read_clock', prompt:'What time does the clock show?',
+    svg: y4clockFace(h,m, L!=='easy', L==='easy'),
+    choices:y4shuf([...new Set(pool)]),
+    answer:`${h}:${mm}`, swappedHands: swapped!==`${h}:${mm}` ? swapped : null,
+    explanation:`The hands show ${h}:${mm}. The short hand gives the hour and the long hand the minutes — swapping them would read ${swapped}.` };
+}
+
+// ---- 8. PROBABILITY ---- units 14.1, 14.2 dependent and independent, 24.1
+// WA Year 4 names independence explicitly: "identify when chance events are NOT affected
+// by previous events".
+const Y4_EVENTPAIRS=[
+  {a:'You roll a dice and get a 6.', b:'You roll the dice again and get a 6.', ind:true},
+  {a:'You toss a coin and get heads.', b:'You toss the coin again and get heads.', ind:true},
+  {a:'You spin a spinner and get red.', b:'You spin it again and get red.', ind:true},
+  {a:'The plane took off.', b:'The plane landed.', ind:false},
+  {a:'You take a red marble out of the bag.', b:'You take another marble out of the same bag.', ind:false},
+  {a:'It rained all morning.', b:'The grass is wet.', ind:false},
+  {a:'You eat the last apple.', b:'There are no apples left.', ind:false},
+  {a:'You draw a card and put it back.', b:'You draw another card.', ind:true},
+];
+function y4_probability(diff){
+  const L=y4Lvl(diff);
+  const form=y4mix(L,{
+    easy:  ['likely','likely','likely','independent'],
+    medium:['likely','independent','independent','repeated'],
+    hard:  ['independent','repeated','repeated','likely'],
+  });
+  if(form==='independent'){
+    const e=y4p(Y4_EVENTPAIRS);
+    return { form:'independent_or_dependent',
+      prompt:`First: ${e.a} Then: ${e.b} Is the second event dependent or independent?`,
+      choices:['dependent','independent'], answer: e.ind?'independent':'dependent',
+      explanation: e.ind
+        ? 'The first event does not change the chance of the second, so it is independent.'
+        : 'The first event has to happen before the second can, so it is dependent.' };
+  }
+  if(form==='repeated'){
+    // 24.1: predicting outcomes over repeated trials.
+    const sides=y4p([2,4,5,6,10]);
+    const trials=y4p([20,50,100]);
+    const expect=Math.round(trials/sides);
+    return { form:'predict_repeated',
+      prompt:`A spinner has ${sides} equal sections. If you spin it ${trials} times, about how many times would you expect one section?`,
+      choices:y4shuf([String(expect),...y4distract(expect,()=>y4p([expect*2, Math.max(1,Math.round(expect/2)), trials, sides]))]),
+      answer:String(expect),
+      explanation:`${trials} ÷ ${sides} = about ${expect} times each.` };
+  }
+  const counts=y4shuf([y4r(1,4), y4r(5,9), y4r(2,6)]);
+  const cols=['red','blue','yellow'];
+  const most=cols[counts.indexOf(Math.max(...counts))];
+  const least=cols[counts.indexOf(Math.min(...counts))];
+  const askMost=Math.random()<0.5;
+  return { form:'most_or_least_likely',
+    prompt:`A bag has ${counts.map((n,i)=>n+' '+cols[i]).join(', ')} counters. Which are you ${askMost?'most':'least'} likely to pull out?`,
+    choices:y4shuf(cols.slice()), answer: askMost?most:least,
+    explanation: askMost ? `There are more ${most} than anything else.` : `There are fewer ${least} than anything else.` };
+}
+
+// ---- 9. FACTORS AND MULTIPLES ---- units 10.1 factors, 4.1 multiples
+// The book teaches these as one idea from two ends: arrays give the factors of 16, a flow
+// chart generates the first ten multiples of 6. Neither existed as a Year 4 question.
+function y4_multiples(diff){
+  const L=y4Lvl(diff);
+  const form=y4mix(L,{
+    easy:  ['nth','nth','nth','is_multiple'],
+    medium:['nth','is_multiple','is_multiple','common'],
+    hard:  ['is_multiple','common','common','not_multiple'],
+  });
+  const base = L==='easy'? y4p([2,3,4,5,10]) : L==='medium'? y4p([3,4,6,7,8,9]) : y4p([6,7,8,9,11,12]);
+  if(form==='common'){
+    // the first number in BOTH lists — the idea behind lowest common multiple, without
+    // the name, which is where Year 5 takes it
+    const other=y4p([2,3,4,5,6].filter(x=>x!==base));
+    let lcm=base; while(lcm%other!==0) lcm+=base;
+    return { form:'common_multiple', prompt:`What is the smallest number that is a multiple of both ${base} and ${other}?`,
+      choices:y4shuf([String(lcm),...y4distract(lcm,()=>y4p([base*other, base+other, lcm+base, lcm-base]))]),
+      answer:String(lcm),
+      explanation:`Counting in ${base}s and in ${other}s, ${lcm} is the first number in both lists.` };
+  }
+  if(form==='not_multiple'){
+    const right=base*y4r(2,9)+y4r(1,base-1);
+    const opts=[right, base*y4r(2,6), base*y4r(7,11), base*y4r(3,8)];
+    return { form:'which_is_not_a_multiple', prompt:`Which of these is NOT a multiple of ${base}?`,
+      choices:y4shuf([...new Set(opts.map(String))]).slice(0,4), answer:String(right),
+      explanation:`${right} ÷ ${base} does not divide exactly.` };
+  }
+  if(form==='is_multiple'){
+    const yes=Math.random()<0.5;
+    const n = yes ? base*y4r(2,12) : base*y4r(2,12)+y4r(1,base-1);
+    return { form:'is_it_a_multiple', prompt:`Is ${n} a multiple of ${base}?`,
+      choices:['yes','no'], answer: yes?'yes':'no',
+      explanation: yes ? `${base} × ${n/base} = ${n}.` : `${n} does not divide exactly by ${base}.` };
+  }
+  const k = L==='easy'? y4r(2,6) : y4r(4,10);
+  return { form:'nth_multiple', prompt:`What is the ${k}${k===2?'nd':k===3?'rd':'th'} multiple of ${base}?`,
+    choices:y4shuf([String(base*k),...y4distract(base*k,()=>y4p([base*(k+1), base*(k-1), base+k, base*k+base]))]),
+    answer:String(base*k),
+    explanation:`Counting in ${base}s: ${[1,2,3].map(i=>base*i).join(', ')}… the ${k}${k===2?'nd':k===3?'rd':'th'} is ${base*k}.` };
+}
+
+// ---- 10. MANY-TO-ONE PICTURE GRAPHS ---- unit 20.1
+// "When a picture graph uses one symbol to represent MORE THAN ONE piece of data" — the
+// Year 4 step up from Year 3's one-to-one graphs. Nothing generated this.
+const Y4_GRAPHTOPICS=[
+  {t:'Pies sold at the drive', cats:['4A','4B','4C','4D'], sym:'🥧'},
+  {t:'Books read this term', cats:['Ana','Ben','Cody','Dee'], sym:'📗'},
+  {t:'Laps run at the carnival', cats:['Red','Blue','Green','Gold'], sym:'🏃'},
+];
+function y4_picgraph(diff){
+  const L=y4Lvl(diff);
+  const each = L==='easy'? y4p([2,5]) : L==='medium'? y4p([2,5,10]) : y4p([4,5,10,20]);
+  const T=y4p(Y4_GRAPHTOPICS);
+  const rows=T.cats.map(label=>({label, sym:y4r(1,6)}));
+  const seen=new Set(); rows.forEach(r=>{ while(seen.has(r.sym)) r.sym=y4r(1,6); seen.add(r.sym); });
+  const svg=y4picGraph(T.t, rows, T.sym, each);
+  const sorted=rows.slice().sort((a2,b2)=>b2.sym-a2.sym);
+  const form=y4mix(L,{
+    easy:  ['how_many','how_many','how_many','most'],
+    medium:['how_many','how_many','difference','total'],
+    hard:  ['difference','total','difference','how_many'],
+  });
+  if(form==='most')
+    return { form:'graph_most', prompt:'Which had the most?', svg,
+      choices:y4shuf(rows.map(r=>r.label)), answer:sorted[0].label,
+      explanation:`${sorted[0].label} has the most symbols.` };
+  if(form==='difference'){
+    const d=(sorted[0].sym-sorted[sorted.length-1].sym)*each;
+    return { form:'graph_difference', prompt:`How many more for ${sorted[0].label} than ${sorted[sorted.length-1].label}?`, svg,
+      choices:y4shuf([String(d),...y4distract(d,()=>y4p([d+each, Math.max(each,d-each), sorted[0].sym-sorted[sorted.length-1].sym, d*2]))]),
+      answer:String(d),
+      explanation:`${sorted[0].sym} symbols − ${sorted[sorted.length-1].sym} symbols = ${sorted[0].sym-sorted[sorted.length-1].sym} symbols, and each is ${each}, so ${d}.` };
+  }
+  if(form==='total'){
+    const tot=rows.reduce((s2,r)=>s2+r.sym,0)*each;
+    return { form:'graph_total', prompt:'How many altogether?', svg,
+      choices:y4shuf([String(tot),...y4distract(tot,()=>y4p([tot+each, tot-each, rows.reduce((s3,r)=>s3+r.sym,0), tot*2]))]),
+      answer:String(tot),
+      explanation:`${rows.reduce((s3,r)=>s3+r.sym,0)} symbols × ${each} = ${tot}.` };
+  }
+  const r=y4p(rows);
+  return { form:'graph_how_many', prompt:`How many for ${r.label}?`, svg,
+    choices:y4shuf([String(r.sym*each),...y4distract(r.sym*each,()=>y4p([r.sym, r.sym*each+each, Math.max(each,r.sym*each-each), r.sym+each]))]),
+    answer:String(r.sym*each),
+    explanation:`${r.sym} symbols × ${each} each = ${r.sym*each}.` };
+}
+
+// ---- 11. AREA OF IRREGULAR SHAPES ---- unit 12.3
+// "Combine whole squares and partial squares to find the area." Nothing generated this;
+// area was rectangles only, which is the Year 3 job.
+function y4_irregularArea(diff){
+  const L=y4Lvl(diff);
+  const whole = L==='easy'? y4r(4,8) : L==='medium'? y4r(6,14) : y4r(10,22);
+  const halves = L==='easy'? y4p([2,4]) : y4p([2,4,6]);
+  const area = whole + halves/2;
+  const nice = Number.isInteger(area) ? String(area) : String(area);
+  return { form:'irregular_area',
+    prompt:`A shape covers ${whole} whole squares and ${halves} half squares. What is its area?`,
+    choices:y4shuf([nice+' squares',
+      ...y4distract(nice+' squares',()=>y4p([whole+halves, whole, whole+halves*2, area+1])+' squares')]),
+    answer:nice+' squares',
+    explanation:`${halves} halves make ${halves/2} whole squares, so ${whole} + ${halves/2} = ${area}.` };
+}
+
+
+// ---- 12. AREA, PERIMETER AND IRREGULAR SHAPES ----
+// Irregular area (unit 12.3) belongs INSIDE area rather than taking a slot of its own —
+// it is the extension form of the same skill, not a different one.
+function y4_area(diff, _s, year){
+  const L=y4Lvl(diff);
+  const useIrregular = L==='hard' ? Math.random()<0.45 : L==='medium' ? Math.random()<0.2 : false;
+  if(useIrregular) return y4_irregularArea(L);
+  return genArea(L, 'random', 4);
+}
+
+// ---- 13. TIMETABLES AND DURATION ---- unit 32.2
+// The book uses a trail map with walking times rather than a train timetable, so the
+// questions are about durations and finishing times, not platforms.
+const Y4_TRAILS=[
+  {n:'Kookaburra Loop'},{n:'Granite Ridge'},{n:'Fern Gully'},{n:'Lookout Track'},{n:'Creek Walk'},
+];
+function y4pad2(n){ return String(n).padStart(2,'0'); }
+function y4_timetable(diff){
+  const L=y4Lvl(diff);
+  const trails=y4shuf(Y4_TRAILS).slice(0,4).map(t=>({...t,
+    mins: L==='easy'? y4r(1,6)*10 : y4r(3,11)*10 }));
+  const rows=trails.map(t=>t.n);
+  const svg=y6timetable
+    ? y6timetable(rows, [{times:trails.map(t=>t.mins+' min')}], 'a table of walking times for four trails')
+    : '';
+  const form=y4mix(L,{
+    easy:  ['how_long','how_long','how_long','longest'],
+    medium:['how_long','longest','finish','difference'],
+    hard:  ['finish','difference','both','both'],
+  });
+  if(form==='longest'){
+    const sorted=trails.slice().sort((a2,b2)=>b2.mins-a2.mins);
+    return { form:'tt_longest', prompt:'Which walk takes the longest?', svg,
+      choices:y4shuf(trails.map(t=>t.n)), answer:sorted[0].n,
+      explanation:`${sorted[0].n} takes ${sorted[0].mins} minutes.` };
+  }
+  if(form==='difference'){
+    const sorted=trails.slice().sort((a2,b2)=>b2.mins-a2.mins);
+    const d=sorted[0].mins-sorted[sorted.length-1].mins;
+    return { form:'tt_difference', prompt:`How much longer is ${sorted[0].n} than ${sorted[sorted.length-1].n}?`, svg,
+      choices:y4shuf([d+' min',...y4distract(d+' min',()=>y4r(1,12)*10+' min')]), answer:d+' min',
+      explanation:`${sorted[0].mins} − ${sorted[sorted.length-1].mins} = ${d} minutes.` };
+  }
+  if(form==='both'){
+    const two=y4shuf(trails).slice(0,2);
+    const tot=two[0].mins+two[1].mins;
+    const ans = tot>=60 ? `${Math.floor(tot/60)} h ${tot%60} min` : `${tot} min`;
+    return { form:'tt_two_walks', prompt:`How long to walk ${two[0].n} and ${two[1].n}?`, svg,
+      choices:y4shuf([ans,...y4distract(ans,()=>{ const x=tot+y4p([10,-10,30,60]);
+        return x>=60? `${Math.floor(x/60)} h ${x%60} min` : `${x} min`; })]),
+      answer:ans,
+      explanation:`${two[0].mins} + ${two[1].mins} = ${tot} minutes.` };
+  }
+  if(form==='finish'){
+    const t=y4p(trails);
+    const startH=y4r(9,11), startM=y4p([0,15,30,45]);
+    const end=startH*60+startM+t.mins;
+    const ans=`${Math.floor(end/60)}:${y4pad2(end%60)}`;
+    return { form:'tt_finish_time',
+      prompt:`You start ${t.n} at ${startH}:${y4pad2(startM)}. What time do you finish?`, svg,
+      choices:y4shuf([ans,...y4distract(ans,()=>{ const x=end+y4p([10,-10,30,60,-30]);
+        return `${Math.floor(x/60)}:${y4pad2(((x%60)+60)%60)}`; })]),
+      answer:ans,
+      explanation:`${startH}:${y4pad2(startM)} plus ${t.mins} minutes is ${ans}.` };
+  }
+  const t=y4p(trails);
+  return { form:'tt_how_long', prompt:`How long does ${t.n} take?`, svg,
+    choices:y4shuf([t.mins+' min',...y4distract(t.mins+' min',()=>y4r(1,12)*10+' min')]),
+    answer:t.mins+' min',
+    explanation:`The table shows ${t.mins} minutes.` };
+}
+
+// ============================================================
+// YEAR 4 — adapter and slots.
+// buildQuestion() drops any field it does not recognise, silently. The translation lives
+// in one place so there is one thing to check, and the tests check it.
+// ============================================================
+function y4Adapt(q){
+  // Coin questions come straight from the app's own generator, already in the shared
+  // shape. They label themselves with coinsSubskill rather than subskill, so without this
+  // line every money question in Year 4 recorded a blank.
+  if(q.inputType==='coins'){
+    if(!q.subskill) q.subskill=q.coinsSubskill||'coins';
+    return q;
+  }
+  const out={ prompt:q.prompt, answer:String(q.answer), explanation:q.explanation||'',
+              subskill:q.form||q.subskill||null };
+  if(q.svg) out.svg=q.svg;
+  if(q.speak) out.spokenPrompt=q.speak;
+  // The hands-swapped reading, so the gradebook can tell "read the hands the wrong way
+  // round" apart from "got the time wrong".
+  if(q.swappedHands) out.swappedHands=q.swappedHands;
+  if(q.inputType && q.inputType!=='choice' && q.inputType!=='text' && !q.parts && !q.choices) return q;
+  if(q.parts){
+    out.inputType='parts';
+    const labels=q.partsLabels||[];
+    out.parts=q.parts.map((_,i)=> labels[i]? {label:labels[i]} : {});
+    if(q.partsLead) out.partsLead=q.partsLead;
+    if(q.partsJoin) out.partsJoin=q.partsJoin;
+    if(q.partsTail) out.partsTail=q.partsTail;
+    return out;
+  }
+  if(q.choices){ out.inputType='choice'; out.choices=q.choices.map(String); return out; }
+  out.inputType='text';
+  return out;
+}
+const Y4_SLOTS=[
+  {skill:'Y4_MULTIPLES',   title:'Factors and multiples',         gen:d=>y4Adapt(y4_multiples(d))},
+  {skill:'Y4_MONEY',       title:'Money',                         gen:d=>y4Adapt(y4_money(d))},
+  {skill:'Y4_AREA',        title:'Area and perimeter',            gen:d=>y4Adapt(y4_area(d))},
+  {skill:'Y4_SCALES',      title:'Reading graduated scales',      gen:d=>y4Adapt(y4_scales(d))},
+  {skill:'Y4_TIME',        title:'Time',                          gen:d=>y4Adapt(y4_time(d))},
+  {skill:'Y4_TIMETABLE',   title:'Timetables and duration',       gen:d=>y4Adapt(y4_timetable(d))},
+  {skill:'Y4_SYMMETRY',    title:'Symmetry',                      gen:d=>y4Adapt(y4_symmetry(d))},
+  {skill:'Y4_GRIDREF',     title:'Grid references and directions',gen:d=>y4Adapt(y4_gridref(d))},
+  {skill:'Y4_SHAPES',      title:'Shapes and quadrilaterals',     gen:d=>y4Adapt(y4_shapes(d))},
+  {skill:'Y4_PROBABILITY', title:'Probability',                   gen:d=>y4Adapt(y4_probability(d))},
+  {skill:'Y4_PICGRAPH',    title:'Reading graphs',                gen:d=>y4Adapt(y4_picgraph(d))},
+];
+// END YEAR 4
+
 // ============================================================
 // SKILL REGISTRY & YEAR PLANS
 // ------------------------------------------------------------
@@ -6538,6 +7601,18 @@ const SKILLS = {
   Y6_GRAPHS:        { title:'Reading graphs' },
   Y6_MISLEADING:    { title:'Misleading graphs' },
   Y6_TIMETABLE:     { title:'Timetables and duration' },
+  // ---- Year 4 rebuild (Maths Trek 4 + WA Curriculum 2026). Codes are PERMANENT. ----
+  Y4_MULTIPLES:     { title:'Factors and multiples' },
+  Y4_MONEY:         { title:'Money' },
+  Y4_AREA:          { title:'Area and perimeter' },
+  Y4_SCALES:        { title:'Reading graduated scales' },
+  Y4_TIME:          { title:'Time' },
+  Y4_TIMETABLE:     { title:'Timetables and duration' },
+  Y4_SYMMETRY:      { title:'Symmetry' },
+  Y4_GRIDREF:       { title:'Grid references and directions' },
+  Y4_SHAPES:        { title:'Shapes and quadrilaterals' },
+  Y4_PROBABILITY:   { title:'Probability' },
+  Y4_PICGRAPH:      { title:'Reading graphs' },
   // Retired. Kept so historical results still resolve to a sensible title.
   PLACE_VALUE:      { title:'Place value', retired:true },
   DECIMAL_PLACE:    { title:'Decimal place value', retired:true },
@@ -6576,10 +7651,40 @@ const YEAR_PLANS = {
       'MULTIPLICATION','DIVISION','FACT_FAMILY','MISSING_NUMBER','VISUAL_FRACTION',
       'FRACTION_OF','COINS','TIME','MEASUREMENT','AREA_PERIMETER','ANGLES',
       'SHAPES_3D','PROBABILITY','STATISTICS'],
-  4: ['PARTITION','SEQUENCE','ROUNDING','ORDER_WHOLE','FACTORS','ADDITION','SUBTRACTION',
-      'MULTIPLICATION','DIVISION','COMPARE_FRACTION','VISUAL_FRACTION','FRAC_DEC',
-      'ORDER_DECIMAL','COINS','AREA_PERIMETER','TIME','SIMPLIFY_FRACTION','METRIC_CONVERT',
-      'ANGLES','FRACTION_OF','MISSING_NUMBER','MIXED_IMPROPER','PROBABILITY','STATISTICS'],
+  // Rebuilt against the WA Curriculum (implementation 2026) and all 86 Maths Trek 4
+  // sheets. Grew from 24 to 30: space and geometry generated NOTHING before, and
+  // multiples, many-to-one picture graphs and irregular area were all missing.
+  // Simplifying fractions is out (not Year 4 content); equivalent fractions is in.
+  4: ['PARTITION',
+      'SEQUENCE',
+      'ROUNDING',
+      'ORDER_WHOLE',
+      'Y4_MULTIPLES',
+      'ADDITION',
+      'SUBTRACTION',
+      'MULTIPLICATION',
+      'DIVISION',
+      'MISSING_NUMBER',
+      'EQUIV_FRACTION',
+      'COMPARE_FRACTION',
+      'VISUAL_FRACTION',
+      'FRAC_DEC',
+      'ORDER_DECIMAL',
+      'FRACTION_OF',
+      'MIXED_IMPROPER',
+      'Y4_MONEY',
+      'Y4_AREA',
+      'METRIC_CONVERT',
+      'Y4_SCALES',
+      'Y4_TIME',
+      'Y4_TIMETABLE',
+      'Y4_SYMMETRY',
+      'Y4_GRIDREF',
+      'Y4_SHAPES',
+      'ANGLES',
+      'Y4_PROBABILITY',
+      'Y4_PICGRAPH',
+      'STATISTICS'],
   // Year 6: 24 questions, weighted hard toward number fluency. Nets, transformations,
   // spinners, coordinates and timetables are deliberately absent. Each needs a drawing
   // where a small rendering error makes the question unanswerable, and the underlying
@@ -6740,6 +7845,7 @@ const SLOTS=[
 ];
 Y2_SLOTS.forEach(s=>SLOTS.push(s));
 Y6_SLOTS.forEach(s=>SLOTS.push(s));
+Y4_SLOTS.forEach(s=>SLOTS.push(s));
 function buildQuestion(slotIdx, diff, strategyKey, year){
   const list = slotsForYear(year);
   const slot = list[slotIdx] || SLOTS[slotIdx];
@@ -6748,7 +7854,13 @@ function buildQuestion(slotIdx, diff, strategyKey, year){
   const q = slot.gen(diff, strategyKey, year);
   return { id:uid('q'), slot:slotIdx+1, title:slot.title,
     skill: slot.skill || LEGACY_SLOT_SKILLS[slotIdx] || null,
-    subskill: q.subskill || null,
+    // NEVER BLANK. Twelve generators shared with Years 3 and 5 have never labelled their
+    // questions, so those results recorded nothing at all and no report could name what a
+    // child was weak at. A generator that does not report detail now says so explicitly:
+    // "addition_general" rather than null. Real subskills should replace these — the list
+    // is in the handoff — but a blank is a silent failure and a coarse label is not.
+    subskill: q.subskill ||
+      ((slot.skill || LEGACY_SLOT_SKILLS[slotIdx]) ? String(slot.skill || LEGACY_SLOT_SKILLS[slotIdx]).toLowerCase()+'_general' : null),
     prompt:q.prompt,
     answer:q.answer!=null?String(q.answer):null, explanation:q.explanation||'',
     inputType:q.inputType||'text', choices:q.choices||null, svg:q.svg||null,
@@ -6771,7 +7883,7 @@ function buildQuestion(slotIdx, diff, strategyKey, year){
     showFracDen:q.showFracDen!=null?q.showFracDen:null,
     parts:q.parts||null, partsLead:q.partsLead||null, partsJoin:q.partsJoin||null,
     partsAnyOrder:!!q.partsAnyOrder, spokenPrompt:q.spokenPrompt||null,
-    fracEq:q.fracEq||null,
+    fracEq:q.fracEq||null, swappedHands:q.swappedHands||null,
     partsTail:q.partsTail||null,
     fracNum:q.fracNum!=null?q.fracNum:null, fracDen:q.fracDen!=null?q.fracDen:null,
     ofTotal:q.ofTotal!=null?q.ofTotal:null };
@@ -8784,7 +9896,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-16.07';
+const BUILD = '2026-08-16.08';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -9646,6 +10758,8 @@ function answerFlags(q, given){
     else if(!aOk && !pOk) flags.push('area_and_perimeter_wrong');
     else flags.push('area_and_perimeter_correct');
   }
+  if(q.swappedHands && given && String(given)===String(q.swappedHands))
+    flags.push('clock_hands_swapped');
   if(q.inputType==='mixed' && given && !q.requireSimplest){
     const n=Number(given.num), d=Number(given.den);
     if(isFinite(n)&&isFinite(d)&&d!==0&&n!==0&&!isSimplest(n,d)) flags.push('could_simplify');
