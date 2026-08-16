@@ -358,6 +358,11 @@
   .mmc-q:hover { filter:brightness(.96); }
   /* An instant tooltip. The native one is slow enough that a teacher scanning a row gives
      up before it appears, and there was nothing on screen to suggest hovering at all. */
+  .mmc-strandhead {
+    font-size:12px; letter-spacing:.06em; text-transform:uppercase; font-weight:800;
+    background:var(--bg); color:var(--ink); opacity:.75;
+    border-bottom:2px solid var(--ink); padding:6px 8px; white-space:nowrap;
+  }
   .mmc-qhead { position:relative; cursor:help; overflow:visible; }
   .mmc-ledger thead { position:relative; z-index:5; }
   .mmc-qhead::after {
@@ -7616,6 +7621,30 @@ const Y4_SLOTS=[
 ];
 // END YEAR 4
 
+// ---- THE THREE STRANDS ----
+// The WA Curriculum's own structure: Number and Algebra, Measurement and Geometry,
+// Probability and Statistics. The year plans are ordered by these, and the gradebook
+// groups its columns under them, so a teacher reading a set or a report sees the strands
+// in blocks rather than a run of question numbers.
+//
+// Money sits in Number and Algebra — that is where WA puts financial mathematics.
+const STRAND_NAMES = ['Number and Algebra','Measurement and Geometry','Probability and Statistics'];
+const MEASUREMENT_GEOMETRY = new Set([
+  'AREA_PERIMETER','METRIC_CONVERT','TIME','VOLUME','MEASUREMENT','SHAPES_3D','ANGLES',
+  'Y4_SCALES','Y4_TIMETABLE','Y4_SYMMETRY','Y4_GRIDREF','Y4_SHAPES',
+  'Y2_TIME','Y2_CALENDAR','Y2_MEASUREMENT','Y2_POSITION',
+  'Y6_ANGLES','Y6_COORDINATES','Y6_TRANSFORM','Y6_TIMETABLE',
+]);
+const PROBABILITY_STATISTICS = new Set([
+  'PROBABILITY','STATISTICS','Y2_DATA','Y4_PICGRAPH',
+  'Y6_PROBABILITY','Y6_GRAPHS','Y6_MISLEADING',
+]);
+function strandOf(code){
+  if(MEASUREMENT_GEOMETRY.has(code)) return 1;
+  if(PROBABILITY_STATISTICS.has(code)) return 2;
+  return 0;
+}
+
 // ============================================================
 // SKILL REGISTRY & YEAR PLANS
 // ------------------------------------------------------------
@@ -9967,7 +9996,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-16.12';
+const BUILD = '2026-08-16.14';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -13363,10 +13392,45 @@ function renderLedgerByQuestion(){
   const present = new Set();
   pubWeeks.forEach(w=>(w.questions||[]).forEach(q=>{ const c=skillOfQuestion(q); if(c) present.add(c); }));
   const ordered = [];
-  [3,4].forEach(y=>planForYear(y).forEach(c=>{ if(present.has(c) && ordered.indexOf(c)===-1) ordered.push(c); }));
-  present.forEach(c=>{ if(ordered.indexOf(c)===-1) ordered.push(c); });   // retired skills last
-  const COLS = ordered;
+  // Ordered by the plans of the years ACTUALLY in this class. This used to be hardcoded to
+  // [3,4], so a Year 5 or Year 6 class fell through to whatever order the skills happened
+  // to be discovered in — the columns were not in plan order at all.
+  const yearsHere = [...new Set(classFilteredStudentUids()
+    .map(uid => (S.profiles[uid]||{}).yearLevel)
+    .filter(y => y!=null))].sort((a,b)=>a-b);
+  (yearsHere.length? yearsHere : [3,4,5,6]).forEach(y=>
+    planForYear(y).forEach(c=>{ if(present.has(c) && ordered.indexOf(c)===-1) ordered.push(c); }));
+  present.forEach(c=>{ if(ordered.indexOf(c)===-1) ordered.push(c); });   // skills no plan uses
+  // SORTED INTO STRANDS, keeping plan order inside each. Appending leftovers at the end
+  // put a skill no current plan uses — an old one still carrying results — AFTER the
+  // Probability block, which printed a second "Number and Algebra" heading below it.
+  // A stable sort by strand means the headings can never come out of order, whatever mix
+  // of old and new sets a class has.
+  const COLS = ordered
+    .map((code,i)=>({code,i,st:strandOf(code)}))
+    .sort((a,b)=> a.st===b.st ? a.i-b.i : a.st-b.st)
+    .map(x=>x.code);
   const SLOT_COUNT = COLS.length;
+
+  // A STRAND ROW above the question numbers. Grouping the plan was only half the job —
+  // without this the table is still a run of Q numbers and a teacher cannot see where
+  // number ends and measurement begins.
+  const strandRow=el('<tr></tr>');
+  strandRow.appendChild(el('<th></th>'));
+  let run=[];
+  const flush=()=>{
+    if(!run.length) return;
+    const st=strandOf(run[0]);
+    strandRow.appendChild(el(`<th colspan="${run.length}" class="mmc-strandhead">${esc(STRAND_NAMES[st])}</th>`));
+    run=[];
+  };
+  COLS.forEach(code=>{
+    if(run.length && strandOf(code)!==strandOf(run[0])) flush();
+    run.push(code);
+  });
+  flush();
+  thead.insertBefore(strandRow, trh);
+
   // The skill name was already on a `title`, but nothing said so and the browser's own
   // tooltip takes about a second to appear. A dotted underline and a help cursor say
   // "there is more here", and the tooltip below shows instantly.
