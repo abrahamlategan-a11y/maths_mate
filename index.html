@@ -2765,14 +2765,14 @@ function genSequenceV2(diff, _strategy, year){
       const r=pick([2,3]), start=pick([2,3,4,5,6]);
       const terms=[start]; for(let i=1;i<5;i++) terms.push(terms[i-1]*r);
       return { prompt:`Fill in the missing number: ${terms.slice(0,4).join(', ')}, ?`,
-        answer:String(terms[4]),
+        answer:String(terms[4]), subskill:'multiply_pattern',
         explanation:`Each term is multiplied by ${r}, so the next is ${terms[4]}.` };
     }
     const start=randInt(2,9), d0=randInt(2,5);
     const terms=[start]; let d=d0;
     for(let i=1;i<5;i++){ terms.push(terms[i-1]+d); d+=randInt(1,2); }
     return { prompt:`Fill in the missing number: ${terms.slice(0,4).join(', ')}, ?`,
-      answer:String(terms[4]),
+      answer:String(terms[4]), subskill:'growing_difference',
       explanation:`The gap grows each time, so the next number is ${terms[4]}.` };
   }
   if(+year===6 && diff==='hard'){
@@ -2782,14 +2782,14 @@ function genSequenceV2(diff, _strategy, year){
       const r=pick([2,3]), start=pick([2,3,4,5]);
       const terms=[start]; for(let i=1;i<5;i++) terms.push(terms[i-1]*r);
       return { prompt:`Fill in the missing number: ${terms.slice(0,4).join(', ')}, ?`,
-        answer:String(terms[4]),
+        answer:String(terms[4]), subskill:'multiply_pattern',
         explanation:`Each term is multiplied by ${r}, so the next is ${terms[4]}.` };
     }
     const start=randInt(3,9), d0=randInt(3,6);
     const terms=[start]; let d=d0;
     for(let i=1;i<5;i++){ terms.push(terms[i-1]+d); d++; }
     return { prompt:`Fill in the missing number: ${terms.slice(0,4).join(', ')}, ?`,
-      answer:String(terms[4]),
+      answer:String(terms[4]), subskill:'growing_by_one',
       explanation:`The gap grows by one each time (${d0}, ${d0+1}, ${d0+2}, ${d0+3}), so the next is ${terms[4]}.` };
   }
   if(+year===3){
@@ -2836,6 +2836,7 @@ function genSequenceY4(diff){
     seqBefore: shown.slice(0,missIdx),
     seqAfter: shown.slice(missIdx+1),
     answer:String(seq[missIdx]),
+    subskill: up ? 'count_on' : 'count_back',
     explanation:`The pattern ${up?'increases':'decreases'} by ${formatGrouped(step)} each time, so the missing number is ${formatGrouped(seq[missIdx])}.`
   };
 }
@@ -5695,6 +5696,731 @@ const Y2_SLOTS=[
 // END YEAR 2
 
 // ============================================================
+// YEAR 6 — new drawings for the seven areas added in this pass.
+// Same conventions as Year 2: SVG only, capped at 600px so nothing is cut off,
+// aria-label on every drawing so the read-aloud and the printable sheet work.
+// ============================================================
+const Y6_INK='#2B2620', Y6_PAPER='#FFFDF8', Y6_HI='#FF7A1A', Y6_GRID='#C9C2B4';
+const Y6_BLUE='#2C6E9B', Y6_GREEN='#2E7D4F', Y6_RED='#D9453C', Y6_GOLD='#E2B33C';
+
+// ---- Cartesian plane. quadrants=1 draws 0..max; quadrants=4 draws -max..+max.
+// One drawing serves coordinates AND transformations, which is why it takes points
+// rather than a single marker.
+function y6grid(max, quadrants, points, opts){
+  opts=opts||{};
+  const four = quadrants===4;
+  const lo = four? -max : 0, hi = max;
+  const span = hi-lo, cell = Math.min(38, 420/span);
+  const pad = 42, size = span*cell + pad*2;
+  const X = v => pad + (v-lo)*cell;
+  const Y = v => pad + (hi-v)*cell;
+  let g='';
+  for(let i=lo;i<=hi;i++){
+    g+=`<line x1="${X(i)}" y1="${Y(lo)}" x2="${X(i)}" y2="${Y(hi)}" stroke="${Y6_GRID}" stroke-width="1.2"/>`;
+    g+=`<line x1="${X(lo)}" y1="${Y(i)}" x2="${X(hi)}" y2="${Y(i)}" stroke="${Y6_GRID}" stroke-width="1.2"/>`;
+  }
+  // axes drawn heavier, and through zero when there are four quadrants
+  g+=`<line x1="${X(lo)}" y1="${Y(0)}" x2="${X(hi)}" y2="${Y(0)}" stroke="${Y6_INK}" stroke-width="2.6"/>`;
+  g+=`<line x1="${X(0)}" y1="${Y(lo)}" x2="${X(0)}" y2="${Y(hi)}" stroke="${Y6_INK}" stroke-width="2.6"/>`;
+  for(let i=lo;i<=hi;i++){
+    if(i===0) continue;
+    g+=`<text x="${X(i)}" y="${Y(0)+16}" text-anchor="middle" font-family="'IBM Plex Mono',monospace" font-size="12" fill="${Y6_INK}">${i}</text>`;
+    g+=`<text x="${X(0)-8}" y="${Y(i)+4}" text-anchor="end" font-family="'IBM Plex Mono',monospace" font-size="12" fill="${Y6_INK}">${i}</text>`;
+  }
+  g+=`<text x="${X(0)-8}" y="${Y(0)+16}" text-anchor="end" font-family="'IBM Plex Mono',monospace" font-size="12" fill="${Y6_INK}">0</text>`;
+  (points||[]).forEach(p=>{
+    const col = p.colour || Y6_HI;
+    if(p.shape){
+      // a polygon: used for transformations, where a whole shape moves
+      const pts=p.shape.map(v=>`${X(v[0])},${Y(v[1])}`).join(' ');
+      g+=`<polygon points="${pts}" fill="${col}" fill-opacity="${p.ghost?0.18:0.42}" stroke="${col}"
+          stroke-width="3" stroke-dasharray="${p.ghost?'6 5':''}" stroke-linejoin="round"/>`;
+      p.shape.forEach((v,i)=>{
+        if(!p.labels) return;
+        g+=`<circle cx="${X(v[0])}" cy="${Y(v[1])}" r="4.5" fill="${col}"/>`;
+        g+=`<text x="${X(v[0])+9}" y="${Y(v[1])-8}" font-family="'Baloo 2',sans-serif" font-weight="700"
+            font-size="15" fill="${Y6_INK}">${p.labels[i]}</text>`;
+      });
+    } else {
+      g+=`<circle cx="${X(p.x)}" cy="${Y(p.y)}" r="7" fill="${col}" stroke="${Y6_INK}" stroke-width="2.2"/>`;
+      if(p.label) g+=`<text x="${X(p.x)+11}" y="${Y(p.y)-9}" font-family="'Baloo 2',sans-serif"
+          font-weight="700" font-size="16" fill="${Y6_INK}">${p.label}</text>`;
+    }
+  });
+  return `<svg viewBox="0 0 ${size} ${size}" width="100%" style="max-width:${Math.min(size,470)}px"
+    role="img" aria-label="${opts.alt||('a coordinate grid'+(four?' with four quadrants':''))}">${g}</svg>`;
+}
+
+// ---- side-by-side column graph. Two series so "compare" questions are possible,
+// and a truncated y-axis so misleading-graph questions can use the SAME renderer.
+function y6columns(title, cats, seriesA, seriesB, opts){
+  opts=opts||{};
+  const yMin = opts.yMin||0;
+  const vals=[...cats.map(c=>c.a), ...(seriesB?cats.map(c=>c.b):[])];
+  const yMax = opts.yMax || (Math.ceil(Math.max(...vals)/10)*10 + 10);
+  const w=560, h=330, left=58, bottom=62, top=44;
+  const plotH = h-bottom-top, plotW = w-left-24;
+  const groupW = plotW/cats.length, barW = seriesB? groupW*0.30 : groupW*0.46;
+  const Y = v => top + plotH - ((v-yMin)/(yMax-yMin))*plotH;
+  let g=`<text x="${w/2}" y="24" text-anchor="middle" font-family="'Baloo 2',sans-serif" font-weight="800" font-size="17" fill="${Y6_INK}">${title}</text>`;
+  const step = (yMax-yMin)/5;
+  for(let i=0;i<=5;i++){
+    const v=yMin+i*step;
+    g+=`<line x1="${left}" y1="${Y(v)}" x2="${left+plotW}" y2="${Y(v)}" stroke="${Y6_GRID}" stroke-width="1"/>`;
+    g+=`<text x="${left-9}" y="${Y(v)+4}" text-anchor="end" font-family="'IBM Plex Mono',monospace" font-size="12" fill="${Y6_INK}">${Math.round(v)}</text>`;
+  }
+  cats.forEach((c,i)=>{
+    const gx=left+i*groupW;
+    const xa = seriesB? gx+groupW*0.18 : gx+groupW*0.27;
+    // opts.widths lets one column be drawn fatter than the rest. Area then exaggerates a
+    // difference that height alone does not — a real technique, and one a child can see.
+    const bw = (opts.widths && opts.widths[i]) ? barW*opts.widths[i] : barW;
+    g+=`<rect x="${xa}" y="${Y(c.a)}" width="${bw}" height="${Y(yMin)-Y(c.a)}" fill="${Y6_BLUE}" stroke="${Y6_INK}" stroke-width="2"/>`;
+    if(seriesB) g+=`<rect x="${xa+barW+4}" y="${Y(c.b)}" width="${barW}" height="${Y(yMin)-Y(c.b)}" fill="${Y6_GOLD}" stroke="${Y6_INK}" stroke-width="2"/>`;
+    g+=`<text x="${gx+groupW/2}" y="${h-bottom+20}" text-anchor="middle" font-family="'Baloo 2',sans-serif" font-weight="700" font-size="13" fill="${Y6_INK}">${c.label}</text>`;
+  });
+  g+=`<line x1="${left}" y1="${Y(yMin)}" x2="${left+plotW}" y2="${Y(yMin)}" stroke="${Y6_INK}" stroke-width="2.4"/>`;
+  g+=`<line x1="${left}" y1="${top}" x2="${left}" y2="${Y(yMin)}" stroke="${Y6_INK}" stroke-width="2.4"/>`;
+  if(seriesB){
+    g+=`<rect x="${left}" y="${h-26}" width="14" height="14" fill="${Y6_BLUE}" stroke="${Y6_INK}" stroke-width="1.6"/>`;
+    g+=`<text x="${left+20}" y="${h-14}" font-family="'Baloo 2',sans-serif" font-weight="700" font-size="13" fill="${Y6_INK}">${seriesA}</text>`;
+    g+=`<rect x="${left+130}" y="${h-26}" width="14" height="14" fill="${Y6_GOLD}" stroke="${Y6_INK}" stroke-width="1.6"/>`;
+    g+=`<text x="${left+150}" y="${h-14}" font-family="'Baloo 2',sans-serif" font-weight="700" font-size="13" fill="${Y6_INK}">${seriesB}</text>`;
+  }
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px" role="img"
+    aria-label="${opts.alt||('a column graph titled '+title)}">${g}</svg>`;
+}
+
+// ---- probability line, 0 to 1, marked with fraction / decimal / percentage.
+// Unit 29.1 labels all three at once and that is the point of the lesson.
+function y6probLine(markAt, showLabels){
+  const w=560,h=112,x0=44,x1=w-44,y=52;
+  let g=`<line x1="${x0}" y1="${y}" x2="${x1}" y2="${y}" stroke="${Y6_INK}" stroke-width="3"/>`;
+  [0,0.25,0.5,0.75,1].forEach(v=>{
+    const x=x0+v*(x1-x0);
+    g+=`<line x1="${x}" y1="${y-11}" x2="${x}" y2="${y+11}" stroke="${Y6_INK}" stroke-width="${v===0||v===1||v===0.5?3:1.8}"/>`;
+    if(showLabels!==false){
+      const frac={0:'0',0.25:'1/4',0.5:'1/2',0.75:'3/4',1:'1'}[v];
+      g+=`<text x="${x}" y="${y+30}" text-anchor="middle" font-family="'IBM Plex Mono',monospace" font-size="13" fill="${Y6_INK}">${frac}</text>`;
+      g+=`<text x="${x}" y="${y+48}" text-anchor="middle" font-family="'IBM Plex Mono',monospace" font-size="12" fill="${Y6_INK}" opacity="0.75">${v*100}%</text>`;
+    }
+  });
+  if(markAt!=null){
+    const x=x0+markAt*(x1-x0);
+    g+=`<polygon points="${x},${y-15} ${x-9},${y-33} ${x+9},${y-33}" fill="${Y6_HI}" stroke="${Y6_INK}" stroke-width="2.4"/>`;
+  }
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px" role="img"
+    aria-label="a probability line from 0 to 1">${g}</svg>`;
+}
+
+// ---- spinner, for expected probability ----
+const Y6_SEGNAMES=['blue','yellow','red','green','purple','orange','sky','brown'];
+function y6spinner(segments, highlight){
+  const size=210,c=size/2,r=c-8;
+  const COL=[Y6_BLUE,Y6_GOLD,Y6_RED,Y6_GREEN,'#7A4E9B','#E08A6B','#5AA8C8','#8A5A2B'];
+  let g='';
+  for(let i=0;i<segments;i++){
+    const a0=(i/segments)*2*Math.PI-Math.PI/2, a1=((i+1)/segments)*2*Math.PI-Math.PI/2;
+    g+=`<path d="M${c},${c} L${(c+r*Math.cos(a0)).toFixed(1)},${(c+r*Math.sin(a0)).toFixed(1)} A${r},${r} 0 ${(a1-a0)>Math.PI?1:0} 1 ${(c+r*Math.cos(a1)).toFixed(1)},${(c+r*Math.sin(a1)).toFixed(1)} Z"
+        fill="${COL[i%COL.length]}" fill-opacity="${highlight!=null&&i!==highlight?0.30:0.95}" stroke="${Y6_INK}" stroke-width="2.5"/>`;
+  }
+  g+=`<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${Y6_INK}" stroke-width="4"/>`;
+  g+=`<circle cx="${c}" cy="${c}" r="7" fill="${Y6_INK}"/>`;
+  return `<svg viewBox="0 0 ${size} ${size}" width="210" height="210" role="img"
+    aria-label="a spinner with ${segments} equal segments">${g}</svg>`;
+}
+
+// ---- timetable ----
+function y6timetable(stops, services, alt){
+  const cw=94, rh=34, left=140, w=left+services[0].times.length*cw+16, h=(stops.length+1)*rh+16;
+  let g=`<rect x="0" y="0" width="${w}" height="${h}" rx="8" fill="${Y6_PAPER}" stroke="${Y6_INK}" stroke-width="2.5"/>`;
+  stops.forEach((s,r)=>{
+    const y=rh*(r+1);
+    if(r%2===1) g+=`<rect x="2" y="${y-rh+2}" width="${w-4}" height="${rh}" fill="${Y6_GRID}" opacity="0.28"/>`;
+    g+=`<text x="12" y="${y}" dominant-baseline="middle" font-family="'Baloo 2',sans-serif" font-weight="700" font-size="14" fill="${Y6_INK}">${s}</text>`;
+    services.forEach((sv,ci)=>{
+      g+=`<text x="${left+ci*cw+cw/2}" y="${y}" text-anchor="middle" dominant-baseline="middle"
+          font-family="'IBM Plex Mono',monospace" font-size="14" fill="${Y6_INK}">${sv.times[r]||'—'}</text>`;
+    });
+  });
+  g+=`<line x1="${left-10}" y1="6" x2="${left-10}" y2="${h-6}" stroke="${Y6_INK}" stroke-width="2"/>`;
+  g+=`<line x1="6" y1="${rh*0.5}" x2="${w-6}" y2="${rh*0.5}" stroke="${Y6_INK}" stroke-width="2"/>`;
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${Math.min(w,600)}px" role="img"
+    aria-label="${alt||'a timetable'}">${g}</svg>`;
+}
+
+// A single angle, for the classification form that rotates in. Drawn the same way as the
+// relationship diagrams so the two forms look like one skill rather than two.
+function y6oneAngle(deg){
+  const size=250, c=size*0.32, cy=size*0.66, r=110;
+  const P=d=>[c+r*Math.cos(-d*Math.PI/180), cy+r*Math.sin(-d*Math.PI/180)];
+  const [x1,y1]=P(0), [x2,y2]=P(deg);
+  const big = deg>180 ? 1 : 0;
+  let g=`<line x1="${c}" y1="${cy}" x2="${x1.toFixed(1)}" y2="${y1.toFixed(1)}" stroke="${Y6_INK}" stroke-width="3.6" stroke-linecap="round"/>`;
+  g+=`<line x1="${c}" y1="${cy}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${Y6_INK}" stroke-width="3.6" stroke-linecap="round"/>`;
+  const [ax,ay]=P(0), [bx,by]=P(deg);
+  g+=`<path d="M${(c+38).toFixed(1)},${cy} A38,38 0 ${big} 0 ${(c+38*Math.cos(-deg*Math.PI/180)).toFixed(1)},${(cy+38*Math.sin(-deg*Math.PI/180)).toFixed(1)}"
+      fill="none" stroke="${Y6_HI}" stroke-width="3.4"/>`;
+  g+=`<circle cx="${c}" cy="${cy}" r="5" fill="${Y6_INK}"/>`;
+  return `<svg viewBox="0 0 ${size} ${size}" width="250" height="250" role="img"
+    aria-label="a single angle">${g}</svg>`;
+}
+
+// ---- angle diagram: two or three angles meeting on a line, at a point, or in a right angle
+function y6angles(kind, given, unknownLabel){
+  const size=260, c=size/2, cy=size*0.62, r=96;
+  const P=(deg)=>[c+r*Math.cos(-deg*Math.PI/180), cy+r*Math.sin(-deg*Math.PI/180)];
+  let g='', rays=[];
+  if(kind==='complementary'){ rays=[0,given,90]; g+=`<path d="M${c},${cy} L${c+r},${cy} A${r},${r} 0 0 0 ${c},${cy-r} Z" fill="${Y6_HI}" fill-opacity="0.10"/>`; }
+  else if(kind==='supplementary'){ rays=[0,given,180]; }
+  else if(kind==='vertical'){ rays=[0,given,180,180+given]; }
+  else { rays=[0,given,given+ (360-given)/2, 360].slice(0,4); }
+  const uniq=[...new Set(rays.map(a=>((a%360)+360)%360))].sort((a,b)=>a-b);
+  uniq.forEach(a=>{ const [x,y]=P(a);
+    g+=`<line x1="${c}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${Y6_INK}" stroke-width="3.4" stroke-linecap="round"/>`; });
+  // arcs and labels between consecutive rays
+  for(let i=0;i<uniq.length-1;i++){
+    const a0=uniq[i], a1=uniq[i+1], mid=(a0+a1)/2, sweep=a1-a0;
+    const [mx,my]=[c+(r*0.42)*Math.cos(-mid*Math.PI/180), cy+(r*0.42)*Math.sin(-mid*Math.PI/180)];
+    const label = (Math.round(sweep)===Math.round(given)) ? given+'°' : (unknownLabel||'?');
+    const isQ = label===(unknownLabel||'?');
+    g+=`<path d="M${(c+34*Math.cos(-a0*Math.PI/180)).toFixed(1)},${(cy+34*Math.sin(-a0*Math.PI/180)).toFixed(1)}
+        A34,34 0 0 0 ${(c+34*Math.cos(-a1*Math.PI/180)).toFixed(1)},${(cy+34*Math.sin(-a1*Math.PI/180)).toFixed(1)}"
+        fill="none" stroke="${isQ?Y6_HI:Y6_INK}" stroke-width="${isQ?3.4:2.2}"/>`;
+    g+=`<text x="${mx.toFixed(1)}" y="${my.toFixed(1)}" text-anchor="middle" dominant-baseline="central"
+        font-family="'Baloo 2',sans-serif" font-weight="800" font-size="19" fill="${isQ?Y6_HI:Y6_INK}">${label}</text>`;
+  }
+  g+=`<circle cx="${c}" cy="${cy}" r="5" fill="${Y6_INK}"/>`;
+  return `<svg viewBox="0 0 ${size} ${size}" width="260" height="260" role="img"
+    aria-label="angles meeting at a point">${g}</svg>`;
+}
+// ============================================================
+// YEAR 6 — the seven areas mandated by the WA Curriculum that Year 6 did not cover.
+//
+// THE LADDER IS THE TEACHING ORDER, as with Year 2. Unit 19.1 does coordinates in one
+// quadrant and 32.2 does four; 29.1 puts probability words on a line and 30.1 compares
+// observed against expected across a thousand trials. Difficulty is the CONTEXT and the
+// number of steps, which is what the assessments reward: their 3-mark questions use
+// smaller numbers than their 1-mark ones.
+// ============================================================
+function y6r(a,b){ return Math.floor(Math.random()*(b-a+1))+a; }
+function y6p(a){ return a[y6r(0,a.length-1)]; }
+function y6mix(level,pools){ return y6p(pools[level]||pools.medium); }
+function y6shuf(a){ return a.slice().sort(()=>Math.random()-0.5); }
+function y6Lvl(d){ return d==='easy'||d==='medium'||d==='hard' ? d : 'medium'; }
+function y6distract(answer, make, n){
+  const out=new Set(); let guard=0;
+  while(out.size<(n||3) && guard++<500){ const v=String(make()); if(v!==String(answer)) out.add(v); }
+  return [...out];
+}
+const y6gcd=(a,b)=>{ a=Math.abs(a); b=Math.abs(b); while(b){ const t=b; b=a%b; a=t; } return a||1; };
+function y6frac(n,d){ const g=y6gcd(n,d); return (n/g)+'/'+(d/g); }
+
+// ---- 1. COORDINATES ---- units 19.1 (one quadrant) then 32.2 (four quadrants)
+const Y6_PLACES=['the library','the pool','the oval','the canteen','the gate','the shed','the bench','the tree'];
+function y6_coordinates(diff){
+  const L=y6Lvl(diff);
+  const four = L==='hard';
+  const max = L==='easy'? 6 : L==='medium'? 8 : 5;
+  const form=y6mix(L,{
+    easy:  ['read','read','read','plot'],
+    medium:['read','plot','plot','which_point'],
+    hard:  ['read','plot','which_point','quadrant'],
+  });
+  const rnd=()=> four ? y6r(-max,max) : y6r(0,max);
+  let x=rnd(), y=rnd();
+  if(four && x===0 && y===0) x=1;
+  const label=y6p(['A','B','C','P','Q','M']);
+  const grid=(pts,alt)=>y6grid(max, four?4:1, pts, {alt});
+
+  if(form==='quadrant'){
+    // 32.2: which quadrant, which is the reading skill four quadrants actually adds
+    if(x===0) x = y6p([-1,1])*y6r(1,max);
+    if(y===0) y = y6p([-1,1])*y6r(1,max);
+    const q = (x>0&&y>0)?'first' : (x<0&&y>0)?'second' : (x<0&&y<0)?'third' : 'fourth';
+    return { form:'coord_quadrant', prompt:`Which quadrant is (${x}, ${y}) in?`,
+      svg:grid([{x,y,label}], 'a four quadrant grid with a point marked'),
+      choices:['first','second','third','fourth'], answer:q,
+      explanation:`x is ${x>0?'positive':'negative'} and y is ${y>0?'positive':'negative'}, so it is the ${q} quadrant.` };
+  }
+  if(form==='which_point'){
+    const pts=[]; const used=new Set([x+','+y]);
+    pts.push({x,y,label});
+    ['R','S','T'].forEach(l=>{ let a,b,guard=0;
+      do{ a=rnd(); b=rnd(); }while(used.has(a+','+b) && guard++<50);
+      used.add(a+','+b); pts.push({x:a,y:b,label:l,colour:'#2C6E9B'}); });
+    return { form:'coord_which_point', prompt:`Which point is at (${x}, ${y})?`,
+      svg:grid(pts, 'a grid with four labelled points'),
+      choices:y6shuf(pts.map(p=>p.label)), answer:label,
+      explanation:`Go across to ${x}, then ${y>=0?'up':'down'} to ${y}. That is ${label}.` };
+  }
+  if(form==='plot'){
+    // reversed: the point is shown, the child gives the coordinates
+    return { form:'coord_write', prompt:`What are the coordinates of ${label}?`,
+      svg:grid([{x,y,label}], 'a grid with one labelled point'),
+      parts:[String(x),String(y)], partsLead:`${label} = (`, partsJoin:',', partsTail:')',
+      partsLabels:['across','up'],
+      answer:`${x},${y}`,
+      explanation:`Across ${x} first, then ${y>=0?'up':'down'} ${Math.abs(y)}. So (${x}, ${y}).` };
+  }
+  const place=y6p(Y6_PLACES);
+  return { form:'coord_read', prompt:`${place[0].toUpperCase()+place.slice(1)} is marked. What are its coordinates?`,
+    svg:grid([{x,y,label:''}], 'a grid with one point marked'),
+    choices:y6shuf([`(${x}, ${y})`, `(${y}, ${x})`, `(${x}, ${y+1})`, `(${x-1}, ${y})`].filter((v,i,s)=>s.indexOf(v)===i)),
+    answer:`(${x}, ${y})`,
+    explanation:`Across ${x} from 0 first, then ${y>=0?'up':'down'} ${Math.abs(y)}.` };
+}
+
+// ---- 2. TRANSFORMATIONS ---- 30.3 name and apply, then 32.3 on a coordinate grid
+function y6_transform(diff){
+  const L=y6Lvl(diff);
+  const form=y6mix(L,{
+    easy:  ['name','name','name','apply'],
+    medium:['name','apply','apply','apply'],
+    hard:  ['apply','coords','coords','coords'],
+  });
+  const base=[[1,1],[3,1],[2,3]];
+  const move=(sh,dx,dy)=>sh.map(p=>[p[0]+dx,p[1]+dy]);
+  const flipX=(sh,ax)=>sh.map(p=>[2*ax-p[0],p[1]]);
+  const rot90=(sh)=>{ const cx=sh[0][0], cy=sh[0][1];
+    return sh.map(p=>[cx-(p[1]-cy), cy+(p[0]-cx)]); };
+
+  if(form==='name'){
+    const kind=y6p(['translation','reflection','rotation']);
+    const after = kind==='translation'? move(base,2,1) : kind==='reflection'? flipX(base,4) : rot90(base);
+    return { form:'transform_name', prompt:'Which transformation is this?',
+      svg:y6grid(6,1,[{shape:base,ghost:true,colour:'#2C6E9B'},{shape:after,colour:'#FF7A1A'}],
+        {alt:'a shape and its image on a grid'}),
+      choices:['translation','reflection','rotation'], answer:kind,
+      explanation: kind==='translation'? 'The shape has slid without turning or flipping.'
+        : kind==='reflection'? 'The shape has been flipped, so it faces the other way.'
+        : 'The shape has been turned about a point.' };
+  }
+  if(form==='apply'){
+    // Read the movement OFF the picture. The earlier version of this offered A/B/C/D and
+    // always answered A — a stub that generated cleanly and tested nothing.
+    const dx=y6r(1,3), dy=y6r(1,2);
+    const after=move(base,dx,dy);
+    const say=(a,b)=>`right ${a}, up ${b}`;
+    return { form:'transform_apply', prompt:'How far has the shape been translated?',
+      svg:y6grid(7,1,[{shape:base,ghost:true,colour:'#2C6E9B'},{shape:after,colour:'#FF7A1A'}],
+        {alt:'a triangle and its translated image on a grid'}),
+      choices:y6shuf([...new Set([say(dx,dy), say(dy,dx), say(dx+1,dy), say(dx,dy+1)])]),
+      answer:say(dx,dy),
+      explanation:`Every corner has moved ${dx} right and ${dy} up.` };
+  }
+  // 32.3: give the coordinates AFTER the transformation
+  const dx=y6r(1,3), dy=y6r(1,3), dirX=y6p([-1,1]), dirY=y6p([-1,1]);
+  const pt=[y6r(-3,3), y6r(-3,3)];
+  const after=[pt[0]+dirX*dx, pt[1]+dirY*dy];
+  const words=`${dx} square${dx>1?'s':''} ${dirX>0?'right':'left'} and ${dy} ${dirY>0?'up':'down'}`;
+  return { form:'transform_coords',
+    prompt:`A is at (${pt[0]}, ${pt[1]}). It is translated ${words}. Where is A′?`,
+    svg:y6grid(5,4,[{x:pt[0],y:pt[1],label:'A',colour:'#2C6E9B'}], {alt:'a point A on a four quadrant grid'}),
+    parts:[String(after[0]),String(after[1])], partsLead:"A′ = (", partsJoin:',', partsTail:')',
+    partsLabels:['across','up'],
+    answer:`${after[0]},${after[1]}`,
+    explanation:`${pt[0]} ${dirX>0?'+':'−'} ${dx} = ${after[0]}, and ${pt[1]} ${dirY>0?'+':'−'} ${dy} = ${after[1]}.` };
+}
+
+// ---- 3. PROBABILITY ---- 29.1 language, 29.2 expected, 29.3/30.1 observed vs expected
+const Y6_EVENTS=[
+  {t:'You toss a coin and get heads.', p:0.5},
+  {t:'You roll a 7 on a six-sided dice.', p:0},
+  {t:'You roll a number less than 7 on a six-sided dice.', p:1},
+  {t:'You roll an even number on a six-sided dice.', p:0.5},
+  {t:'You roll a 3 on a six-sided dice.', p:1/6},
+];
+function y6_probability(diff){
+  const L=y6Lvl(diff);
+  const form=y6mix(L,{
+    easy:  ['word','word','word','expected'],
+    medium:['word','expected','expected','as_percent'],
+    hard:  ['expected','as_percent','observed','observed'],
+  });
+  if(form==='word'){
+    const e=y6p(Y6_EVENTS);
+    const word = e.p===0?'no chance' : e.p===1?'certain' : e.p===0.5?'equally likely' : e.p<0.5?'unlikely':'likely';
+    return { form:'prob_word', prompt:`${e.t} This is...`,
+      svg:y6probLine(e.p),
+      choices:['no chance','unlikely','equally likely','likely','certain'], answer:word,
+      explanation:`The chance is ${e.p===0?'0':e.p===1?'1':y6frac(Math.round(e.p*6),6)}, which is ${word}.` };
+  }
+  if(form==='expected'){
+    const seg = L==='easy'? y6p([2,4]) : y6p([3,4,5,6,8]);
+    const idx = y6r(0,seg-1);
+    const name = Y6_SEGNAMES[idx];
+    const ans = y6frac(1,seg);
+    return { form:'prob_expected', prompt:`What is the chance of spinning ${name}?`,
+      svg:y6spinner(seg, idx),
+      choices:y6shuf([ans, ...y6distract(ans,()=>y6frac(1, y6p([2,3,4,5,6,8,10])))]),
+      answer:ans,
+      explanation:`One ${name} segment out of ${seg} equal segments is ${ans}.` };
+  }
+  if(form==='as_percent'){
+    const seg=y6p([2,4,5,8,10]);
+    const want=y6r(1,seg-1);
+    const pct=Math.round(want/seg*100);
+    const isAre = want===1? 'segment is' : 'segments are';
+    return { form:'prob_percent', prompt:`${want} of the ${seg} ${isAre} blue. What is the chance as a percentage?`,
+      svg:y6spinner(seg,null),
+      choices:y6shuf([pct+'%', ...y6distract(pct+'%',()=>Math.max(5,Math.min(95, pct+y6p([10,-10,25,-25,5,-5])))+'%')]),
+      answer:pct+'%',
+      explanation:`${want} out of ${seg} is ${y6frac(want,seg)}, which is ${pct}%.` };
+  }
+  // 30.1: observed vs expected as the number of trials grows. Simulated rather than spun,
+  // so the child reads a result rather than producing one — a reduction from the lesson,
+  // which uses a real spinner, but it tests the same idea.
+  const seg=y6p([2,4]);
+  const expected=Math.round(100/seg);
+  const trials=y6p([10,50,100,500,1000]);
+  const drift = trials<=10? y6r(15,30) : trials<=50? y6r(8,16) : trials<=100? y6r(4,10) : trials<=500? y6r(1,5) : y6r(0,2);
+  const observed=expected + y6p([1,-1])*drift;
+  const askExpected = Math.random()<0.5;
+  if(askExpected)
+    return { form:'prob_observed', prompt:`A spinner has ${seg} equal segments. After ${trials} spins, blue came up ${observed}% of the time. What was the EXPECTED percentage?`,
+      svg:y6spinner(seg,null),
+      choices:y6shuf([expected+'%', ...y6distract(expected+'%',()=>y6p([observed, expected+10, expected-10, 100/seg+25])+'%')]),
+      answer:expected+'%',
+      explanation:`${seg} equal segments means each is expected ${expected}% of the time, whatever one run of ${trials} spins shows.` };
+  return { form:'prob_observed', prompt:`Which number of spins should give a result CLOSEST to the expected percentage?`,
+    svg:y6spinner(seg,null),
+    choices:['10 spins','50 spins','100 spins','1000 spins'], answer:'1000 spins',
+    explanation:'The more trials you run, the closer the observed result gets to the expected one.' };
+}
+
+// ---- 4. READING GRAPHS ---- 11.1 side-by-side columns, 12.2 mode and range
+const Y6_TOPICS=[
+  {t:'Weekly Blood Bank donations', cats:['O','A','B','AB'], a:'Last week', b:'This week', unit:'L'},
+  {t:'Books borrowed', cats:['Mon','Tue','Wed','Thu'], a:'Year 5', b:'Year 6', unit:''},
+  {t:'Canteen sales', cats:['Pies','Wraps','Fruit','Juice'], a:'Term 1', b:'Term 2', unit:''},
+];
+function y6_graphs(diff){
+  const L=y6Lvl(diff);
+  const form=y6mix(L,{
+    easy:  ['read','read','read','biggest'],
+    medium:['read','biggest','mode','range'],
+    hard:  ['mode','range','compare','compare'],
+  });
+  const T=y6p(Y6_TOPICS);
+  const cats=T.cats.map(label=>({label, a:y6r(20,95), b:y6r(20,95)}));
+  const svg=y6columns(T.t, cats, T.a, T.b, {alt:'a side by side column graph titled '+T.t});
+  if(form==='read'){
+    const c=y6p(cats), which=y6p(['a','b']);
+    const v=c[which];
+    return { form:'graph_read', prompt:`How many for ${c.label} in ${which==='a'?T.a:T.b}?`, svg,
+      choices:y6shuf([String(v), ...y6distract(v,()=>y6r(20,95))]), answer:String(v),
+      explanation:`Read up from ${c.label} to the ${which==='a'?T.a:T.b} column.` };
+  }
+  if(form==='biggest'){
+    const sorted=cats.slice().sort((x,y)=>Math.max(y.a,y.b)-Math.max(x.a,x.b));
+    return { form:'graph_biggest', prompt:'Which had the highest single value?', svg,
+      choices:y6shuf(cats.map(c=>c.label)), answer:sorted[0].label,
+      explanation:`${sorted[0].label} reaches ${Math.max(sorted[0].a,sorted[0].b)}, higher than any other column.` };
+  }
+  if(form==='mode'){
+    // 12.2: a dataset, not the graph. Mode can be absent, which the lesson says explicitly.
+    const n=y6r(7,10); const vals=[];
+    const modeVal=y6r(4,12);
+    for(let i=0;i<n-3;i++) vals.push(y6r(4,12));
+    vals.push(modeVal,modeVal,modeVal);
+    const counts={}; vals.forEach(v=>counts[v]=(counts[v]||0)+1);
+    const top=Math.max(...Object.values(counts));
+    const modes=Object.keys(counts).filter(k=>counts[k]===top);
+    const ans = modes.length===1? modes[0] : 'no mode';
+    return { form:'graph_mode', prompt:`Find the mode: ${y6shuf(vals).join(', ')}`,
+      choices:y6shuf([String(ans), ...y6distract(ans,()=>y6p([...vals, 'no mode']))]),
+      answer:String(ans),
+      explanation: ans==='no mode'? 'No value occurs more often than the rest.' : `${ans} occurs most often.` };
+  }
+  if(form==='range'){
+    const n=y6r(6,9), vals=[]; for(let i=0;i<n;i++) vals.push(y6r(3,40));
+    const r=Math.max(...vals)-Math.min(...vals);
+    return { form:'graph_range', prompt:`Find the range: ${vals.join(', ')}`,
+      choices:y6shuf([String(r), ...y6distract(r,()=>y6r(3,40))]), answer:String(r),
+      explanation:`${Math.max(...vals)} − ${Math.min(...vals)} = ${r}.` };
+  }
+  const c=y6p(cats);
+  const d=Math.abs(c.a-c.b);
+  return { form:'graph_compare', prompt:`What is the difference for ${c.label} between ${T.a} and ${T.b}?`, svg,
+    choices:y6shuf([String(d), ...y6distract(d,()=>y6r(1,60))]), answer:String(d),
+    explanation:`${Math.max(c.a,c.b)} − ${Math.min(c.a,c.b)} = ${d}.` };
+}
+
+// ---- 5. MISLEADING GRAPHS ---- 17.2 strategies, 17.3 causes of bias
+// Unit 17.3's own categories: location, timing, sample size, age. Each has several
+// examples so the same sentence does not come round every third question.
+const Y6_BIAS=[
+  {t:'A survey of people living in Melbourne asked whether city life or country life is better.', c:'location'},
+  {t:'A survey at a skate park asked what the best sport is.', c:'location'},
+  {t:'Shoppers outside a bakery were asked their favourite food.', c:'location'},
+  {t:'People at an airport were asked how often Australians travel.', c:'location'},
+  {t:'In December, people were asked to name their favourite sport on TV.', c:'timing'},
+  {t:'A survey about ice cream was run in the middle of winter.', c:'timing'},
+  {t:'People leaving a cinema at midnight were asked what time they usually sleep.', c:'timing'},
+  {t:'A reporter surveyed three friends to find out whether a new diet worked.', c:'sample size'},
+  {t:'Two students were asked what the whole school thinks of the canteen.', c:'sample size'},
+  {t:'Five people were asked to decide the most popular car in Australia.', c:'sample size'},
+  {t:'Only people over 70 were asked which music is the best.', c:'age'},
+  {t:'Only Year 1 students were asked how much homework is fair.', c:'age'},
+  {t:'A survey of retirees asked which video game is the most fun.', c:'age'},
+];
+function y6_misleading(diff){
+  const L=y6Lvl(diff);
+  const form=y6mix(L,{
+    easy:  ['spot','spot','spot','strategy'],
+    medium:['spot','strategy','strategy','bias'],
+    hard:  ['strategy','bias','bias','bias'],
+  });
+  if(form==='bias'){
+    const b=y6p(Y6_BIAS);
+    return { form:'mislead_bias', prompt:`${b.t} What is the cause of bias?`,
+      choices:y6shuf(['location','timing','sample size','age']), answer:b.c,
+      explanation:`The sample is skewed by ${b.c}, so it does not represent everyone.` };
+  }
+  // THREE possible graphs, not one. The earlier version only ever drew a truncated axis,
+  // so "is this misleading?" was always yes and "what makes it misleading?" was always the
+  // axis. A child would learn to pick the answer without reading the graph.
+  const TRICK=y6p(['truncated','widths','honest']);
+  const base=[{label:'Brand A',a:96},{label:'Brand B',a:97},{label:'Brand C',a:98},{label:'Brand D',a:99}];
+  const spread=[{label:'Mon',a:20},{label:'Tue',a:55},{label:'Wed',a:35},{label:'Thu',a:80}];
+  let svg, why, strategy;
+  if(TRICK==='truncated'){
+    svg=y6columns('Maths scores', base, null, null,
+      {yMin:95, yMax:100, alt:'a column graph whose vertical axis starts at 95'});
+    strategy='the vertical axis does not start at zero';
+    why='The scores are 96, 97, 98 and 99 — only 3 apart. Starting the axis at 95 stretches a tiny gap.';
+  } else if(TRICK==='widths'){
+    svg=y6columns('Canteen sales', spread, null, null,
+      {yMin:0, widths:[1,1,1,2.1], alt:'a column graph where one column is drawn much wider'});
+    strategy='one column is drawn much wider than the others';
+    why='Thursday is only a little taller, but drawing it twice as wide makes it look far bigger.';
+  } else {
+    svg=y6columns('Canteen sales', spread, null, null,
+      {yMin:0, alt:'a column graph with the vertical axis starting at zero'});
+    strategy='nothing — this graph is fair';
+    why='The axis starts at zero and every column is the same width, so the heights can be compared honestly.';
+  }
+  if(form==='spot')
+    return { form:'mislead_spot', prompt:'Is this graph misleading?', svg,
+      choices:['yes','no'], answer: TRICK==='honest'?'no':'yes',
+      explanation:why };
+  return { form:'mislead_strategy', prompt:'What makes this graph misleading?', svg,
+    choices:y6shuf(['the vertical axis does not start at zero',
+                    'one column is drawn much wider than the others',
+                    'nothing — this graph is fair']),
+    answer:strategy, explanation:why };
+}
+
+// ---- 6. TIMETABLES AND DURATION ---- 10.1 read, 21.3 duration, 21.2 12/24 hour
+function y6pad(n){ return String(n).padStart(2,'0'); }
+function y6_timetable(diff){
+  const L=y6Lvl(diff);
+  const form=y6mix(L,{
+    easy:  ['arrive','arrive','arrive','journey'],
+    medium:['arrive','journey','journey','duration'],
+    hard:  ['journey','duration','convert','deadline'],
+  });
+  const stops=['Summer Beach','The Mall','Downtown','The City'];
+  const startH=y6r(6,9), startM=y6p([0,5,10,15,20,25,30,35,40,45,50]);
+  const gaps=[y6r(8,14), y6r(9,15), y6r(10,16)];
+  const build=(h,m)=>{ const out=[]; let t=h*60+m;
+    out.push(`${h}:${y6pad(m)}`);
+    gaps.forEach(g=>{ t+=g; out.push(`${Math.floor(t/60)}:${y6pad(t%60)}`); });
+    return out; };
+  const s1=build(startH,startM), s2=build(startH, startM+ (startM<30?30:-25) );
+  const tt=y6timetable(stops,[{times:s1},{times:s2}],'a train timetable with two services');
+  const total=gaps.reduce((a,b)=>a+b,0);
+
+  if(form==='arrive')
+    return { form:'tt_arrive', prompt:`What time does the first train reach ${stops[3]}?`, svg:tt,
+      choices:y6shuf([s1[3], s2[3], s1[2], s1[1]].filter((v,i,a)=>a.indexOf(v)===i)),
+      answer:s1[3], explanation:`Follow the ${stops[3]} row across to the first service.` };
+  if(form==='journey')
+    return { form:'tt_journey', prompt:`How long is the trip from ${stops[0]} to ${stops[3]}?`, svg:tt,
+      choices:y6shuf([total+' min', ...y6distract(total+' min',()=>y6r(20,60)+' min')]),
+      answer:total+' min',
+      explanation:`${s1[0]} to ${s1[3]} is ${total} minutes.` };
+  if(form==='duration'){
+    const h1=y6r(1,6), m1=y6r(5,55), h2=y6r(1,5), m2=y6r(5,55);
+    const t=h1*60+m1+h2*60+m2;
+    const ans=`${Math.floor(t/60)} h ${t%60} min`;
+    return { form:'tt_duration', prompt:`${h1} h ${m1} min + ${h2} h ${m2} min`,
+      choices:y6shuf([ans, ...y6distract(ans,()=>{ const x=t+y6p([60,-60,10,-10,30]); return `${Math.floor(x/60)} h ${x%60} min`; })]),
+      answer:ans,
+      explanation:`${m1} + ${m2} = ${m1+m2} min, which is ${Math.floor((m1+m2)/60)} h ${(m1+m2)%60} min. Add the hours.` };
+  }
+  if(form==='convert'){
+    const h=y6r(13,23), m=y6p([0,15,30,45]);
+    const ans=`${h-12}:${y6pad(m)} pm`;
+    return { form:'tt_convert', prompt:`Write ${h}:${y6pad(m)} in 12-hour time.`,
+      choices:y6shuf([ans, `${h-12}:${y6pad(m)} am`, `${h-11}:${y6pad(m)} pm`, `${h}:${y6pad(m)} pm`]),
+      answer:ans, explanation:`${h}:${y6pad(m)} is ${h-12} hours after noon, so ${ans}.` };
+  }
+  // 21.2: work BACK from a deadline, the hardest thing in the unit
+  const flightH=y6r(9,11), flightM=y6p([0,15,30]);
+  const before=60, travel=30;
+  let t=flightH*60+flightM-before-travel;
+  const ans=`${Math.floor(t/60)}:${y6pad(t%60)} am`;
+  return { form:'tt_deadline',
+    prompt:`A flight departs at ${flightH+12}:${y6pad(flightM)}. Check-in closes 1 hour before, and the shuttle takes 30 minutes. What is the latest shuttle?`,
+    choices:y6shuf([ans, ...y6distract(ans,()=>{ const x=t+y6p([30,-30,60,15]); return `${Math.floor(x/60)}:${y6pad(x%60)} am`; })]),
+    answer:ans,
+    explanation:`${flightH}:${y6pad(flightM)} minus 1 hour is check-in, minus 30 minutes travel gives ${ans}.` };
+}
+
+// ---- 7. ANGLES ---- rewritten. 6.1 is complementary, supplementary and vertically
+// opposite. Classifying acute and obtuse is YEAR 5 and was all this skill did.
+function y6_angles(diff){
+  const L=y6Lvl(diff);
+  // Classification rotates in occasionally, the way Year 4 extension does it. It is Year 5
+  // content, so it is a warm-up rather than the skill — roughly one question in six.
+  const form=y6mix(L,{
+    easy:  ['classify','complementary','complementary','complementary','supplementary','supplementary'],
+    medium:['classify','complementary','supplementary','supplementary','vertical','vertical'],
+    hard:  ['classify','supplementary','vertical','at_a_point','at_a_point','vertical'],
+  });
+  if(form==='classify'){
+    const pool = L==='easy'? [y6r(1,17)*5, 90, y6r(19,35)*5]
+               : L==='medium'? [y6r(1,17)*5, 90, y6r(19,35)*5, 180]
+               : [y6r(1,17)*5, 90, y6r(19,35)*5, 180, y6r(37,71)*5];
+    const deg=y6p(pool);
+    const kind = deg<90?'acute' : deg===90?'right' : deg<180?'obtuse' : deg===180?'straight' : 'reflex';
+    return { form:'angle_classify', prompt:'What type of angle is shown?',
+      svg:y6oneAngle(deg),
+      choices:['acute','right','obtuse','straight','reflex'], answer:kind,
+      explanation:`It is ${deg}°, which is ${kind}.` };
+  }
+  if(form==='complementary'){
+    const a=y6r(1,17)*5;
+    return { form:'angle_complementary', prompt:'The angles make a right angle. What is the missing angle?',
+      svg:y6angles('complementary', a, '?'),
+      choices:y6shuf([(90-a)+'°', ...y6distract((90-a)+'°',()=>y6r(1,17)*5+'°')]),
+      answer:(90-a)+'°', explanation:`Complementary angles add to 90°, so 90 − ${a} = ${90-a}°.` };
+  }
+  if(form==='supplementary'){
+    const a=y6r(3,33)*5;
+    return { form:'angle_supplementary', prompt:'The angles are on a straight line. What is the missing angle?',
+      svg:y6angles('supplementary', a, '?'),
+      choices:y6shuf([(180-a)+'°', ...y6distract((180-a)+'°',()=>y6r(3,33)*5+'°')]),
+      answer:(180-a)+'°', explanation:`Angles on a straight line add to 180°, so 180 − ${a} = ${180-a}°.` };
+  }
+  if(form==='vertical'){
+    const a=y6r(5,35)*5;
+    return { form:'angle_vertical', prompt:'Two straight lines cross. What is the angle opposite?',
+      svg:y6angles('vertical', a, '?'),
+      choices:y6shuf([a+'°', (180-a)+'°', (90-a>0?90-a:a+10)+'°', (360-a)+'°'].filter((v,i,s)=>s.indexOf(v)===i)),
+      answer:a+'°', explanation:`Vertically opposite angles are equal, so it is also ${a}°.` };
+  }
+  // Three angles round a point, none of them reflex. Picking two freely left a third of
+  // 260°, which is arithmetically right and not a thing a Year 6 diagram ever shows.
+  let a,b,c,guard=0;
+  do { a=y6r(4,30)*5; b=y6r(4,30)*5; c=360-a-b; } while((c<30||c>170) && guard++<200);
+  if(c<30||c>170){ a=120; b=140; c=100; }
+  return { form:'angle_at_a_point', prompt:`Three angles meet at a point. Two are ${a}° and ${b}°. What is the third?`,
+    choices:y6shuf([c+'°', ...y6distract(c+'°',()=>y6r(10,60)*5+'°')]),
+    answer:c+'°', explanation:`Angles at a point add to 360°, so 360 − ${a} − ${b} = ${c}°.` };
+}
+// ============================================================
+// YEAR 6 — merged skills and the slot list.
+//
+// The merges DELEGATE to the existing generators rather than rewriting them, so no
+// maths changes and the existing regression suite still covers it. Each underlying
+// generator already sets its own subskill, so merging costs nothing in reporting
+// granularity: the gradebook column says "Multiplication and division", the data
+// underneath still knows which of the two a child got wrong.
+//
+// Old codes (HCF_LCM, PRIME_FACTORS, SIMPLIFY_FRACTION, PERCENT_OF, and the separate
+// ADDITION/SUBTRACTION/MULTIPLICATION/DIVISION at Year 6) are NOT reused or renamed —
+// they stay in SKILLS so any historical result still resolves to a sensible title, and
+// they remain in use by Years 3 to 5. Only YEAR_PLANS[6] changes.
+// ============================================================
+function y6merge(diff, year, pools, gens){
+  const L = (diff==='easy'||diff==='medium'||diff==='hard') ? diff : 'medium';
+  const pick = pools[L][Math.floor(Math.random()*pools[L].length)];
+  return gens[pick](diff, 'random', year);
+}
+
+// Factors and multiples. WA Year 6 keeps prime and composite as its own idea, so that
+// stays a separate skill; factor trees are not in the WA curriculum at all and are gone.
+function y6_factors(diff, _s, year){
+  return y6merge(diff, year, {
+    easy:  ['factors','factors','factors','hcf'],
+    medium:['factors','factors','hcf','hcf'],
+    hard:  ['factors','hcf','hcf','hcf'],
+  }, { factors:genFactorsV2, hcf:genHcfLcm });
+}
+// Equivalent fractions, including simplifying — one idea, taught as two lessons.
+function y6_equivFraction(diff, _s, year){
+  return y6merge(diff, year, {
+    easy:  ['equiv','equiv','equiv','simplify'],
+    medium:['equiv','equiv','simplify','simplify'],
+    hard:  ['equiv','simplify','simplify','simplify'],
+  }, { equiv:genEquivFraction, simplify:genFractionSimplify });
+}
+// "Determine a familiar fraction, decimal or percentage of a whole number" — this merge
+// is literally one WA content description that was split across two slots.
+function y6_fractionOf(diff, _s, year){
+  return y6merge(diff, year, {
+    easy:  ['frac','frac','frac','pct'],
+    medium:['frac','frac','pct','pct'],
+    hard:  ['frac','pct','pct','pct'],
+  }, { frac:genFractionOf, pct:genPercentOf });
+}
+// WA Year 6 treats the four operations as ONE content description: "choose and use
+// flexible and efficient strategies... involving any of the four operations".
+function y6_addSub(diff, _s, year){
+  return y6merge(diff, year, {
+    easy:['add','add','sub'], medium:['add','sub'], hard:['add','sub','sub'],
+  }, { add:genAdditionV2, sub:genSubtractionV2 });
+}
+function y6_mulDiv(diff, _s, year){
+  return y6merge(diff, year, {
+    easy:['mul','mul','div'], medium:['mul','div'], hard:['mul','div','div'],
+  }, { mul:genMultiplicationV2, div:genDivisionV2 });
+}
+
+// The seven new and rewritten skills wrap to the shared question shape. Same adapter
+// idea as Year 2: buildQuestion drops any field it does not recognise, so the mapping
+// lives in one place and the tests check it.
+function y6Adapt(q){
+  const out={ prompt:q.prompt, answer:String(q.answer), explanation:q.explanation||'',
+              subskill:q.form||null };
+  if(q.svg) out.svg=q.svg;
+  if(q.speak) out.spokenPrompt=q.speak;
+  if(q.parts){
+    out.inputType='parts';
+    const labels=q.partsLabels||[];
+    out.parts=q.parts.map((_,i)=> labels[i]? {label:labels[i]} : {});
+    if(q.partsLead) out.partsLead=q.partsLead;
+    if(q.partsJoin) out.partsJoin=q.partsJoin;
+    if(q.partsTail) out.partsTail=q.partsTail;
+    out.answer=String(q.answer);
+    return out;
+  }
+  if(q.choices){ out.inputType='choice'; out.choices=q.choices.map(String); return out; }
+  out.inputType='text';
+  return out;
+}
+
+// Codes are PERMANENT. Appended to SLOTS so no existing index moves.
+const Y6_SLOTS=[
+  {skill:'Y6_FACTORS',     title:'Factors and multiples',              gen:(d,s,y)=>y6_factors(d,s,y||6)},
+  {skill:'Y6_ADD_SUB',     title:'Addition and subtraction',           gen:(d,s,y)=>y6_addSub(d,s,y||6)},
+  {skill:'Y6_MUL_DIV',     title:'Multiplication and division',        gen:(d,s,y)=>y6_mulDiv(d,s,y||6)},
+  {skill:'Y6_EQUIV_FRAC',  title:'Equivalent fractions',               gen:(d,s,y)=>y6_equivFraction(d,s,y||6)},
+  {skill:'Y6_FRACTION_OF', title:'Fraction, decimal or percentage of a quantity', gen:(d,s,y)=>y6_fractionOf(d,s,y||6)},
+  {skill:'Y6_ANGLES',      title:'Angles',                             gen:d=>y6Adapt(y6_angles(d))},
+  {skill:'Y6_COORDINATES', title:'Coordinates',                        gen:d=>y6Adapt(y6_coordinates(d))},
+  {skill:'Y6_TRANSFORM',   title:'Transformations',                    gen:d=>y6Adapt(y6_transform(d))},
+  {skill:'Y6_PROBABILITY', title:'Probability',                        gen:d=>y6Adapt(y6_probability(d))},
+  {skill:'Y6_GRAPHS',      title:'Reading graphs',                     gen:d=>y6Adapt(y6_graphs(d))},
+  {skill:'Y6_MISLEADING',  title:'Misleading graphs',                  gen:d=>y6Adapt(y6_misleading(d))},
+  {skill:'Y6_TIMETABLE',   title:'Timetables and duration',            gen:d=>y6Adapt(y6_timetable(d))},
+];
+// END YEAR 6
+
+// ============================================================
 // SKILL REGISTRY & YEAR PLANS
 // ------------------------------------------------------------
 // Questions are identified by a STABLE SKILL CODE, not by their position in
@@ -5768,6 +6494,19 @@ const SKILLS = {
   Y2_MEASUREMENT:   { title:'Measuring' },
   Y2_DATA:          { title:'Data and graphs' },
   Y2_POSITION:      { title:'Position and turns' },
+  // ---- Year 6 rebuild (Maths Trek 6 + WA Curriculum 2026). Codes are PERMANENT. ----
+  Y6_FACTORS:       { title:'Factors and multiples' },
+  Y6_ADD_SUB:       { title:'Addition and subtraction' },
+  Y6_MUL_DIV:       { title:'Multiplication and division' },
+  Y6_EQUIV_FRAC:    { title:'Equivalent fractions' },
+  Y6_FRACTION_OF:   { title:'Fraction, decimal or percentage of a quantity' },
+  Y6_ANGLES:        { title:'Angles' },
+  Y6_COORDINATES:   { title:'Coordinates' },
+  Y6_TRANSFORM:     { title:'Transformations' },
+  Y6_PROBABILITY:   { title:'Probability' },
+  Y6_GRAPHS:        { title:'Reading graphs' },
+  Y6_MISLEADING:    { title:'Misleading graphs' },
+  Y6_TIMETABLE:     { title:'Timetables and duration' },
   // Retired. Kept so historical results still resolve to a sensible title.
   PLACE_VALUE:      { title:'Place value', retired:true },
   DECIMAL_PLACE:    { title:'Decimal place value', retired:true },
@@ -5814,10 +6553,34 @@ const YEAR_PLANS = {
   // spinners, coordinates and timetables are deliberately absent. Each needs a drawing
   // where a small rendering error makes the question unanswerable, and the underlying
   // skill is already covered in a cleaner text form (chance, data) or belongs elsewhere.
-  6: ['PRIME_COMPOSITE','FACTORS','HCF_LCM','PRIME_FACTORS','ADDITION','SUBTRACTION',
-      'MULTIPLICATION','DIVISION','POWERS_TEN','INTEGERS','EQUIV_FRACTION','SIMPLIFY_FRACTION',
-      'FRACTION_ADD_SUB','FRACTION_OF','FDP','PERCENT_OF','DECIMAL_ADD_SUB','DECIMAL_MUL_DIV',
-      'ORDER_OPS','SEQUENCE','METRIC_CONVERT','AREA_PERIMETER','VOLUME','ANGLES'],
+  // Rebuilt against the WA Curriculum (implementation 2026). Six merges freed the
+  // room for the six mandated areas Year 6 generated nothing for: coordinates,
+  // transformations, probability, reading graphs, misleading graphs and timetables.
+  // Prime factorisation is dropped — factor trees are not in the WA curriculum.
+  6: ['PRIME_COMPOSITE',
+      'Y6_FACTORS',
+      'Y6_ADD_SUB',
+      'Y6_MUL_DIV',
+      'POWERS_TEN',
+      'INTEGERS',
+      'Y6_EQUIV_FRAC',
+      'FRACTION_ADD_SUB',
+      'Y6_FRACTION_OF',
+      'FDP',
+      'DECIMAL_ADD_SUB',
+      'DECIMAL_MUL_DIV',
+      'ORDER_OPS',
+      'SEQUENCE',
+      'METRIC_CONVERT',
+      'AREA_PERIMETER',
+      'VOLUME',
+      'Y6_ANGLES',
+      'Y6_COORDINATES',
+      'Y6_TRANSFORM',
+      'Y6_PROBABILITY',
+      'Y6_GRAPHS',
+      'Y6_MISLEADING',
+      'Y6_TIMETABLE'],
   // Year 5: Year 4's shape with the genuinely new Year 5 ideas in it. Percentages, mixed
   // numerals, fraction arithmetic, thousandths and 24-hour time are the markers. None of
   // them appear in the Year 4 set, so this is recognisably Year 5 rather than Year 4 with
@@ -5945,6 +6708,7 @@ const SLOTS=[
   {skill:'VOLUME',           title:'Volume and capacity',          gen:genVolume},
 ];
 Y2_SLOTS.forEach(s=>SLOTS.push(s));
+Y6_SLOTS.forEach(s=>SLOTS.push(s));
 function buildQuestion(slotIdx, diff, strategyKey, year){
   const list = slotsForYear(year);
   const slot = list[slotIdx] || SLOTS[slotIdx];
@@ -7988,7 +8752,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-14.17';
+const BUILD = '2026-08-16.01';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
