@@ -546,8 +546,8 @@
   }
   .mmc-pweye:hover, .mmc-pweye:focus { opacity:1; background:var(--bg); }
   .mmc-keypad {
-    display:grid; grid-template-columns:repeat(3,1fr); gap:10px;
-    max-width:300px; margin:16px auto 0;
+    display:grid; grid-template-columns:repeat(4,1fr); gap:9px;
+    max-width:340px; margin:16px auto 0;
   }
   .mmc-keypad button {
     font-family:'Fredoka',sans-serif; font-size:26px; font-weight:700;
@@ -6609,13 +6609,16 @@ function y4mirrorQuestion(cells, cols, rows, options, mirror){
   const W=Math.max(top.w+70, rowW)+20;
   const H=top.h+optH+96;
   let g=`<g transform="translate(${(W-top.w-70)/2},10)">${top.g}</g>`;
-  // the mirror line, drawn where the fold would be
+  // The mirror line TOUCHES the shape — it is the fold, so it has to sit against the edge
+  // it folds along. Floating it 16px away made it look like a divider between two things
+  // rather than the line the shape is reflected in.
+  const ox=(W-top.w-70)/2;
   if(mirror==='vertical')
-    g+=`<line x1="${(W-top.w-70)/2+top.w+16}" y1="6" x2="${(W-top.w-70)/2+top.w+16}" y2="${top.h+14}"
-        stroke="${Y4_HI}" stroke-width="3.4" stroke-dasharray="8 5"/>`;
+    g+=`<line x1="${ox+top.w+1}" y1="8" x2="${ox+top.w+1}" y2="${top.h+12}"
+        stroke="${Y4_HI}" stroke-width="3.6" stroke-dasharray="8 5" stroke-linecap="round"/>`;
   else
-    g+=`<line x1="${(W-top.w-70)/2-8}" y1="${top.h+18}" x2="${(W-top.w-70)/2+top.w+8}" y2="${top.h+18}"
-        stroke="${Y4_HI}" stroke-width="3.4" stroke-dasharray="8 5"/>`;
+    g+=`<line x1="${ox-6}" y1="${top.h+11}" x2="${ox+top.w+6}" y2="${top.h+11}"
+        stroke="${Y4_HI}" stroke-width="3.6" stroke-dasharray="8 5" stroke-linecap="round"/>`;
   const y0=top.h+52;
   options.forEach((o,i)=>{
     const f=y4cellFig(o.cells, cols, rows, k, {fill:Y4_GREEN});
@@ -6650,36 +6653,21 @@ function y4picGraph(title, rows, sym, each){
 }
 
 
-// ---- IRREGULAR SHAPE ON A GRID ---- unit 12.3
-// "Combine whole squares and partial squares to find the area." Asked as a sentence it is
-// an addition question; asked as a PICTURE it is an area question. A rectangle with
-// corners cut diagonally gives whole squares and half squares that a child can count.
-function y4gridShape(cols, rows, cuts){
-  const k=38, pad=16;
+// ---- A RECTANGLE ON A GRID ----
+// Support meets area and perimeter on a picture it can count before meeting them as a
+// sentence. Same question either way: both numbers, every time.
+function y4rectGrid(cols, rows, unit){
+  const k=34, pad=26;
   const w=cols*k+pad*2, h=rows*k+pad*2;
-  const isCut=(c,r)=>cuts.some(x=>x[0]===c&&x[1]===r);
-  let g='';
-  for(let c=0;c<cols;c++) for(let r=0;r<rows;r++){
-    const x=pad+c*k, y=pad+r*k;
-    if(isCut(c,r)){
-      const cut=cuts.find(x2=>x2[0]===c&&x2[1]===r);
-      // corner triangles: which corner is kept depends on which corner of the rectangle
-      const pts = cut[2]==='tl' ? `${x+k},${y} ${x+k},${y+k} ${x},${y+k}`
-                : cut[2]==='tr' ? `${x},${y} ${x+k},${y+k} ${x},${y+k}`
-                : cut[2]==='bl' ? `${x},${y} ${x+k},${y} ${x+k},${y+k}`
-                :                 `${x},${y} ${x+k},${y} ${x},${y+k}`;
-      g+=`<polygon points="${pts}" fill="${Y4_GOLD}" fill-opacity="0.55" stroke="${Y4_INK}" stroke-width="2.5" stroke-linejoin="round"/>`;
-    } else {
-      g+=`<rect x="${x}" y="${y}" width="${k}" height="${k}" fill="${Y4_GOLD}" fill-opacity="0.55" stroke="${Y4_INK}" stroke-width="2.5"/>`;
-    }
-  }
-  // the grid underneath, so the squares are countable
-  for(let c=0;c<=cols;c++) g+=`<line x1="${pad+c*k}" y1="${pad}" x2="${pad+c*k}" y2="${pad+rows*k}" stroke="${Y4_GRID}" stroke-width="1"/>`;
-  for(let r=0;r<=rows;r++) g+=`<line x1="${pad}" y1="${pad+r*k}" x2="${pad+cols*k}" y2="${pad+r*k}" stroke="${Y4_GRID}" stroke-width="1"/>`;
-  const whole=cols*rows-cuts.length, half=cuts.length;
-  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${Math.min(w,420)}px"
-    role="img" aria-label="a shape on a grid covering ${whole} whole squares and ${half} half squares">${g}</svg>`;
+  let g=`<rect x="${pad}" y="${pad}" width="${cols*k}" height="${rows*k}" fill="${Y4_GOLD}" fill-opacity="0.42" stroke="${Y4_INK}" stroke-width="3"/>`;
+  for(let c=1;c<cols;c++) g+=`<line x1="${pad+c*k}" y1="${pad}" x2="${pad+c*k}" y2="${pad+rows*k}" stroke="${Y4_INK}" stroke-width="1" opacity="0.45"/>`;
+  for(let r=1;r<rows;r++) g+=`<line x1="${pad}" y1="${pad+r*k}" x2="${pad+cols*k}" y2="${pad+r*k}" stroke="${Y4_INK}" stroke-width="1" opacity="0.45"/>`;
+  g+=`<text x="${pad+cols*k/2}" y="${pad+rows*k+20}" text-anchor="middle" font-family="'Baloo 2',sans-serif" font-weight="700" font-size="16" fill="${Y4_INK}">${cols} ${unit}</text>`;
+  g+=`<text x="${pad-9}" y="${pad+rows*k/2+5}" text-anchor="end" font-family="'Baloo 2',sans-serif" font-weight="700" font-size="16" fill="${Y4_INK}">${rows} ${unit}</text>`;
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${Math.min(w,400)}px"
+    role="img" aria-label="a rectangle ${cols} by ${rows} ${unit} on a grid">${g}</svg>`;
 }
+
 
 // ---- GRID REFERENCES. Unit 17.2 is explicit: "write a map reference with the letter
 // first: A2". Letters across, numbers up, naming a SQUARE — not a point. Coordinates
@@ -6918,7 +6906,9 @@ function y4_symmetry(diff){
 // point with (3, 4) is Year 6 and is a different idea that looks the same.
 const Y4_PLACES=[{e:'🎡',n:'the ferris wheel'},{e:'🎠',n:'the carousel'},{e:'🏰',n:'the castle'},
  {e:'🍦',n:'the ice cream stand'},{e:'🎢',n:'the roller coaster'},{e:'🚻',n:'the toilets'},
- {e:'🅿️',n:'the car park'},{e:'🎪',n:'the big top'}];
+ {e:'🅿️',n:'the car park'},{e:'🎪',n:'the big top'},{e:'🎤',n:'the stage'},{e:'🍔',n:'the food van'},
+ {e:'🎯',n:'the games tent'},{e:'⛲',n:'the fountain'},{e:'🚑',n:'the first aid post'},
+ {e:'🎁',n:'the gift shop'},{e:'🌳',n:'the picnic area'},{e:'🎫',n:'the ticket booth'}];
 function y4_gridref(diff){
   const L=y4Lvl(diff);
   const cols = L==='easy'?5 : L==='medium'?6 : 7;
@@ -7272,14 +7262,28 @@ function y4_time(diff){
 // WA Year 4 names independence explicitly: "identify when chance events are NOT affected
 // by previous events".
 const Y4_EVENTPAIRS=[
+  // Independent: the first event changes nothing about the second.
   {a:'You roll a dice and get a 6.', b:'You roll the dice again and get a 6.', ind:true},
   {a:'You toss a coin and get heads.', b:'You toss the coin again and get heads.', ind:true},
-  {a:'You spin a spinner and get red.', b:'You spin it again and get red.', ind:true},
+  {a:'You spin a spinner and land on red.', b:'You spin it again and land on red.', ind:true},
+  {a:'You draw a card and put it back.', b:'You draw another card.', ind:true},
+  {a:'It rained in Perth yesterday.', b:'You roll a 4 on a dice today.', ind:true},
+  {a:'Your football team wins on Saturday.', b:'You toss a coin and get tails.', ind:true},
+  {a:'You pick a marble and put it back in the bag.', b:'You pick a red marble.', ind:true},
+  {a:'A traffic light turns green.', b:'You roll a 2 on a dice.', ind:true},
+  {a:'You flip a coin ten times and get heads every time.', b:'The next flip is heads.', ind:true},
+  {a:'You spin an even number.', b:'The next person spins an odd number.', ind:true},
+  // Dependent: the first has to happen, or it changes what is left.
   {a:'The plane took off.', b:'The plane landed.', ind:false},
-  {a:'You take a red marble out of the bag.', b:'You take another marble out of the same bag.', ind:false},
+  {a:'You take a red marble out of the bag and keep it.', b:'You take another marble out.', ind:false},
   {a:'It rained all morning.', b:'The grass is wet.', ind:false},
   {a:'You eat the last apple.', b:'There are no apples left.', ind:false},
-  {a:'You draw a card and put it back.', b:'You draw another card.', ind:true},
+  {a:'You take the top card off the deck and keep it.', b:'You take the next card.', ind:false},
+  {a:'The tap was left running.', b:'The bucket overflowed.', ind:false},
+  {a:'You forgot to set your alarm.', b:'You slept in.', ind:false},
+  {a:'Someone ate three of the eight cupcakes.', b:'You choose a cupcake from what is left.', ind:false},
+  {a:'You pull a sock from the drawer and keep it.', b:'You pull out a matching sock.', ind:false},
+  {a:'The library lent out its last copy.', b:'You borrow that book today.', ind:false},
 ];
 function y4_probability(diff){
   const L=y4Lvl(diff);
@@ -7368,6 +7372,13 @@ const Y4_GRAPHTOPICS=[
   {t:'Pies sold at the drive', cats:['4A','4B','4C','4D'], sym:'🥧'},
   {t:'Books read this term', cats:['Ana','Ben','Cody','Dee'], sym:'📗'},
   {t:'Laps run at the carnival', cats:['Red','Blue','Green','Gold'], sym:'🏃'},
+  {t:'Cans collected for recycling', cats:['Mon','Tue','Wed','Thu'], sym:'🥫'},
+  {t:'Tickets sold for the concert', cats:['Year 3','Year 4','Year 5','Year 6'], sym:'🎟️'},
+  {t:'Trees planted on the oval', cats:['North','South','East','West'], sym:'🌳'},
+  {t:'Cupcakes sold at the stall', cats:['Choc','Vanilla','Lemon','Berry'], sym:'🧁'},
+  {t:'Kilometres cycled this week', cats:['Ivy','Jack','Kai','Lena'], sym:'🚲'},
+  {t:'Buckets of water used', cats:['Garden','Lawn','Pots','Trees'], sym:'🪣'},
+  {t:'Shells found at the beach', cats:['Sam','Tara','Uma','Vic'], sym:'🐚'},
 ];
 function y4_picgraph(diff){
   const L=y4Lvl(diff);
@@ -7410,52 +7421,63 @@ function y4_picgraph(diff){
 // ---- 11. AREA OF IRREGULAR SHAPES ---- unit 12.3
 // "Combine whole squares and partial squares to find the area." Nothing generated this;
 // area was rectangles only, which is the Year 3 job.
-function y4_irregularArea(diff){
-  const L=y4Lvl(diff);
-  const cols = L==='easy'? y4r(3,4) : L==='medium'? y4r(4,5) : y4r(5,6);
-  const rows = L==='easy'? y4r(3,4) : L==='medium'? y4r(3,5) : y4r(4,5);
-  const corners=[[0,0,'tl'],[cols-1,0,'tr'],[0,rows-1,'bl'],[cols-1,rows-1,'br']];
-  const howMany = L==='easy'? 2 : L==='medium'? y4r(2,3) : y4r(3,4);
-  const cuts=y4shuf(corners).slice(0,howMany);
-  const whole=cols*rows-cuts.length, half=cuts.length;
-  const area=whole+half/2;
-  const nice=String(area);
-  return { form:'irregular_area',
-    prompt:'What is the area of this shape, in squares?',
-    svg:y4gridShape(cols,rows,cuts),
-    choices:y4shuf([nice+' squares',
-      ...y4distract(nice+' squares',()=>y4p([whole+half, whole, cols*rows, area+1, area-1])+' squares')]),
-    answer:nice+' squares',
-    explanation:`${whole} whole squares and ${half} half squares. ${half} halves make ${half/2}, so ${whole} + ${half/2} = ${area}.` };
-}
-
-
-// ---- 12. AREA, PERIMETER AND IRREGULAR SHAPES ----
-// Irregular area (unit 12.3) belongs INSIDE area rather than taking a slot of its own —
-// it is the extension form of the same skill, not a different one.
+// ---- 12. AREA AND PERIMETER ----
+// BOTH NUMBERS, EVERY TIME, at every level, in two typed boxes. A four-option list let a
+// child who knew the area guess the pair, and half squares turned it into an addition
+// question. What changes up the ladder is the CONTEXT: a grid to count, then a measured
+// object, then a real task with a purpose for each number.
+//
+// One right and one wrong is still wrong — but apArea and apPerim travel with the
+// question, so the feedback records WHICH half failed.
+// Each place carries the jobs that actually make sense for it. Pairing them freely gave
+// "laying paint across a vegetable patch", which is the kind of thing that makes a teacher
+// stop trusting the rest of the page.
+const Y4_AREA_THINGS=[
+  {n:'garden bed',   L:[3,9], W:[2,6],  jobs:[['mulch','border logs'],['soil','edging']]},
+  {n:'vegetable patch',L:[3,8],W:[2,5], jobs:[['mulch','border logs'],['netting','fencing']]},
+  {n:'herb garden',  L:[2,5], W:[1,3],  jobs:[['soil','edging'],['mulch','border logs']]},
+  {n:'chicken run',  L:[4,9], W:[3,6],  jobs:[['straw','fencing'],['sand','fencing']]},
+  {n:'sandpit',      L:[2,6], W:[2,4],  jobs:[['sand','timber edging']]},
+  {n:'lawn',         L:[5,14],W:[4,9],  jobs:[['turf','edging'],['seed','fencing']]},
+  {n:'classroom floor',L:[7,12],W:[5,9],jobs:[['carpet','skirting'],['vinyl','trim']]},
+  {n:'shed floor',   L:[3,7], W:[2,5],  jobs:[['concrete','edging'],['vinyl','trim']]},
+  {n:'verandah',     L:[4,10],W:[2,4],  jobs:[['decking','handrail'],['tiles','trim']]},
+  {n:'courtyard',    L:[5,11],W:[4,8],  jobs:[['pavers','edging'],['tiles','grout along the edge']]},
+  {n:'mural wall',   L:[6,14],W:[2,4],  jobs:[['paint','masking tape']]},
+  {n:'noticeboard',  L:[2,4], W:[1,3],  jobs:[['felt','ribbon']]},
+  {n:'netball court',L:[28,32],W:[14,16],jobs:[['line paint','rope']]},
+];
 function y4_area(diff, _s, year){
   const L=y4Lvl(diff);
-  const useIrregular = L==='hard' ? Math.random()<0.4 : L==='medium' ? Math.random()<0.25 : false;
-  if(useIrregular) return y4_irregularArea(L);
   if(L==='easy'){
-    const q=genArea(L, 'random', 4);
-    if(!q.subskill) q.subskill='area_perimeter';
-    return q;
+    // Countable. The child can check the answer against the picture.
+    const a=y4r(2,7), b=y4r(2,6);
+    return { form:'area_perimeter_grid',
+      prompt:'Find the area and perimeter of this rectangle.',
+      svg:y4rectGrid(a,b,'m'),
+      parts:[String(a*b),String(2*(a+b))], partsLabels:['area in m²','perimeter in m'], partsJoin:'and',
+      answer:`${a*b},${2*(a+b)}`, apArea:a*b, apPerim:2*(a+b),
+      explanation:`Area = ${a} × ${b} = ${a*b} m². Perimeter = ${a} + ${b} + ${a} + ${b} = ${2*(a+b)} m.` };
   }
-  // Both answers TYPED, one box each — the way Year 6 does it. A four-option list lets a
-  // child who knows the area guess the pair; two boxes make them produce both. Getting one
-  // right and one wrong is still wrong, but apArea and apPerim let the feedback record
-  // WHICH half failed, so "always fumbles perimeter" is visible instead of just red.
-  const things=[['a rug',[2,4],[2,3]],['a garden bed',[4,9],[2,5]],['a classroom',[8,12],[6,9]],
-                ['a car park bay',[4,6],[2,3]],['a courtyard',[6,11],[4,8]],['a vegetable patch',[3,7],[2,5]]];
-  const [thing,LR,WR]=y4p(things);
-  const a=y4r(LR[0],LR[1]), b=y4r(WR[0],WR[1]);
+  const T=y4p(Y4_AREA_THINGS);
+  const a=y4r(T.L[0],T.L[1]), b=y4r(T.W[0],T.W[1]);
   const area=a*b, per=2*(a+b);
-  return { form:'area_and_perimeter',
-    prompt:`${thing.charAt(0).toUpperCase()+thing.slice(1)} measures ${a} m by ${b} m. Find its area and perimeter.`,
-    parts:[String(area),String(per)], partsLabels:['area in m²','perimeter in m'], partsJoin:'and',
+  if(L==='medium'){
+    return { form:'area_and_perimeter',
+      prompt:`A ${T.n} measures ${a} m by ${b} m. Find its area and perimeter.`,
+      parts:[String(area),String(per)], partsLabels:['area in m²','perimeter in m'], partsJoin:'and',
+      answer:`${area},${per}`, apArea:area, apPerim:per,
+      explanation:`Area = ${a} × ${b} = ${area} m². Perimeter = 2 × (${a} + ${b}) = ${per} m.` };
+  }
+  // Extension keeps the word problem: each number has a job, so the child has to decide
+  // WHICH of the two the situation is asking for as well as how to find it.
+  const [cover,edge]=y4p(T.jobs);
+  const who=y4p(['Sam','Priya','Mr Lee','Nina','Dad','the school','Aunty Jo','the council']);
+  return { form:'area_and_perimeter_problem',
+    prompt:`${who} is covering a ${T.n} ${a} m by ${b} m with ${cover}, and putting ${edge} all the way around it. How much of each is needed?`,
+    parts:[String(area),String(per)], partsLabels:[cover+' in m²', edge+' in m'], partsJoin:'and',
     answer:`${area},${per}`, apArea:area, apPerim:per,
-    explanation:`Area = ${a} × ${b} = ${area} m². Perimeter = 2 × (${a} + ${b}) = ${per} m.` };
+    explanation:`${cover.charAt(0).toUpperCase()+cover.slice(1)} covers the surface: ${a} × ${b} = ${area} m². ${edge.charAt(0).toUpperCase()+edge.slice(1)} goes around the outside: 2 × (${a} + ${b}) = ${per} m.` };
 }
 
 // ---- 13. TIMETABLES AND DURATION ---- unit 32.2
@@ -9955,7 +9977,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-16.09';
+const BUILD = '2026-08-16.10';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -10102,7 +10124,7 @@ function renderSpeakButton(q){
 
 function buildKeypad(onKey){
   const pad=el('<div class="mmc-keypad"></div>');
-  const keys=['1','2','3','4','5','6','7','8','9','del','0','go'];
+  const keys=['1','2','3','4','5','6','7','8','9','.','0','del','go'];
   keys.forEach(k=>{
     const label = k==='del' ? '⌫' : k==='go' ? 'Go' : k;
     const b=el(`<button type="button" class="${k==='go'?'kp-go':k==='del'?'kp-del':''}">${label}</button>`);
