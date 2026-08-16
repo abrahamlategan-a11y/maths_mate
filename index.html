@@ -8752,7 +8752,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-16.02';
+const BUILD = '2026-08-16.03';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -9320,7 +9320,7 @@ const S = {
   pendingTeacherRequests:[], teacherDirectory:[],
   genForm:{ label:'', difficulty:'easy', strategy:'random' },
   activeWeekId:null, quiz:{}, toast:null,
-  bulkCreating:false, bulkProgress:null, bulkResults:null, bulkNamesText:'', bulkPassword:'',
+  bulkCreating:false, bulkConfirm:false, bulkProgress:null, bulkResults:null, bulkNamesText:'', bulkPassword:'',
   studentTab:'dashboard', ttAttempts:[], tt:null,
   ttCustom:{ tables:[], mult:true, div:false },
   liveGames:[], liveParticipants:[], liveGenForm:{level:'easy'},
@@ -13181,13 +13181,22 @@ Tom Nguyen
 Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
       <div class="mmc-field"><label>Confirm your password</label>
         <div class="meta">Needed briefly to keep switching back to your teacher account while each student account is created.</div>
-        <input type="password" id="mmc-bulk-pass" placeholder="Your password">
+        <input type="password" id="mmc-bulk-pass" placeholder="Your password" value="${esc(S.bulkPassword||'')}">
       </div>
       ${S.authError? `<div class="mmc-autherr">${esc(S.authError)}</div>` : ''}
-      <button class="mmc-btn gold" id="mmc-bulk-go" ${S.bulkCreating?'disabled':''}>${S.bulkCreating? `Creating… (${S.bulkProgress||''})` : 'Create student accounts'}</button>
+      ${S.bulkConfirm && !S.bulkCreating ? `<div class="mmc-callout" style="margin:10px 0 12px;padding:12px 14px;border:2px solid var(--ink);border-radius:12px;background:var(--paper);">
+        <b>Create ${String(S.bulkNamesText||'').split('\n').map(l=>l.trim()).filter(Boolean).length} student account(s)?</b>
+        <div class="meta" style="margin-top:4px;">They will be added to ${esc((S.classes||[]).find(c=>c.id===(S.bulkTargetClassId||S.currentClassId))?.name || 'the selected class')}. Check the names above first — usernames cannot be changed later.</div>
+      </div>` : ''}
+      <button class="mmc-btn gold" id="mmc-bulk-go" ${S.bulkCreating?'disabled':''}>${
+        S.bulkCreating ? `Creating… (${S.bulkProgress||''})`
+        : S.bulkConfirm ? 'Yes, create the accounts'
+        : 'Create student accounts'}</button>
+      ${S.bulkConfirm && !S.bulkCreating ? `<button class="mmc-btn ghost" id="mmc-bulk-back" style="margin-left:8px;">Go back and change</button>` : ''}
     </div>
   `);
   form.querySelector('#mmc-bulk-names').oninput=(e)=>{ S.bulkNamesText=e.target.value; syncNamePreview(); };
+  form.querySelector('#mmc-bulk-pass').oninput=(e)=>{ S.bulkPassword=e.target.value; };
   // A sample of three was not enough. A teacher pasting thirty names needs to see all
   // thirty and be able to correct the ones the parser got wrong, BEFORE any account
   // exists. Undoing this afterwards means deleting students one at a time.
@@ -13228,11 +13237,23 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
   if(bulkClassSel){ bulkClassSel.onchange=syncBulkNote; syncBulkNote(); }
   // No classes at all: default to making one rather than showing an empty selector.
   if(bulkClassSel && !(S.classes||[]).length){ bulkClassSel.value='__new__'; syncBulkNote(); }
+  const backBtn=form.querySelector('#mmc-bulk-back');
+  if(backBtn) backBtn.onclick=()=>{ S.bulkConfirm=false; render(); };
   form.querySelector('#mmc-bulk-go').onclick=async ()=>{
     // FIRST STATEMENT, before any await. The disabled attribute is not enough on its own:
     // it is only applied on the next render, and there are awaits before that happens.
     // A second click during createClass() used to start a whole second batch.
     if(S.bulkCreating) return;
+    // FIRST CLICK ASKS. Nothing is created until the teacher has seen the names, the
+    // class and the count, and said yes. Creating on the first click — with the filled-in
+    // form still sitting below afterwards — is what produced two accounts per child.
+    if(!S.bulkConfirm){
+      const namesNow=String(S.bulkNamesText||'').split('\n').map(l=>l.trim()).filter(Boolean);
+      if(namesNow.length===0){ S.authError='Paste at least one name.'; render(); return; }
+      if(!(form.querySelector('#mmc-bulk-pass').value||'')){ S.authError='Enter your password to continue.'; render(); return; }
+      S.bulkPassword=form.querySelector('#mmc-bulk-pass').value;
+      S.authError=null; S.bulkConfirm=true; render(); return;
+    }
     S.bulkCreating=true; render();
     try{
     // Cleared FIRST, every time. This was set on one run and never reset, so a second
@@ -13315,7 +13336,13 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
     }finally{
       // finally, so a thrown error can never leave the button stuck disabled.
       S.bulkCreating=false;
+      S.bulkConfirm=false;
       S.bulkTargetClassId=null;
+      // The list is emptied once accounts exist. Leaving the names in the box is what
+      // made a second click look like the next step rather than a repeat.
+      if((S.bulkResults||[]).some(r=>r.status==='ok')){
+        S.bulkNamesText=''; S.bulkFinalNames=null; S.bulkPassword='';
+      }
       try{ await handleAuthChange(auth.currentUser); }catch(e){}
       render();
     }
