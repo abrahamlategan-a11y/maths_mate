@@ -7988,7 +7988,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-14.16';
+const BUILD = '2026-08-14.17';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -8928,9 +8928,16 @@ async function handleAuthChange(user){
   S.user=user; S.authError=null;
   if(user){
     try{
-      const teachersSnap = await getDoc(doc(db,'config','teachers'));
-      S.teacherEmails = teachersSnap.exists() ? (teachersSnap.data().emails||[]) : [];
-      S.isTeacher = S.teacherEmails.map(e=>String(e).toLowerCase()).includes((user.email||'').toLowerCase());
+      // Only a teacher can read this document. A student's read is DENIED by the rules,
+      // and that denial is the answer: not a teacher. It must not take sign-in down with
+      // it, so it is caught here rather than by the outer handler.
+      try{
+        const teachersSnap = await getDoc(doc(db,'config','teachers'));
+        S.teacherEmails = teachersSnap.exists() ? (teachersSnap.data().emails||[]) : [];
+        S.isTeacher = S.teacherEmails.map(e=>String(e).toLowerCase()).includes((user.email||'').toLowerCase());
+      }catch(e){
+        S.teacherEmails = []; S.isTeacher = false;
+      }
       if(S.isTeacher && S.pendingDeepLinkTab){
         S.teacherTab = S.pendingDeepLinkTab;
         S.pendingDeepLinkTab = null;
