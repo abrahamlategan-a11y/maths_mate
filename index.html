@@ -8752,7 +8752,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-16.01';
+const BUILD = '2026-08-16.02';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -13229,6 +13229,12 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
   // No classes at all: default to making one rather than showing an empty selector.
   if(bulkClassSel && !(S.classes||[]).length){ bulkClassSel.value='__new__'; syncBulkNote(); }
   form.querySelector('#mmc-bulk-go').onclick=async ()=>{
+    // FIRST STATEMENT, before any await. The disabled attribute is not enough on its own:
+    // it is only applied on the next render, and there are awaits before that happens.
+    // A second click during createClass() used to start a whole second batch.
+    if(S.bulkCreating) return;
+    S.bulkCreating=true; render();
+    try{
     // Cleared FIRST, every time. This was set on one run and never reset, so a second
     // batch in the same session silently went to the first batch's class, whatever the
     // dropdown said. Ten students landed in the wrong class that way.
@@ -13260,7 +13266,7 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
     // can't read other teachers' students (by design), so real collisions are caught
     // by Firebase itself and retried below with an incremented suffix.
     const taken=new Set(Object.values(S.profiles).map(p=>String(p.username||'').toLowerCase()).filter(Boolean));
-    S.bulkCreating=true; S.bulkResults=[]; S.bulkProgress=`0/${lines.length}`; render();
+    S.bulkResults=[]; S.bulkProgress=`0/${lines.length}`; render();
     // Resolved ONCE, before the loop, and never allowed to be null. This used to read
     // S.currentClassId inside the loop, so creating a class and adding students in one go
     // raced the classes listener: newClassId came out null and every student was created
@@ -13306,10 +13312,13 @@ Aisha Patel">${esc(S.bulkNamesText)}</textarea></div>
       }
       S.bulkProgress=`${i+1}/${lines.length}`; render();
     }
-    S.bulkCreating=false;
-    S.bulkTargetClassId=null;
-    await handleAuthChange(auth.currentUser);
-    render();
+    }finally{
+      // finally, so a thrown error can never leave the button stuck disabled.
+      S.bulkCreating=false;
+      S.bulkTargetClassId=null;
+      try{ await handleAuthChange(auth.currentUser); }catch(e){}
+      render();
+    }
   };
   if(sview==='add') wrap.appendChild(form);
 
