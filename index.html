@@ -6649,6 +6649,38 @@ function y4picGraph(title, rows, sym, each){
     role="img" aria-label="a picture graph where each symbol stands for ${each}">${g}</svg>`;
 }
 
+
+// ---- IRREGULAR SHAPE ON A GRID ---- unit 12.3
+// "Combine whole squares and partial squares to find the area." Asked as a sentence it is
+// an addition question; asked as a PICTURE it is an area question. A rectangle with
+// corners cut diagonally gives whole squares and half squares that a child can count.
+function y4gridShape(cols, rows, cuts){
+  const k=38, pad=16;
+  const w=cols*k+pad*2, h=rows*k+pad*2;
+  const isCut=(c,r)=>cuts.some(x=>x[0]===c&&x[1]===r);
+  let g='';
+  for(let c=0;c<cols;c++) for(let r=0;r<rows;r++){
+    const x=pad+c*k, y=pad+r*k;
+    if(isCut(c,r)){
+      const cut=cuts.find(x2=>x2[0]===c&&x2[1]===r);
+      // corner triangles: which corner is kept depends on which corner of the rectangle
+      const pts = cut[2]==='tl' ? `${x+k},${y} ${x+k},${y+k} ${x},${y+k}`
+                : cut[2]==='tr' ? `${x},${y} ${x+k},${y+k} ${x},${y+k}`
+                : cut[2]==='bl' ? `${x},${y} ${x+k},${y} ${x+k},${y+k}`
+                :                 `${x},${y} ${x+k},${y} ${x},${y+k}`;
+      g+=`<polygon points="${pts}" fill="${Y4_GOLD}" fill-opacity="0.55" stroke="${Y4_INK}" stroke-width="2.5" stroke-linejoin="round"/>`;
+    } else {
+      g+=`<rect x="${x}" y="${y}" width="${k}" height="${k}" fill="${Y4_GOLD}" fill-opacity="0.55" stroke="${Y4_INK}" stroke-width="2.5"/>`;
+    }
+  }
+  // the grid underneath, so the squares are countable
+  for(let c=0;c<=cols;c++) g+=`<line x1="${pad+c*k}" y1="${pad}" x2="${pad+c*k}" y2="${pad+rows*k}" stroke="${Y4_GRID}" stroke-width="1"/>`;
+  for(let r=0;r<=rows;r++) g+=`<line x1="${pad}" y1="${pad+r*k}" x2="${pad+cols*k}" y2="${pad+r*k}" stroke="${Y4_GRID}" stroke-width="1"/>`;
+  const whole=cols*rows-cuts.length, half=cuts.length;
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${Math.min(w,420)}px"
+    role="img" aria-label="a shape on a grid covering ${whole} whole squares and ${half} half squares">${g}</svg>`;
+}
+
 // ---- GRID REFERENCES. Unit 17.2 is explicit: "write a map reference with the letter
 // first: A2". Letters across, numbers up, naming a SQUARE — not a point. Coordinates
 // naming a point are Year 6 and are a different idea that looks the same.
@@ -7380,16 +7412,21 @@ function y4_picgraph(diff){
 // area was rectangles only, which is the Year 3 job.
 function y4_irregularArea(diff){
   const L=y4Lvl(diff);
-  const whole = L==='easy'? y4r(4,8) : L==='medium'? y4r(6,14) : y4r(10,22);
-  const halves = L==='easy'? y4p([2,4]) : y4p([2,4,6]);
-  const area = whole + halves/2;
-  const nice = Number.isInteger(area) ? String(area) : String(area);
+  const cols = L==='easy'? y4r(3,4) : L==='medium'? y4r(4,5) : y4r(5,6);
+  const rows = L==='easy'? y4r(3,4) : L==='medium'? y4r(3,5) : y4r(4,5);
+  const corners=[[0,0,'tl'],[cols-1,0,'tr'],[0,rows-1,'bl'],[cols-1,rows-1,'br']];
+  const howMany = L==='easy'? 2 : L==='medium'? y4r(2,3) : y4r(3,4);
+  const cuts=y4shuf(corners).slice(0,howMany);
+  const whole=cols*rows-cuts.length, half=cuts.length;
+  const area=whole+half/2;
+  const nice=String(area);
   return { form:'irregular_area',
-    prompt:`A shape covers ${whole} whole squares and ${halves} half squares. What is its area?`,
+    prompt:'What is the area of this shape, in squares?',
+    svg:y4gridShape(cols,rows,cuts),
     choices:y4shuf([nice+' squares',
-      ...y4distract(nice+' squares',()=>y4p([whole+halves, whole, whole+halves*2, area+1])+' squares')]),
+      ...y4distract(nice+' squares',()=>y4p([whole+half, whole, cols*rows, area+1, area-1])+' squares')]),
     answer:nice+' squares',
-    explanation:`${halves} halves make ${halves/2} whole squares, so ${whole} + ${halves/2} = ${area}.` };
+    explanation:`${whole} whole squares and ${half} half squares. ${half} halves make ${half/2}, so ${whole} + ${half/2} = ${area}.` };
 }
 
 
@@ -7398,9 +7435,27 @@ function y4_irregularArea(diff){
 // it is the extension form of the same skill, not a different one.
 function y4_area(diff, _s, year){
   const L=y4Lvl(diff);
-  const useIrregular = L==='hard' ? Math.random()<0.45 : L==='medium' ? Math.random()<0.2 : false;
+  const useIrregular = L==='hard' ? Math.random()<0.4 : L==='medium' ? Math.random()<0.25 : false;
   if(useIrregular) return y4_irregularArea(L);
-  return genArea(L, 'random', 4);
+  if(L==='easy'){
+    const q=genArea(L, 'random', 4);
+    if(!q.subskill) q.subskill='area_perimeter';
+    return q;
+  }
+  // Both answers TYPED, one box each — the way Year 6 does it. A four-option list lets a
+  // child who knows the area guess the pair; two boxes make them produce both. Getting one
+  // right and one wrong is still wrong, but apArea and apPerim let the feedback record
+  // WHICH half failed, so "always fumbles perimeter" is visible instead of just red.
+  const things=[['a rug',[2,4],[2,3]],['a garden bed',[4,9],[2,5]],['a classroom',[8,12],[6,9]],
+                ['a car park bay',[4,6],[2,3]],['a courtyard',[6,11],[4,8]],['a vegetable patch',[3,7],[2,5]]];
+  const [thing,LR,WR]=y4p(things);
+  const a=y4r(LR[0],LR[1]), b=y4r(WR[0],WR[1]);
+  const area=a*b, per=2*(a+b);
+  return { form:'area_and_perimeter',
+    prompt:`${thing.charAt(0).toUpperCase()+thing.slice(1)} measures ${a} m by ${b} m. Find its area and perimeter.`,
+    parts:[String(area),String(per)], partsLabels:['area in m²','perimeter in m'], partsJoin:'and',
+    answer:`${area},${per}`, apArea:area, apPerim:per,
+    explanation:`Area = ${a} × ${b} = ${area} m². Perimeter = 2 × (${a} + ${b}) = ${per} m.` };
 }
 
 // ---- 13. TIMETABLES AND DURATION ---- unit 32.2
@@ -7485,6 +7540,10 @@ function y4Adapt(q){
   // The hands-swapped reading, so the gradebook can tell "read the hands the wrong way
   // round" apart from "got the time wrong".
   if(q.swappedHands) out.swappedHands=q.swappedHands;
+  // apArea and apPerim are what answerFlags reads to record WHICH of the two a child got
+  // wrong. Without them a half-right area question is just red.
+  if(q.apArea!=null) out.apArea=q.apArea;
+  if(q.apPerim!=null) out.apPerim=q.apPerim;
   if(q.inputType && q.inputType!=='choice' && q.inputType!=='text' && !q.parts && !q.choices) return q;
   if(q.parts){
     out.inputType='parts';
@@ -9896,7 +9955,7 @@ function raceRubberBandMultiplier(myPos, allPositions){
 // shows in the teacher footer, so "what does the footer say?" settles it in one
 // line, and rollback copies get real labels instead of (89), (90).
 // ---------------------------------------------------------------------------
-const BUILD = '2026-08-16.08';
+const BUILD = '2026-08-16.09';
 
 // A tablet's OS keyboard covers most of the screen, and on iPad it opens as a full
 // QWERTY even for a numbers-only answer. A real hindrance mid-race. `pointer: coarse`
@@ -16869,7 +16928,7 @@ function renderQuestionBody(q, st, onCheck, headerHTML){
     qbox.appendChild(row);
     // Year 2 types on a number pad, not a full keyboard. Restricted to Year 2 so no
     // other year level changes behaviour, and only where the answer is a plain number.
-    if(IS_TOUCH && !st.checked && /^Y2_/.test(q.skill||'') && /^-?[\d.,/]+$/.test(String(q.answer||''))){
+    if(IS_TOUCH && !st.checked && /^-?[\d.,/ ]+$/.test(String(q.answer||''))){
       input.setAttribute('inputmode','numeric');
       qbox.appendChild(buildKeypad(k=>{
         if(st.checked) return;
